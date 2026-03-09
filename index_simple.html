@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Map Editor</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 10px;
+    }
+    #toolbar {
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    label {
+      font-size: 13px;
+    }
+    #canvas-container {
+      display: inline-block;
+      border: 1px solid #888;
+    }
+    canvas {
+      display: block;
+      cursor: crosshair;
+    }
+    #status {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #333;
+    }
+    select, button, input[type="text"] {
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <h3 style="margin:0 0 8px 0">Map Editor</h3>
+
+  <div id="toolbar">
+    <label>Tile:
+      <select id="tileSelect">
+        <option value="1">Tijolo</option>
+        <option value="2">Lucky Block</option>
+        <option value="0">START</option>
+        <option value="3">END</option>
+        <option value="99">Apagar</option>
+      </select>
+    </label>
+
+    <label>Nome: <input id="levelName" type="text" placeholder="nivel" maxlength="64" style="width:120px"></label>
+
+    <button id="btnSave">Salvar JSON</button>
+    <button id="btnOpen">Abrir JSON</button>
+    <button id="btnClear">Limpar</button>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+
+  <div id="status">START: ✗ | END: ✗ | Tiles: 0</div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx    = canvas.getContext("2d");
+
+    const COLS = 30;
+    const ROWS = 20;
+    const TILE = 24;
+
+    canvas.width  = COLS * TILE;
+    canvas.height = ROWS * TILE;
+
+    const EMPTY = null;
+    const TILE_ID_START  = 0;
+    const TILE_ID_END    = 3;
+    const TILE_ID_ERASER = 99;
+
+    const COLORS = {
+      0: { fill: "#44bb66", label: "S" },
+      1: { fill: "#884422"              },
+      2: { fill: "#ddaa00"              },
+      3: { fill: "#bb2244", label: "E" },
+    };
+
+    let map      = makeEmptyMap();
+    let startPos = null;
+    let endPos   = null;
+    let painting = false;
+
+    function makeEmptyMap() {
+      return Array.from({ length: ROWS }, () => Array(COLS).fill(EMPTY));
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // tiles
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const id = map[y][x];
+          if (id === EMPTY) continue;
+          const c = COLORS[id];
+          if (!c) continue;
+
+          ctx.fillStyle = c.fill;
+          ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+
+          if (c.label) {
+            ctx.fillStyle    = "white";
+            ctx.font         = `bold ${Math.floor(TILE * 0.5)}px sans-serif`;
+            ctx.textAlign    = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(c.label, x * TILE + TILE / 2, y * TILE + TILE / 2);
+          }
+        }
+      }
+
+      // grid
+      ctx.strokeStyle = "#cccccc";
+      ctx.lineWidth   = 0.5;
+      for (let y = 0; y <= ROWS; y++) {
+        ctx.beginPath(); ctx.moveTo(0, y * TILE); ctx.lineTo(canvas.width, y * TILE); ctx.stroke();
+      }
+      for (let x = 0; x <= COLS; x++) {
+        ctx.beginPath(); ctx.moveTo(x * TILE, 0); ctx.lineTo(x * TILE, canvas.height); ctx.stroke();
+      }
+    }
+
+    function getCell(e) {
+      const r = canvas.getBoundingClientRect();
+      return {
+        x: Math.floor((e.clientX - r.left)  / TILE),
+        y: Math.floor((e.clientY - r.top) / TILE),
+      };
+    }
+
+    function paint(e) {
+      const { x, y } = getCell(e);
+      if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+
+      const sel     = parseInt(document.getElementById("tileSelect").value);
+      const current = map[y][x];
+
+      if (sel === TILE_ID_ERASER) {
+        if (current === TILE_ID_START) startPos = null;
+        if (current === TILE_ID_END)   endPos   = null;
+        map[y][x] = EMPTY;
+      } else if (sel === TILE_ID_START) {
+        if (startPos) map[startPos.y][startPos.x] = EMPTY;
+        startPos  = { x, y };
+        map[y][x] = TILE_ID_START;
+      } else if (sel === TILE_ID_END) {
+        if (endPos) map[endPos.y][endPos.x] = EMPTY;
+        endPos    = { x, y };
+        map[y][x] = TILE_ID_END;
+      } else {
+        if (current === TILE_ID_START) startPos = null;
+        if (current === TILE_ID_END)   endPos   = null;
+        map[y][x] = sel;
+      }
+
+      draw();
+      updateStatus();
+    }
+
+    canvas.addEventListener("mousedown", e => { painting = true; paint(e); });
+    canvas.addEventListener("mousemove", e => { if (painting) paint(e); });
+    canvas.addEventListener("mouseup",   () => { painting = false; });
+    canvas.addEventListener("mouseleave",() => { painting = false; });
+
+    function updateStatus() {
+      let count = 0;
+      for (let y = 0; y < ROWS; y++)
+        for (let x = 0; x < COLS; x++)
+          if (map[y][x] !== EMPTY) count++;
+
+      document.getElementById("status").textContent =
+        `START: ${startPos ? "✓" : "✗"} | END: ${endPos ? "✓" : "✗"} | Tiles: ${count}`;
+    }
+
+    // ── SALVAR ────────────────────────────
+    document.getElementById("btnSave").addEventListener("click", () => {
+      const entries = [];
+      for (let y = 0; y < ROWS; y++)
+        for (let x = 0; x < COLS; x++)
+          entries.push(String(map[y][x] === EMPTY ? 0 : map[y][x]).padStart(3, "0"));
+
+      const name = document.getElementById("levelName").value || "map";
+      const json = JSON.stringify({
+        level: {
+          information: { name },
+          data: entries,
+        }
+      }, null, 2);
+
+      const a    = document.createElement("a");
+      a.href     = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+      a.download = `${name}.json`;
+      a.click();
+    });
+
+    // ── ABRIR ─────────────────────────────
+    document.getElementById("btnOpen").addEventListener("click", () => {
+      const input  = document.createElement("input");
+      input.type   = "file";
+      input.accept = ".json";
+      input.addEventListener("change", () => {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.addEventListener("load", () => {
+          let parsed;
+          try { parsed = JSON.parse(reader.result); } catch { alert("JSON inválido."); return; }
+
+          const data = parsed?.level?.data;
+          if (!Array.isArray(data)) { alert("Formato inválido."); return; }
+
+          document.getElementById("levelName").value = parsed?.level?.information?.name ?? "";
+
+          map      = makeEmptyMap();
+          startPos = null;
+          endPos   = null;
+
+          data.forEach((entry, i) => {
+            const x  = i % COLS;
+            const y  = Math.floor(i / COLS);
+            if (y >= ROWS) return;
+            const id = parseInt(entry, 10);
+            if (isNaN(id) || id === 0) return;
+            map[y][x] = id;
+            if (id === TILE_ID_START) startPos = { x, y };
+            if (id === TILE_ID_END)   endPos   = { x, y };
+          });
+
+          draw();
+          updateStatus();
+        });
+        reader.readAsText(file);
+      });
+      input.click();
+    });
+
+    // ── LIMPAR ────────────────────────────
+    document.getElementById("btnClear").addEventListener("click", () => {
+      map      = makeEmptyMap();
+      startPos = null;
+      endPos   = null;
+      draw();
+      updateStatus();
+    });
+
+    // ── INIT ──────────────────────────────
+    draw();
+    updateStatus();
+  </script>
+
+</body>
+</html>

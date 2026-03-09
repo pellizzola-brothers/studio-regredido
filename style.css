@@ -1,0 +1,348 @@
+/* ========================================
+   TANK EDITOR — Dark Military UI
+   ======================================== */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-deep:     #0a0c0f;
+  --bg-panel:    #111418;
+  --bg-card:     #181c22;
+  --bg-hover:    #1f242d;
+  --border:      #2a3040;
+  --border-lit:  #3a4560;
+  --accent:      #f0c040;
+  --accent-dim:  #a07a10;
+  --text-primary:#e8eaf0;
+  --text-muted:  #6a7080;
+  --green:       #00ff88;
+  --red:         #ff3355;
+  --font-mono:   'Share Tech Mono', monospace;
+  --font-title:  'Orbitron', sans-serif;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ── TOPBAR ─────────────────────────────── */
+#topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 52px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+}
+
+#topbar::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-dim), transparent);
+}
+
+#logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-title);
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 4px;
+  color: var(--text-primary);
+}
+
+.logo-icon {
+  font-size: 20px;
+}
+
+.accent {
+  color: var(--accent);
+}
+
+#header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.btn {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 1px;
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-transform: uppercase;
+}
+
+.btn-secondary {
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-lit);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+  font-weight: bold;
+}
+
+.btn-primary:hover {
+  background: #ffd060;
+  box-shadow: 0 0 12px #f0c04044;
+}
+
+/* ── LAYOUT ─────────────────────────────── */
+#main-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── SIDEBAR ────────────────────────────── */
+#sidebar {
+  width: 190px;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  flex-shrink: 0;
+  padding: 8px 0;
+}
+
+#sidebar::-webkit-scrollbar { width: 4px; }
+#sidebar::-webkit-scrollbar-track { background: transparent; }
+#sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.sidebar-section {
+  padding: 12px 12px 4px;
+  margin-bottom: 4px;
+}
+
+.section-title {
+  font-family: var(--font-title);
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── META FIELDS ────────────────────────── */
+.meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+
+.meta-label {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--text-muted);
+}
+
+.meta-input {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 5px 8px;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.12s;
+}
+
+.meta-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.meta-input:focus {
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 1px #f0c04018;
+}
+
+/* ── TOOL ITEMS ─────────────────────────── */
+.tool-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 4px;
+  border: 1px solid transparent;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.tool-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.tool-item.active {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px #f0c04022;
+}
+
+.tool-item.active .tool-name {
+  color: var(--accent);
+}
+
+.tool-preview {
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.eraser-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px dashed var(--border-lit);
+  color: var(--red);
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.tool-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.tool-name {
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  color: var(--text-primary);
+  transition: color 0.12s;
+}
+
+.tool-desc {
+  font-size: 9px;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+/* ── STATUS ─────────────────────────────── */
+#status-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  background: var(--bg-deep);
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.status-label {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+}
+
+.status-badge {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 6px;
+  border-radius: 2px;
+  letter-spacing: 1px;
+}
+
+.badge-off    { color: var(--text-muted); }
+.badge-on     { color: var(--green); text-shadow: 0 0 6px var(--green); }
+.badge-neutral { color: var(--accent); }
+
+/* ── CANVAS AREA ────────────────────────── */
+#canvas-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse at center, #12161e 0%, #0a0c0f 70%);
+  overflow: hidden;
+  position: relative;
+}
+
+/* subtle grid bg */
+#canvas-area::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+#canvas-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+#gameCanvas {
+  display: block;
+  border: 1px solid var(--border-lit);
+  box-shadow:
+    0 0 0 1px #00000088,
+    0 8px 40px #00000088,
+    0 0 60px #f0c04010;
+  cursor: crosshair;
+}
+
+#coords-display {
+  position: absolute;
+  bottom: -28px;
+  right: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+  font-family: var(--font-mono);
+}
