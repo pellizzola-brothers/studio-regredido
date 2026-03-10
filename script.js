@@ -9,7 +9,7 @@ const cols = MAX_COLS;
 const rows = MAX_ROWS;
 
 // ── TILE IDs ──────────────────────────────
-//   0  = START marker (placeholder, will change later)
+//   0  = START marker
 //   1  = TIJOLO (brick)
 //   2  = LUCKY BLOCK
 //   3  = END marker
@@ -179,6 +179,14 @@ function updateStatus() {
 }
 
 // ── ABRIR JSON ────────────────────────────
+// Estrutura esperada:
+// {
+//   "level": {
+//     "information": { "name": "...", "description": "...", "author": "..." },
+//     "data": ["000", "001", ...]  // 600 entradas flat, zero-padded (30 cols × 20 rows)
+//   }
+// }
+// "000" no arquivo = célula vazia. Tile ID 0 (START) só existe quando gravado explicitamente.
 document.getElementById("openMap").addEventListener("click", () => {
   const input  = document.createElement("input");
   input.type   = "file";
@@ -206,21 +214,26 @@ document.getElementById("openMap").addEventListener("click", () => {
         return;
       }
 
+      // Preenche metadados
       document.getElementById("level-name").value        = info?.name        ?? "";
       document.getElementById("level-description").value = info?.description ?? "";
       document.getElementById("level-author").value      = info?.author      ?? "";
 
+      // Reinicia mapa
       map      = Array.from({ length: rows }, () => Array(cols).fill(EMPTY));
       startPos = null;
       endPos   = null;
 
+      // Lê as entradas em ordem row-major (índice i → coluna i%cols, linha Math.floor(i/cols))
       data.forEach((entry, i) => {
         const x      = i % cols;
         const y      = Math.floor(i / cols);
         if (y >= rows) return;
 
         const cellId = parseInt(entry, 10);
-        if (isNaN(cellId) || cellId === 0) return; // "000" = empty in file format
+
+        // "000" representa vazio no formato de arquivo; ignora zeros
+        if (isNaN(cellId) || cellId === 0) return;
 
         map[y][x] = cellId;
         if (cellId === TILE_ID_START) startPos = { x, y };
@@ -237,37 +250,62 @@ document.getElementById("openMap").addEventListener("click", () => {
   input.click();
 });
 
-// ── SALVAR ────────────────────────────────
-function formatDataArray(entries) {
-  const GROUP_SIZE = 9;
-  const lines = [];
-  for (let i = 0; i < entries.length; i += GROUP_SIZE)
-    lines.push(entries.slice(i, i + GROUP_SIZE).map(e => `"${e}"`).join(", "));
-  return "[\n        " + lines.join(",\n        ") + "]";
+// ── SALVAR JSON ───────────────────────────
+// Reproduz exatamente a estrutura do arquivo de referência:
+//
+//   {
+//       "level": {
+//           "information": {
+//               "name": "...",
+//               "description": "...",
+//               "author": "..."
+//           },
+//           "data": [
+//           "001", "001", "002", "002", "000", "003", "001", "001", "002",
+//           ...9 por linha...
+//           "000", "000", "000", "000", "000", "000", "000", "000", "000"
+//           ]
+//       }
+//   }
+//
+// Regras de formatação:
+//   • 4 espaços de indentação para cada nível do objeto
+//   • "data": array com 9 entradas por linha
+//   • Cada linha do array indentada com 8 espaços
+//   • Colchetes de abertura/fechamento alinhados com a chave "data"
+function buildDataBlock(entries) {
+  const GROUP  = 9;
+  const indent = "        "; // 8 espaços
+  const lines  = [];
+  for (let i = 0; i < entries.length; i += GROUP)
+    lines.push(indent + entries.slice(i, i + GROUP).map(e => `"${e}"`).join(", "));
+  return "[\n" + lines.join(",\n") + "\n        ]";
 }
 
 document.getElementById("saveMap").addEventListener("click", () => {
+  // Serializa o mapa em ordem row-major; null → "000"
   const entries = [];
   for (let y = 0; y < rows; y++)
     for (let x = 0; x < cols; x++)
       entries.push(String(map[y][x] === EMPTY ? 0 : map[y][x]).padStart(3, "0"));
 
-  const formattedData    = formatDataArray(entries);
   const levelName        = document.getElementById("level-name").value        || "";
   const levelDescription = document.getElementById("level-description").value || "";
   const levelAuthor      = document.getElementById("level-author").value      || "";
 
-  const json = `{
+  const json =
+`{
     "level": {
         "information": {
             "name": ${JSON.stringify(levelName)},
             "description": ${JSON.stringify(levelDescription)},
             "author": ${JSON.stringify(levelAuthor)}
         },
-        "data": ${formattedData}
+        "data": ${buildDataBlock(entries)}
     }
 }`;
 
+  // Sanidade: valida antes de gravar
   try { JSON.parse(json); } catch (err) {
     alert("Erro interno: JSON inválido. Veja o console.");
     console.error(err);

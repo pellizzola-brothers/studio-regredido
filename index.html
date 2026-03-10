@@ -51,7 +51,9 @@
       </select>
     </label>
 
-    <label>Nome: <input id="levelName" type="text" placeholder="nivel" maxlength="64" style="width:120px"></label>
+    <label>Nome:        <input id="levelName"        type="text" placeholder="nivel"  maxlength="64"  style="width:120px"></label>
+    <label>Descrição:   <input id="levelDescription" type="text" placeholder="..."    maxlength="128" style="width:160px"></label>
+    <label>Autor:       <input id="levelAuthor"      type="text" placeholder="autor"  maxlength="64"  style="width:120px"></label>
 
     <button id="btnSave">Salvar JSON</button>
     <button id="btnOpen">Abrir JSON</button>
@@ -75,7 +77,7 @@
     canvas.width  = COLS * TILE;
     canvas.height = ROWS * TILE;
 
-    const EMPTY = null;
+    const EMPTY          = null;
     const TILE_ID_START  = 0;
     const TILE_ID_END    = 3;
     const TILE_ID_ERASER = 99;
@@ -99,11 +101,9 @@
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // background
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // tiles
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
           const id = map[y][x];
@@ -124,7 +124,6 @@
         }
       }
 
-      // grid
       ctx.strokeStyle = "#cccccc";
       ctx.lineWidth   = 0.5;
       for (let y = 0; y <= ROWS; y++) {
@@ -138,8 +137,8 @@
     function getCell(e) {
       const r = canvas.getBoundingClientRect();
       return {
-        x: Math.floor((e.clientX - r.left)  / TILE),
-        y: Math.floor((e.clientY - r.top) / TILE),
+        x: Math.floor((e.clientX - r.left) / TILE),
+        y: Math.floor((e.clientY - r.top)  / TILE),
       };
     }
 
@@ -187,28 +186,63 @@
         `START: ${startPos ? "✓" : "✗"} | END: ${endPos ? "✓" : "✗"} | Tiles: ${count}`;
     }
 
-    // ── SALVAR ────────────────────────────
+    // ── SALVAR ────────────────────────────────────────────────────────────────
+    // Estrutura de saída:
+    // {
+    //     "level": {
+    //         "information": {
+    //             "name": "...",
+    //             "description": "...",
+    //             "author": "..."
+    //         },
+    //         "data": [
+    //         "001", "001", "002", "002", "000", "003", "001", "001", "002",
+    //         ...9 por linha, 8 espaços de indentação...
+    //         "000", "000", "000", "000", "000", "000", "000", "000", "000"
+    //         ]
+    //     }
+    // }
+    function buildDataBlock(entries) {
+      const GROUP  = 9;
+      const indent = "        "; // 8 espaços
+      const lines  = [];
+      for (let i = 0; i < entries.length; i += GROUP)
+        lines.push(indent + entries.slice(i, i + GROUP).map(e => `"${e}"`).join(", "));
+      return "[\n" + lines.join(",\n") + "\n        ]";
+    }
+
     document.getElementById("btnSave").addEventListener("click", () => {
       const entries = [];
       for (let y = 0; y < ROWS; y++)
         for (let x = 0; x < COLS; x++)
           entries.push(String(map[y][x] === EMPTY ? 0 : map[y][x]).padStart(3, "0"));
 
-      const name = document.getElementById("levelName").value || "map";
-      const json = JSON.stringify({
-        level: {
-          information: { name },
-          data: entries,
-        }
-      }, null, 2);
+      const name        = document.getElementById("levelName").value        || "";
+      const description = document.getElementById("levelDescription").value || "";
+      const author      = document.getElementById("levelAuthor").value      || "";
+
+      const json =
+`{
+    "level": {
+        "information": {
+            "name": ${JSON.stringify(name)},
+            "description": ${JSON.stringify(description)},
+            "author": ${JSON.stringify(author)}
+        },
+        "data": ${buildDataBlock(entries)}
+    }
+}`;
+
+      try { JSON.parse(json); } catch (err) { alert("JSON inválido interno."); console.error(err); return; }
 
       const a    = document.createElement("a");
       a.href     = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-      a.download = `${name}.json`;
+      a.download = `${name || "map"}.json`;
       a.click();
     });
 
-    // ── ABRIR ─────────────────────────────
+    // ── ABRIR ─────────────────────────────────────────────────────────────────
+    // Lê: level.information.{name, description, author} e level.data (array flat, "000"=vazio)
     document.getElementById("btnOpen").addEventListener("click", () => {
       const input  = document.createElement("input");
       input.type   = "file";
@@ -221,10 +255,13 @@
           let parsed;
           try { parsed = JSON.parse(reader.result); } catch { alert("JSON inválido."); return; }
 
+          const info = parsed?.level?.information;
           const data = parsed?.level?.data;
           if (!Array.isArray(data)) { alert("Formato inválido."); return; }
 
-          document.getElementById("levelName").value = parsed?.level?.information?.name ?? "";
+          document.getElementById("levelName").value        = info?.name        ?? "";
+          document.getElementById("levelDescription").value = info?.description ?? "";
+          document.getElementById("levelAuthor").value      = info?.author      ?? "";
 
           map      = makeEmptyMap();
           startPos = null;
@@ -235,6 +272,7 @@
             const y  = Math.floor(i / COLS);
             if (y >= ROWS) return;
             const id = parseInt(entry, 10);
+            // "000" = vazio no formato de arquivo; ignora zeros
             if (isNaN(id) || id === 0) return;
             map[y][x] = id;
             if (id === TILE_ID_START) startPos = { x, y };
