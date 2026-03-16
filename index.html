@@ -82,13 +82,50 @@
     const TILE_ID_END    = 3;
     const TILE_ID_ERASER = 99;
 
-    const COLORS = {
+    // ── SPRITE PATHS ──────────────────────────────────────────────────────────
+    // Altere os caminhos abaixo para apontar para seus arquivos PNG.
+    // Os caminhos são relativos ao index.html (raiz do projeto).
+    const SPRITE_PATHS = {
+      0: "textures/blocks/start_level.png",        // START marker
+      1: "textures/blocks/bricks.png",        // Tijolo
+      2: "textures/blocks/lucky_block.png",  // Lucky Block
+      3: "textures/blocks/end_level.png",          // END marker
+    };
+
+    // Fallback: usado enquanto o sprite carrega ou se o arquivo não for encontrado
+    const FALLBACK_COLORS = {
       0: { fill: "#44bb66", label: "S" },
       1: { fill: "#884422"              },
       2: { fill: "#ddaa00"              },
       3: { fill: "#bb2244", label: "E" },
     };
 
+    // ── CARREGAMENTO DE SPRITES ───────────────────────────────────────────────
+    const sprites = {};
+    let spritesReady = 0;
+    const totalSprites = Object.keys(SPRITE_PATHS).length;
+
+    function loadSprites(onAllLoaded) {
+      for (const [id, path] of Object.entries(SPRITE_PATHS)) {
+        const img = new Image();
+        img.src = path;
+
+        img.addEventListener("load", () => {
+          sprites[id] = img;
+          spritesReady++;
+          draw(); // redesenha com cada sprite que chegar
+          if (spritesReady === totalSprites) onAllLoaded();
+        });
+
+        img.addEventListener("error", () => {
+          console.warn(`[MapEditor] Sprite não encontrado: ${path} (tile id=${id}). Usando fallback.`);
+          spritesReady++;
+          if (spritesReady === totalSprites) onAllLoaded();
+        });
+      }
+    }
+
+    // ── MAPA ─────────────────────────────────────────────────────────────────
     let map      = makeEmptyMap();
     let startPos = null;
     let endPos   = null;
@@ -98,31 +135,42 @@
       return Array.from({ length: ROWS }, () => Array(COLS).fill(EMPTY));
     }
 
+    // ── DESENHO ───────────────────────────────────────────────────────────────
+    function drawTile(x, y, id) {
+      const px  = x * TILE;
+      const py  = y * TILE;
+      const img = sprites[id];
+
+      if (img) {
+        // Sprite PNG disponível
+        ctx.drawImage(img, px, py, TILE, TILE);
+      } else {
+        // Fallback: retângulo colorido + label
+        const c = FALLBACK_COLORS[id];
+        if (!c) return;
+
+        ctx.fillStyle = c.fill;
+        ctx.fillRect(px, py, TILE, TILE);
+
+        if (c.label) {
+          ctx.fillStyle    = "white";
+          ctx.font         = `bold ${Math.floor(TILE * 0.5)}px sans-serif`;
+          ctx.textAlign    = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(c.label, px + TILE / 2, py + TILE / 2);
+        }
+      }
+    }
+
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-          const id = map[y][x];
-          if (id === EMPTY) continue;
-          const c = COLORS[id];
-          if (!c) continue;
-
-          ctx.fillStyle = c.fill;
-          ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
-
-          if (c.label) {
-            ctx.fillStyle    = "white";
-            ctx.font         = `bold ${Math.floor(TILE * 0.5)}px sans-serif`;
-            ctx.textAlign    = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(c.label, x * TILE + TILE / 2, y * TILE + TILE / 2);
-          }
-        }
-      }
+      for (let y = 0; y < ROWS; y++)
+        for (let x = 0; x < COLS; x++)
+          if (map[y][x] !== EMPTY) drawTile(x, y, map[y][x]);
 
       ctx.strokeStyle = "#cccccc";
       ctx.lineWidth   = 0.5;
@@ -187,21 +235,6 @@
     }
 
     // ── SALVAR ────────────────────────────────────────────────────────────────
-    // Estrutura de saída:
-    // {
-    //     "level": {
-    //         "information": {
-    //             "name": "...",
-    //             "description": "...",
-    //             "author": "..."
-    //         },
-    //         "data": [
-    //         "001", "001", "002", "002", "000", "003", "001", "001", "002",
-    //         ...9 por linha, 8 espaços de indentação...
-    //         "000", "000", "000", "000", "000", "000", "000", "000", "000"
-    //         ]
-    //     }
-    // }
     function buildDataBlock(entries) {
       const GROUP  = 9;
       const indent = "        "; // 8 espaços
@@ -242,7 +275,6 @@
     });
 
     // ── ABRIR ─────────────────────────────────────────────────────────────────
-    // Lê: level.information.{name, description, author} e level.data (array flat, "000"=vazio)
     document.getElementById("btnOpen").addEventListener("click", () => {
       const input  = document.createElement("input");
       input.type   = "file";
@@ -272,7 +304,6 @@
             const y  = Math.floor(i / COLS);
             if (y >= ROWS) return;
             const id = parseInt(entry, 10);
-            // "000" = vazio no formato de arquivo; ignora zeros
             if (isNaN(id) || id === 0) return;
             map[y][x] = id;
             if (id === TILE_ID_START) startPos = { x, y };
@@ -297,8 +328,9 @@
     });
 
     // ── INIT ──────────────────────────────
-    draw();
     updateStatus();
+    loadSprites(() => draw()); // garante redesenho final com todos os sprites
+    draw(); // desenha imediatamente com fallback enquanto sprites carregam
   </script>
 
 </body>
