@@ -78,26 +78,26 @@
     canvas.height = ROWS * TILE;
 
     const EMPTY          = null;
-    const TILE_ID_START  = 0;
-    const TILE_ID_END    = 3;
-    const TILE_ID_ERASER = 99;
+    const TILE_ID_START  = 1;
+    const TILE_ID_END    = 4;
+    const TILE_ID_ERASER = 0;
 
     // ── SPRITE PATHS ──────────────────────────────────────────────────────────
     // Altere os caminhos abaixo para apontar para seus arquivos PNG.
     // Os caminhos são relativos ao index.html (raiz do projeto).
     const SPRITE_PATHS = {
-      0: "textures/blocks/start_level.png",        // START marker
-      1: "textures/blocks/bricks.png",        // Tijolo
-      2: "textures/blocks/lucky_block.png",  // Lucky Block
-      3: "textures/blocks/end_level.png",          // END marker
+      1: "textures/blocks/start_level.png",        // START marker
+      2: "textures/blocks/bricks.png",        // Tijolo
+      3: "textures/blocks/lucky_block.png",  // Lucky Block
+      4: "textures/blocks/end_level.png",          // END marker
     };
 
     // Fallback: usado enquanto o sprite carrega ou se o arquivo não for encontrado
     const FALLBACK_COLORS = {
-      0: { fill: "#44bb66", label: "S" },
-      1: { fill: "#884422"              },
-      2: { fill: "#ddaa00"              },
-      3: { fill: "#bb2244", label: "E" },
+      1: { fill: "#44bb66", label: "S" },
+      2: { fill: "#884422"              },
+      3: { fill: "#ddaa00"              },
+      4: { fill: "#bb2244", label: "E" },
     };
 
     // ── CARREGAMENTO DE SPRITES ───────────────────────────────────────────────

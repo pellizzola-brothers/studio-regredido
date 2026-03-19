@@ -13,10 +13,10 @@ const rows = MAX_ROWS;
 //   1  = TIJOLO (brick)
 //   2  = LUCKY BLOCK
 //   3  = END marker
-//  99  = ERASER (internal tool, never written to the map)
-const TILE_ID_START  =  0;
-const TILE_ID_END    =  3;
-const TILE_ID_ERASER = 99;
+//  0  = ERASER (internal tool, never written to the map)
+const TILE_ID_START  =  1;
+const TILE_ID_END    =  4;
+const TILE_ID_ERASER = 0;
 
 // Empty cells are null — distinct from tile ID 0 (START).
 // When saving, null → "000".
@@ -52,10 +52,10 @@ let endPos   = null;
 
 // ── CORES ────────────────────────────────
 const TILE_COLORS = {
-  0: { fill: "#00cc66", stroke: "#00ff88", label: "S" },  // start
-  1: { fill: "#8b2b13", stroke: "#b84030"              },  // tijolo
-  2: { fill: "#eecb04", stroke: "#ffd93d"              },  // lucky block
-  3: { fill: "#cc1133", stroke: "#ff3355", label: "E" },  // end
+  1: { fill: "#00cc66", stroke: "#00ff88", label: "S" },  // start
+  2: { fill: "#8b2b13", stroke: "#b84030"              },  // tijolo
+  3: { fill: "#eecb04", stroke: "#ffd93d"              },  // lucky block
+  4: { fill: "#cc1133", stroke: "#ff3355", label: "E" },  // end
 };
 
 // ── DESENHO ───────────────────────────────
