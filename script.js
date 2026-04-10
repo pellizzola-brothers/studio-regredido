@@ -1,112 +1,131 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// ── GRID CONSTRAINTS ─────────────────────
-const MAX_COLS = 30;
-const MAX_ROWS = 20;
-
-const cols = MAX_COLS;
-const rows = MAX_ROWS;
+// ── GRID ─────────────────────────────────
+const COLS = 30;
+const ROWS = 20;
 
 // ── TILE IDs ──────────────────────────────
-//   0  = START marker
-//   1  = TIJOLO (brick)
-//   2  = LUCKY BLOCK
-//   3  = END marker
-//  0  = ERASER (internal tool, never written to the map)
-const TILE_ID_START  =  1;
-const TILE_ID_END    =  4;
+const TILE_ID_START  = 1;
+const TILE_ID_END    = 4;
 const TILE_ID_ERASER = 0;
+const EMPTY          = null;
 
-// Empty cells are null — distinct from tile ID 0 (START).
-// When saving, null → "000".
-const EMPTY = null;
+// ── STATE ─────────────────────────────────
+let tileSize    = 24;
+let map         = makeEmptyMap();
+let startPos    = null;
+let endPos      = null;
+let selectedTile = 1;
+let isPainting  = false;
 
-// ── DYNAMIC CANVAS SIZING ─────────────────
-let tileSize = 32;
+// ── SPRITE PATHS ──────────────────────────
+// Altere os caminhos abaixo para apontar para seus arquivos PNG.
+const SPRITE_PATHS = {
+  1: "textures/blocks/start_level.png",
+  2: "textures/blocks/bricks.png",
+  3: "textures/blocks/lucky_block.png",
+  4: "textures/blocks/end_level.png",
+};
 
-function resizeCanvas(aw, ah) {
-  tileSize = Math.floor(Math.min(aw / cols, ah / rows));
-  if (tileSize < 1) tileSize = 1;
-  canvas.width  = tileSize * cols;
-  canvas.height = tileSize * rows;
+const TILE_COLORS = {
+  1: { fill: "#00471f", stroke: "#00e07a", label: "S" },
+  2: { fill: "#6b2510", stroke: "#b84a30" },
+  3: { fill: "#7a5800", stroke: "#e8b840" },
+  4: { fill: "#5c0018", stroke: "#f03558", label: "E" },
+};
+
+// ── SPRITES ───────────────────────────────
+const sprites = {};
+let spritesReady = 0;
+const totalSprites = Object.keys(SPRITE_PATHS).length;
+
+function loadSprites() {
+  for (const [id, path] of Object.entries(SPRITE_PATHS)) {
+    const img = new Image();
+    img.src = path;
+    img.addEventListener("load", () => {
+      sprites[id] = img;
+      spritesReady++;
+      draw();
+    });
+    img.addEventListener("error", () => {
+      console.warn(`[MapStudio] Sprite não encontrado: ${path} (tile id=${id}). Usando fallback.`);
+      spritesReady++;
+    });
+  }
+}
+
+// ── MAP ───────────────────────────────────
+function makeEmptyMap() {
+  return Array.from({ length: ROWS }, () => Array(COLS).fill(EMPTY));
+}
+
+// ── CANVAS SIZING ─────────────────────────
+function sizeCanvas() {
+  const area = document.getElementById("canvas-area");
+  const aw = area.clientWidth  - 40;
+  const ah = area.clientHeight - 60;
+  tileSize = Math.max(12, Math.floor(Math.min(aw / COLS, ah / ROWS)));
+  canvas.width  = tileSize * COLS;
+  canvas.height = tileSize * ROWS;
   draw();
 }
 
-const ro = new ResizeObserver(entries => {
-  for (const entry of entries) {
-    const { width, height } = entry.contentRect;
-    resizeCanvas(width, height);
-  }
-});
-ro.observe(document.getElementById("canvas-area"));
+window.addEventListener("resize", sizeCanvas);
 
-let selectedTile = 1;
-let isPainting   = false;
-
-// ── MAPA ─────────────────────────────────
-let map = Array.from({ length: rows }, () => Array(cols).fill(EMPTY));
-
-let startPos = null;
-let endPos   = null;
-
-// ── CORES ────────────────────────────────
-const TILE_COLORS = {
-  1: { fill: "#00cc66", stroke: "#00ff88", label: "S" },  // start
-  2: { fill: "#8b2b13", stroke: "#b84030"              },  // tijolo
-  3: { fill: "#eecb04", stroke: "#ffd93d"              },  // lucky block
-  4: { fill: "#cc1133", stroke: "#ff3355", label: "E" },  // end
-};
-
-// ── DESENHO ───────────────────────────────
+// ── DRAW ──────────────────────────────────
 function drawTile(x, y, id) {
-  const px = x * tileSize;
-  const py = y * tileSize;
-  const c  = TILE_COLORS[id];
-  if (!c) return;
+  const px  = x * tileSize;
+  const py  = y * tileSize;
+  const img = sprites[id];
 
-  ctx.fillStyle = c.fill;
-  ctx.fillRect(px, py, tileSize, tileSize);
-
-  ctx.strokeStyle = c.stroke;
-  ctx.lineWidth   = 1;
-  ctx.strokeRect(px + 0.5, py + 0.5, tileSize - 1, tileSize - 1);
-
-  if (c.label) {
-    ctx.fillStyle    = "rgba(0,0,0,0.45)";
-    ctx.font         = `bold ${Math.max(8, Math.floor(tileSize * 0.35))}px 'Share Tech Mono', monospace`;
-    ctx.textAlign    = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(c.label, px + tileSize / 2, py + tileSize / 2);
+  if (img) {
+    ctx.drawImage(img, px, py, tileSize, tileSize);
+  } else {
+    const c = TILE_COLORS[id];
+    if (!c) return;
+    ctx.fillStyle = c.fill;
+    ctx.fillRect(px, py, tileSize, tileSize);
+    ctx.strokeStyle = c.stroke;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(px + 0.5, py + 0.5, tileSize - 1, tileSize - 1);
+    if (c.label && tileSize >= 16) {
+      ctx.fillStyle    = c.stroke + "cc";
+      ctx.font         = `bold ${Math.max(8, Math.floor(tileSize * 0.38))}px 'Share Tech Mono', monospace`;
+      ctx.textAlign    = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(c.label, px + tileSize / 2, py + tileSize / 2);
+    }
   }
 }
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#0d1015";
+  ctx.fillStyle = "#070911";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++)
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
       if (map[y][x] !== EMPTY) drawTile(x, y, map[y][x]);
 
-  ctx.strokeStyle = "#1e2530";
+  ctx.strokeStyle = "#1a2030";
   ctx.lineWidth   = 1;
-  for (let y = 0; y <= rows; y++) {
+  for (let y = 0; y <= ROWS; y++) {
     ctx.beginPath(); ctx.moveTo(0, y * tileSize); ctx.lineTo(canvas.width, y * tileSize); ctx.stroke();
   }
-  for (let x = 0; x <= cols; x++) {
+  for (let x = 0; x <= COLS; x++) {
     ctx.beginPath(); ctx.moveTo(x * tileSize, 0); ctx.lineTo(x * tileSize, canvas.height); ctx.stroke();
   }
 }
 
-// ── LÓGICA DE PINTURA ─────────────────────
+// ── PAINT ─────────────────────────────────
 function paint(e) {
   const rect = canvas.getBoundingClientRect();
   const x    = Math.floor((e.clientX - rect.left) / tileSize);
   const y    = Math.floor((e.clientY - rect.top)  / tileSize);
 
-  if (x < 0 || x >= cols || y < 0 || y >= rows) return;
+  if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
 
   const current = map[y][x];
 
@@ -130,35 +149,178 @@ function paint(e) {
 
   draw();
   updateStatus();
+  // registra bloco como recente (ignora borracha)
+  if (selectedTile !== TILE_ID_ERASER && map[y][x] !== EMPTY) addRecent(selectedTile);
 }
 
-// ── EVENTOS DE MOUSE ──────────────────────
-canvas.addEventListener("mousedown", (e) => { isPainting = true; paint(e); });
+// ── MOUSE EVENTS ──────────────────────────
+canvas.addEventListener("mousedown", e => { isPainting = true; paint(e); });
 
-canvas.addEventListener("mousemove", (e) => {
+canvas.addEventListener("mousemove", e => {
   const rect = canvas.getBoundingClientRect();
   const x = Math.floor((e.clientX - rect.left) / tileSize);
   const y = Math.floor((e.clientY - rect.top)  / tileSize);
-  document.getElementById("coords-display").textContent =
-    (x >= 0 && x < cols && y >= 0 && y < rows) ? `X: ${x} | Y: ${y}` : "X: — | Y: —";
+  const txt = (x >= 0 && x < COLS && y >= 0 && y < ROWS) ? `X: ${x} | Y: ${y}` : "X: — | Y: —";
+  document.getElementById("coords-display").textContent  = txt;
+  document.getElementById("bottom-coords").textContent   = "CURSOR: " + txt;
   if (isPainting) paint(e);
 });
 
 canvas.addEventListener("mouseup",    () => { isPainting = false; });
 canvas.addEventListener("mouseleave", () => { isPainting = false; });
 
-// ── SELEÇÃO DE SPRITE ─────────────────────
-const spriteItems = document.querySelectorAll(".sprite-item");
+// ── BLOCK REGISTRY ────────────────────────
+// Adicione novos blocos aqui no futuro.
+// Campos: id, name, desc, category, tags, previewStyle, previewLabel
+const BLOCK_REGISTRY = [
+  {
+    id: 1,
+    name: "START",
+    desc: "Ponto inicial",
+    category: "logica",
+    tags: ["start", "inicio", "começo", "spawn"],
+    previewStyle: "background:#00471f; border-color:#00e07a40;",
+    previewLabel: { text: "S", color: "#00e07a" },
+  },
+  {
+    id: 2,
+    name: "Tijolo",
+    desc: "Bloco sólido",
+    category: "estrutura",
+    tags: ["tijolo", "brick", "solido", "chao", "parede"],
+    previewStyle: "background:#6b2510; border-color:#b84a3040;",
+    previewLabel: null,
+  },
+  {
+    id: 3,
+    name: "Lucky Block",
+    desc: "Bloco surpresa",
+    category: "interacao",
+    tags: ["lucky", "sorte", "surpresa", "item", "bonus"],
+    previewStyle: "background:#7a5800; border-color:#e8b84040;",
+    previewLabel: { text: "?", color: "#e8b840" },
+  },
+  {
+    id: 4,
+    name: "END",
+    desc: "Ponto final",
+    category: "logica",
+    tags: ["end", "fim", "saida", "meta", "goal"],
+    previewStyle: "background:#5c0018; border-color:#f0355540;",
+    previewLabel: { text: "E", color: "#f03558" },
+  },
+];
 
-spriteItems.forEach(sprite => {
-  sprite.addEventListener("click", () => {
-    selectedTile = parseInt(sprite.dataset.id);
-    spriteItems.forEach(s => s.classList.remove("active"));
-    sprite.classList.add("active");
+// ── FAVORITES & RECENTS ───────────────────
+let favorites = new Set();
+let recents   = []; // array de ids, máx 8
+
+function addRecent(id) {
+  recents = [id, ...recents.filter(r => r !== id)].slice(0, 8);
+}
+
+// ── BLOCK FILTER STATE ────────────────────
+let activeCategory = "todos";
+let searchQuery    = "";
+
+function getFilteredBlocks() {
+  let pool = BLOCK_REGISTRY;
+
+  if (activeCategory === "favoritos") {
+    pool = pool.filter(b => favorites.has(b.id));
+  } else if (activeCategory === "recentes") {
+    const recentBlocks = recents
+      .map(id => BLOCK_REGISTRY.find(b => b.id === id))
+      .filter(Boolean);
+    pool = recentBlocks;
+  } else if (activeCategory !== "todos") {
+    pool = pool.filter(b => b.category === activeCategory);
+  }
+
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    pool = pool.filter(b =>
+      b.name.toLowerCase().includes(q) ||
+      b.tags.some(t => t.includes(q))
+    );
+  }
+
+  return pool;
+}
+
+// ── RENDER BLOCK GRID ─────────────────────
+function renderBlockGrid() {
+  const grid   = document.getElementById("block-grid");
+  const blocks = getFilteredBlocks();
+  grid.innerHTML = "";
+
+  if (blocks.length === 0) {
+    grid.innerHTML = `<div class="block-empty">Nenhum bloco encontrado</div>`;
+    return;
+  }
+
+  blocks.forEach(block => {
+    const cell = document.createElement("div");
+    cell.className = "block-cell" + (selectedTile === block.id ? " active" : "");
+    cell.dataset.id = block.id;
+
+    const preview = document.createElement("div");
+    preview.className = "cell-preview";
+    preview.style.cssText = block.previewStyle;
+    if (block.previewLabel) {
+      preview.innerHTML = `<span style="color:${block.previewLabel.color};">${block.previewLabel.text}</span>`;
+    }
+
+    const name = document.createElement("span");
+    name.className = "cell-name";
+    name.textContent = block.name;
+
+    const favBtn = document.createElement("button");
+    favBtn.className = "fav-btn" + (favorites.has(block.id) ? " fav-on" : "");
+    favBtn.textContent = "★";
+    favBtn.title = "Favoritar";
+
+    favBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      if (favorites.has(block.id)) favorites.delete(block.id);
+      else favorites.add(block.id);
+      renderBlockGrid();
+    });
+
+    cell.addEventListener("click", () => {
+      selectedTile = block.id;
+      // Desmarca eraser
+      document.getElementById("eraser-item").classList.remove("active");
+      renderBlockGrid();
+    });
+
+    cell.append(preview, name, favBtn);
+    grid.appendChild(cell);
   });
+}
+
+// ── CATEGORY FILTER BUTTONS ───────────────
+document.getElementById("cat-filters").addEventListener("click", e => {
+  const btn = e.target.closest(".cat-btn");
+  if (!btn) return;
+  activeCategory = btn.dataset.cat;
+  document.querySelectorAll(".cat-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  renderBlockGrid();
 });
 
-document.querySelector('.sprite-item[data-id="1"]').classList.add("active");
+// ── SEARCH ────────────────────────────────
+document.getElementById("block-search").addEventListener("input", e => {
+  searchQuery = e.target.value;
+  renderBlockGrid();
+});
+
+// ── ERASER (fora do grid, sempre visível) ──
+document.getElementById("eraser-item").addEventListener("click", () => {
+  selectedTile = TILE_ID_ERASER;
+  document.getElementById("eraser-item").classList.add("active");
+  renderBlockGrid(); // tira active dos outros
+});
 
 // ── STATUS ────────────────────────────────
 function updateStatus() {
@@ -172,107 +334,45 @@ function updateStatus() {
   stEnd.className     = `status-badge ${endPos   ? "badge-on" : "badge-off"}`;
 
   let count = 0;
-  for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++)
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
       if (map[y][x] !== EMPTY) count++;
   stTiles.textContent = count;
 }
 
-// ── ABRIR JSON ────────────────────────────
-// Estrutura esperada:
-// {
-//   "level": {
-//     "information": { "name": "...", "description": "...", "author": "..." },
-//     "data": ["000", "001", ...]  // 600 entradas flat, zero-padded (30 cols × 20 rows)
-//   }
-// }
-// "000" no arquivo = célula vazia. Tile ID 0 (START) só existe quando gravado explicitamente.
-document.getElementById("openMap").addEventListener("click", () => {
-  const input  = document.createElement("input");
-  input.type   = "file";
-  input.accept = ".json,application/json";
+// ── MODAL LIMPAR ──────────────────────────
+const modalOverlay = document.getElementById("modal-overlay");
+const modalCancel  = document.getElementById("modal-cancel");
+const modalConfirm = document.getElementById("modal-confirm");
 
-  input.addEventListener("change", () => {
-    const file = input.files[0];
-    if (!file) return;
+document.getElementById("clearMap").addEventListener("click", () => {
+  modalOverlay.classList.add("open");
+});
 
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      let parsed;
-      try {
-        parsed = JSON.parse(reader.result);
-      } catch {
-        alert("Erro: arquivo JSON inválido.");
-        return;
-      }
+modalCancel.addEventListener("click", () => {
+  modalOverlay.classList.remove("open");
+});
 
-      const info = parsed?.level?.information;
-      const data = parsed?.level?.data;
+// Clique fora do modal fecha ele
+modalOverlay.addEventListener("click", e => {
+  if (e.target === modalOverlay) modalOverlay.classList.remove("open");
+});
 
-      if (!Array.isArray(data)) {
-        alert("Erro: formato de nível inválido (campo 'data' ausente ou incorreto).");
-        return;
-      }
+// Tecla Escape fecha o modal
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") modalOverlay.classList.remove("open");
+});
 
-      // Preenche metadados
-      document.getElementById("level-name").value        = info?.name        ?? "";
-      document.getElementById("level-description").value = info?.description ?? "";
-      document.getElementById("level-author").value      = info?.author      ?? "";
-
-      // Reinicia mapa
-      map      = Array.from({ length: rows }, () => Array(cols).fill(EMPTY));
-      startPos = null;
-      endPos   = null;
-
-      // Lê as entradas em ordem row-major (índice i → coluna i%cols, linha Math.floor(i/cols))
-      data.forEach((entry, i) => {
-        const x      = i % cols;
-        const y      = Math.floor(i / cols);
-        if (y >= rows) return;
-
-        const cellId = parseInt(entry, 10);
-
-        // "000" representa vazio no formato de arquivo; ignora zeros
-        if (isNaN(cellId) || cellId === 0) return;
-
-        map[y][x] = cellId;
-        if (cellId === TILE_ID_START) startPos = { x, y };
-        if (cellId === TILE_ID_END)   endPos   = { x, y };
-      });
-
-      draw();
-      updateStatus();
-    });
-
-    reader.readAsText(file);
-  });
-
-  input.click();
+modalConfirm.addEventListener("click", () => {
+  map      = makeEmptyMap();
+  startPos = null;
+  endPos   = null;
+  draw();
+  updateStatus();
+  modalOverlay.classList.remove("open");
 });
 
 // ── SALVAR JSON ───────────────────────────
-// Reproduz exatamente a estrutura do arquivo de referência:
-//
-//   {
-//       "level": {
-//           "information": {
-//               "name": "...",
-//               "description": "...",
-//               "author": "..."
-//           },
-//           "data": [
-//           "001", "001", "002", "002", "000", "003", "001", "001", "002",
-//           ...9 por linha...
-//           "000", "000", "000", "000", "000", "000", "000", "000", "000"
-//           ]
-//       }
-//   }
-//
-// Regras de formatação:
-//   • 4 espaços de indentação para cada nível do objeto
-//   • "data": array com 9 entradas por linha
-//   • Cada linha do array indentada com 8 espaços
-//   • Colchetes de abertura/fechamento alinhados com a chave "data"
 function buildDataBlock(entries) {
   const GROUP  = 9;
   const indent = "        "; // 8 espaços
@@ -283,10 +383,9 @@ function buildDataBlock(entries) {
 }
 
 document.getElementById("saveMap").addEventListener("click", () => {
-  // Serializa o mapa em ordem row-major; null → "000"
   const entries = [];
-  for (let y = 0; y < rows; y++)
-    for (let x = 0; x < cols; x++)
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
       entries.push(String(map[y][x] === EMPTY ? 0 : map[y][x]).padStart(3, "0"));
 
   const levelName        = document.getElementById("level-name").value        || "";
@@ -305,7 +404,6 @@ document.getElementById("saveMap").addEventListener("click", () => {
     }
 }`;
 
-  // Sanidade: valida antes de gravar
   try { JSON.parse(json); } catch (err) {
     alert("Erro interno: JSON inválido. Veja o console.");
     console.error(err);
@@ -321,14 +419,61 @@ document.getElementById("saveMap").addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-// ── LIMPAR ────────────────────────────────
-document.getElementById("clearMap").addEventListener("click", () => {
-  map      = Array.from({ length: rows }, () => Array(cols).fill(EMPTY));
-  startPos = null;
-  endPos   = null;
-  draw();
-  updateStatus();
+// ── ABRIR JSON ────────────────────────────
+document.getElementById("openMap").addEventListener("click", () => {
+  const input  = document.createElement("input");
+  input.type   = "file";
+  input.accept = ".json,application/json";
+
+  input.addEventListener("change", () => {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      let parsed;
+      try { parsed = JSON.parse(reader.result); } catch {
+        alert("Erro: arquivo JSON inválido.");
+        return;
+      }
+
+      const info = parsed?.level?.information;
+      const data = parsed?.level?.data;
+
+      if (!Array.isArray(data)) {
+        alert("Erro: formato de nível inválido (campo 'data' ausente ou incorreto).");
+        return;
+      }
+
+      document.getElementById("level-name").value        = info?.name        ?? "";
+      document.getElementById("level-description").value = info?.description ?? "";
+      document.getElementById("level-author").value      = info?.author      ?? "";
+
+      map      = makeEmptyMap();
+      startPos = null;
+      endPos   = null;
+
+      data.forEach((entry, i) => {
+        const x      = i % COLS;
+        const y      = Math.floor(i / COLS);
+        if (y >= ROWS) return;
+        const cellId = parseInt(entry, 10);
+        if (isNaN(cellId) || cellId === 0) return;
+        map[y][x] = cellId;
+        if (cellId === TILE_ID_START) startPos = { x, y };
+        if (cellId === TILE_ID_END)   endPos   = { x, y };
+      });
+
+      draw();
+      updateStatus();
+    });
+    reader.readAsText(file);
+  });
+
+  input.click();
 });
 
 // ── INIT ──────────────────────────────────
+sizeCanvas();
 updateStatus();
+renderBlockGrid();
+loadSprites();
