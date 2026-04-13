@@ -26,6 +26,7 @@ const SPRITE_PATHS = {
   2: "textures/blocks/bricks.png",
   3: "textures/blocks/lucky_block.png",
   4: "textures/blocks/end_level.png",
+  5: "textures/blocks/ice_excla_block.png",
 };
 
 const TILE_COLORS = {
@@ -33,6 +34,7 @@ const TILE_COLORS = {
   2: { fill: "#6b2510", stroke: "#b84a30" },
   3: { fill: "#7a5800", stroke: "#e8b840" },
   4: { fill: "#5c0018", stroke: "#f03558", label: "E" },
+  5: { fill: "#2a6080", stroke: "#7ecfef", label: "!" },
 };
 
 // ── SPRITES ───────────────────────────────
@@ -209,6 +211,15 @@ const BLOCK_REGISTRY = [
     previewStyle: "background:#5c0018; border-color:#f0355540;",
     previewLabel: { text: "E", color: "#f03558" },
   },
+  {
+    id: 5,
+    name: "Bloco de Gelo",
+    desc: "Bloco de gelo com !",
+    category: "interacao",
+    tags: ["gelo", "ice", "frio", "exclamacao", "especial", "deslizante"],
+    previewStyle: "background:#2a6080; border-color:#7ecfef40;",
+    previewLabel: { text: "!", color: "#7ecfef" },
+  },
 ];
 
 // ── FAVORITES & RECENTS ───────────────────
@@ -267,7 +278,15 @@ function renderBlockGrid() {
     const preview = document.createElement("div");
     preview.className = "cell-preview";
     preview.style.cssText = block.previewStyle;
-    if (block.previewLabel) {
+
+    // Se o sprite já estiver carregado, usa a imagem como preview
+    if (sprites[block.id]) {
+      const img = document.createElement("img");
+      img.src = sprites[block.id].src;
+      img.style.cssText = "width:100%; height:100%; object-fit:cover; border-radius:3px; display:block;";
+      preview.innerHTML = "";
+      preview.appendChild(img);
+    } else if (block.previewLabel) {
       preview.innerHTML = `<span style="color:${block.previewLabel.color};">${block.previewLabel.text}</span>`;
     }
 
