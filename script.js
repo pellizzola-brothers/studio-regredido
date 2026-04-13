@@ -4,6 +4,7 @@ const ctx = canvas.getContext("2d");
 // ── GRID ─────────────────────────────────
 const COLS = 30;
 const ROWS = 20;
+const MAX_SCENES = 9;
 
 // ── TILE IDs ──────────────────────────────
 const TILE_ID_START  = 1;
@@ -12,15 +13,18 @@ const TILE_ID_ERASER = 0;
 const EMPTY          = null;
 
 // ── STATE ─────────────────────────────────
-let tileSize    = 24;
-let map         = makeEmptyMap();
-let startPos    = null;
-let endPos      = null;
+let tileSize     = 24;
+let scenes       = [makeEmptyScene()]; // array de cenas
+let currentScene = 0;                  // índice da cena ativa
 let selectedTile = 1;
-let isPainting  = false;
+let isPainting   = false;
+let sceneToRemove = null;
+
+// Atalho para a cena ativa
+function scene()     { return scenes[currentScene]; }
+function sceneMap()  { return scene().map; }
 
 // ── SPRITE PATHS ──────────────────────────
-// Altere os caminhos abaixo para apontar para seus arquivos PNG.
 const SPRITE_PATHS = {
   1: "textures/blocks/start_level.png",
   2: "textures/blocks/bricks.png",
@@ -50,15 +54,23 @@ function loadSprites() {
       sprites[id] = img;
       spritesReady++;
       draw();
+      renderScenePreviews();
     });
     img.addEventListener("error", () => {
-      console.warn(`[MapStudio] Sprite não encontrado: ${path} (tile id=${id}). Usando fallback.`);
       spritesReady++;
     });
   }
 }
 
-// ── MAP ───────────────────────────────────
+// ── SCENE FACTORY ─────────────────────────
+function makeEmptyScene() {
+  return {
+    map: makeEmptyMap(),
+    startPos: null,
+    endPos: null,
+  };
+}
+
 function makeEmptyMap() {
   return Array.from({ length: ROWS }, () => Array(COLS).fill(EMPTY));
 }
@@ -76,7 +88,7 @@ function sizeCanvas() {
 
 window.addEventListener("resize", sizeCanvas);
 
-// ── DRAW ──────────────────────────────────
+// ── DRAW MAIN CANVAS ──────────────────────
 function drawTile(x, y, id) {
   const px  = x * tileSize;
   const py  = y * tileSize;
@@ -107,9 +119,10 @@ function draw() {
   ctx.fillStyle = "#070911";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  const m = sceneMap();
   for (let y = 0; y < ROWS; y++)
     for (let x = 0; x < COLS; x++)
-      if (map[y][x] !== EMPTY) drawTile(x, y, map[y][x]);
+      if (m[y][x] !== EMPTY) drawTile(x, y, m[y][x]);
 
   ctx.strokeStyle = "#1a2030";
   ctx.lineWidth   = 1;
@@ -121,6 +134,80 @@ function draw() {
   }
 }
 
+// ── SCENE PREVIEW THUMBNAILS ──────────────
+const PREV_W = 90;
+const PREV_H = 60;
+const PREV_TILE = PREV_W / COLS;
+
+function drawPreview(sc, canvasEl) {
+  const c = canvasEl.getContext("2d");
+  c.clearRect(0, 0, PREV_W, PREV_H);
+  c.fillStyle = "#070911";
+  c.fillRect(0, 0, PREV_W, PREV_H);
+
+  const m = sc.map;
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const id = m[y][x];
+      if (id === EMPTY) continue;
+      const px = x * PREV_TILE;
+      const py = y * PREV_TILE;
+      const img = sprites[id];
+      if (img) {
+        c.drawImage(img, px, py, PREV_TILE, PREV_H / ROWS);
+      } else {
+        const col = TILE_COLORS[id];
+        if (!col) continue;
+        c.fillStyle = col.fill;
+        c.fillRect(px, py, PREV_TILE, PREV_H / ROWS);
+      }
+    }
+  }
+}
+
+function renderScenePreviews() {
+  const container = document.getElementById("scene-previews");
+  container.innerHTML = "";
+
+  scenes.forEach((sc, idx) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "scene-thumb" + (idx === currentScene ? " active" : "");
+    wrapper.dataset.idx = idx;
+
+    const cvs = document.createElement("canvas");
+    cvs.width  = PREV_W;
+    cvs.height = PREV_H;
+    drawPreview(sc, cvs);
+
+    const label = document.createElement("div");
+    label.className = "scene-label";
+    label.textContent = `CENA ${idx + 1}`;
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "scene-remove";
+    removeBtn.textContent = "✕";
+    removeBtn.title = "Remover cena";
+    removeBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      if (scenes.length <= 1) return; // não remove a última
+      sceneToRemove = idx;
+      document.getElementById("modal-remove-overlay").classList.add("open");
+    });
+
+    wrapper.addEventListener("click", () => {
+      currentScene = idx;
+      draw();
+      updateStatus();
+      renderScenePreviews();
+    });
+
+    wrapper.appendChild(cvs);
+    wrapper.appendChild(label);
+    if (scenes.length > 1) wrapper.appendChild(removeBtn);
+    container.appendChild(wrapper);
+  });
+}
+
 // ── PAINT ─────────────────────────────────
 function paint(e) {
   const rect = canvas.getBoundingClientRect();
@@ -129,30 +216,36 @@ function paint(e) {
 
   if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
 
-  const current = map[y][x];
+  const sc      = scene();
+  const current = sc.map[y][x];
 
   if (selectedTile === TILE_ID_ERASER) {
-    if (current === TILE_ID_START) startPos = null;
-    if (current === TILE_ID_END)   endPos   = null;
-    map[y][x] = EMPTY;
+    if (current === TILE_ID_START) sc.startPos = null;
+    if (current === TILE_ID_END)   sc.endPos   = null;
+    sc.map[y][x] = EMPTY;
   } else if (selectedTile === TILE_ID_START) {
-    if (startPos) map[startPos.y][startPos.x] = EMPTY;
-    startPos  = { x, y };
-    map[y][x] = TILE_ID_START;
+    if (sc.startPos) sc.map[sc.startPos.y][sc.startPos.x] = EMPTY;
+    sc.startPos   = { x, y };
+    sc.map[y][x]  = TILE_ID_START;
   } else if (selectedTile === TILE_ID_END) {
-    if (endPos) map[endPos.y][endPos.x] = EMPTY;
-    endPos    = { x, y };
-    map[y][x] = TILE_ID_END;
+    if (sc.endPos) sc.map[sc.endPos.y][sc.endPos.x] = EMPTY;
+    sc.endPos    = { x, y };
+    sc.map[y][x] = TILE_ID_END;
   } else {
-    if (current === TILE_ID_START) startPos = null;
-    if (current === TILE_ID_END)   endPos   = null;
-    map[y][x] = selectedTile;
+    if (current === TILE_ID_START) sc.startPos = null;
+    if (current === TILE_ID_END)   sc.endPos   = null;
+    sc.map[y][x] = selectedTile;
   }
 
   draw();
   updateStatus();
-  // registra bloco como recente (ignora borracha)
-  if (selectedTile !== TILE_ID_ERASER && map[y][x] !== EMPTY) addRecent(selectedTile);
+  // Atualiza preview da cena atual
+  const thumbs = document.querySelectorAll(".scene-thumb");
+  if (thumbs[currentScene]) {
+    const cvs = thumbs[currentScene].querySelector("canvas");
+    if (cvs) drawPreview(sc, cvs);
+  }
+  if (selectedTile !== TILE_ID_ERASER && sc.map[y][x] !== EMPTY) addRecent(selectedTile);
 }
 
 // ── MOUSE EVENTS ──────────────────────────
@@ -172,8 +265,6 @@ canvas.addEventListener("mouseup",    () => { isPainting = false; });
 canvas.addEventListener("mouseleave", () => { isPainting = false; });
 
 // ── BLOCK REGISTRY ────────────────────────
-// Adicione novos blocos aqui no futuro.
-// Campos: id, name, desc, category, tags, previewStyle, previewLabel
 const BLOCK_REGISTRY = [
   {
     id: 1,
@@ -224,7 +315,7 @@ const BLOCK_REGISTRY = [
 
 // ── FAVORITES & RECENTS ───────────────────
 let favorites = new Set();
-let recents   = []; // array de ids, máx 8
+let recents   = [];
 
 function addRecent(id) {
   recents = [id, ...recents.filter(r => r !== id)].slice(0, 8);
@@ -236,18 +327,13 @@ let searchQuery    = "";
 
 function getFilteredBlocks() {
   let pool = BLOCK_REGISTRY;
-
   if (activeCategory === "favoritos") {
     pool = pool.filter(b => favorites.has(b.id));
   } else if (activeCategory === "recentes") {
-    const recentBlocks = recents
-      .map(id => BLOCK_REGISTRY.find(b => b.id === id))
-      .filter(Boolean);
-    pool = recentBlocks;
+    pool = recents.map(id => BLOCK_REGISTRY.find(b => b.id === id)).filter(Boolean);
   } else if (activeCategory !== "todos") {
     pool = pool.filter(b => b.category === activeCategory);
   }
-
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase();
     pool = pool.filter(b =>
@@ -255,11 +341,9 @@ function getFilteredBlocks() {
       b.tags.some(t => t.includes(q))
     );
   }
-
   return pool;
 }
 
-// ── RENDER BLOCK GRID ─────────────────────
 function renderBlockGrid() {
   const grid   = document.getElementById("block-grid");
   const blocks = getFilteredBlocks();
@@ -279,7 +363,6 @@ function renderBlockGrid() {
     preview.className = "cell-preview";
     preview.style.cssText = block.previewStyle;
 
-    // Se o sprite já estiver carregado, usa a imagem como preview
     if (sprites[block.id]) {
       const img = document.createElement("img");
       img.src = sprites[block.id].src;
@@ -308,7 +391,6 @@ function renderBlockGrid() {
 
     cell.addEventListener("click", () => {
       selectedTile = block.id;
-      // Desmarca eraser
       document.getElementById("eraser-item").classList.remove("active");
       renderBlockGrid();
     });
@@ -328,35 +410,52 @@ document.getElementById("cat-filters").addEventListener("click", e => {
   renderBlockGrid();
 });
 
-// ── SEARCH ────────────────────────────────
 document.getElementById("block-search").addEventListener("input", e => {
   searchQuery = e.target.value;
   renderBlockGrid();
 });
 
-// ── ERASER (fora do grid, sempre visível) ──
 document.getElementById("eraser-item").addEventListener("click", () => {
   selectedTile = TILE_ID_ERASER;
   document.getElementById("eraser-item").classList.add("active");
-  renderBlockGrid(); // tira active dos outros
+  renderBlockGrid();
+});
+
+// ── ADD SCENE ─────────────────────────────
+document.getElementById("addScene").addEventListener("click", () => {
+  if (scenes.length >= MAX_SCENES) return;
+  scenes.push(makeEmptyScene());
+  currentScene = scenes.length - 1;
+  draw();
+  updateStatus();
+  renderScenePreviews();
 });
 
 // ── STATUS ────────────────────────────────
 function updateStatus() {
+  const sc = scene();
   const stStart = document.getElementById("st-start");
   const stEnd   = document.getElementById("st-end");
   const stTiles = document.getElementById("st-tiles");
+  const stScenes = document.getElementById("st-scenes");
+  const sceneNum = document.getElementById("scene-num");
 
-  stStart.textContent = startPos ? "✓" : "✗";
-  stStart.className   = `status-badge ${startPos ? "badge-on" : "badge-off"}`;
-  stEnd.textContent   = endPos   ? "✓" : "✗";
-  stEnd.className     = `status-badge ${endPos   ? "badge-on" : "badge-off"}`;
+  sceneNum.textContent = currentScene + 1;
+
+  stStart.textContent = sc.startPos ? "✓" : "✗";
+  stStart.className   = `status-badge ${sc.startPos ? "badge-on" : "badge-off"}`;
+  stEnd.textContent   = sc.endPos   ? "✓" : "✗";
+  stEnd.className     = `status-badge ${sc.endPos   ? "badge-on" : "badge-off"}`;
 
   let count = 0;
   for (let y = 0; y < ROWS; y++)
     for (let x = 0; x < COLS; x++)
-      if (map[y][x] !== EMPTY) count++;
-  stTiles.textContent = count;
+      if (sc.map[y][x] !== EMPTY) count++;
+  stTiles.textContent  = count;
+  stScenes.textContent = scenes.length;
+
+  // Botão adicionar desabilita quando atingir MAX
+  document.getElementById("addScene").disabled = scenes.length >= MAX_SCENES;
 }
 
 // ── MODAL LIMPAR ──────────────────────────
@@ -367,49 +466,72 @@ const modalConfirm = document.getElementById("modal-confirm");
 document.getElementById("clearMap").addEventListener("click", () => {
   modalOverlay.classList.add("open");
 });
-
-modalCancel.addEventListener("click", () => {
-  modalOverlay.classList.remove("open");
-});
-
-// Clique fora do modal fecha ele
-modalOverlay.addEventListener("click", e => {
-  if (e.target === modalOverlay) modalOverlay.classList.remove("open");
-});
-
-// Tecla Escape fecha o modal
-document.addEventListener("keydown", e => {
-  if (e.key === "Escape") modalOverlay.classList.remove("open");
-});
+modalCancel.addEventListener("click", () => { modalOverlay.classList.remove("open"); });
+modalOverlay.addEventListener("click", e => { if (e.target === modalOverlay) modalOverlay.classList.remove("open"); });
 
 modalConfirm.addEventListener("click", () => {
-  map      = makeEmptyMap();
-  startPos = null;
-  endPos   = null;
+  scenes[currentScene] = makeEmptyScene();
   draw();
   updateStatus();
+  renderScenePreviews();
   modalOverlay.classList.remove("open");
+});
+
+// ── MODAL REMOVER CENA ────────────────────
+const modalRemoveOverlay = document.getElementById("modal-remove-overlay");
+document.getElementById("modal-remove-cancel").addEventListener("click", () => {
+  modalRemoveOverlay.classList.remove("open");
+  sceneToRemove = null;
+});
+modalRemoveOverlay.addEventListener("click", e => {
+  if (e.target === modalRemoveOverlay) { modalRemoveOverlay.classList.remove("open"); sceneToRemove = null; }
+});
+document.getElementById("modal-remove-confirm").addEventListener("click", () => {
+  if (sceneToRemove === null) return;
+  scenes.splice(sceneToRemove, 1);
+  if (currentScene >= scenes.length) currentScene = scenes.length - 1;
+  draw();
+  updateStatus();
+  renderScenePreviews();
+  modalRemoveOverlay.classList.remove("open");
+  sceneToRemove = null;
+});
+
+// ── ESC fecha modais ──────────────────────
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    modalOverlay.classList.remove("open");
+    modalRemoveOverlay.classList.remove("open");
+    sceneToRemove = null;
+  }
 });
 
 // ── SALVAR JSON ───────────────────────────
 function buildDataBlock(entries) {
   const GROUP  = 9;
-  const indent = "        "; // 8 espaços
+  const indent = "                "; // 16 espaços
   const lines  = [];
   for (let i = 0; i < entries.length; i += GROUP)
     lines.push(indent + entries.slice(i, i + GROUP).map(e => `"${e}"`).join(", "));
-  return "[\n" + lines.join(",\n") + "\n        ]";
+  return "[\n" + lines.join(",\n") + "\n            ]";
 }
 
 document.getElementById("saveMap").addEventListener("click", () => {
-  const entries = [];
-  for (let y = 0; y < ROWS; y++)
-    for (let x = 0; x < COLS; x++)
-      entries.push(String(map[y][x] === EMPTY ? 0 : map[y][x]).padStart(3, "0"));
-
   const levelName        = document.getElementById("level-name").value        || "";
   const levelDescription = document.getElementById("level-description").value || "";
   const levelAuthor      = document.getElementById("level-author").value      || "";
+
+  // Monta cada cena como um array de strings
+  const scenesData = scenes.map(sc => {
+    const entries = [];
+    for (let y = 0; y < ROWS; y++)
+      for (let x = 0; x < COLS; x++)
+        entries.push(String(sc.map[y][x] === EMPTY ? 0 : sc.map[y][x]).padStart(3, "0"));
+    return buildDataBlock(entries);
+  });
+
+  // data: [ [...cena1...], [...cena2...], ... ]
+  const dataStr = "[\n" + scenesData.map(s => "            " + s).join(",\n") + "\n        ]";
 
   const json =
 `{
@@ -419,7 +541,7 @@ document.getElementById("saveMap").addEventListener("click", () => {
             "description": ${JSON.stringify(levelDescription)},
             "author": ${JSON.stringify(levelAuthor)}
         },
-        "data": ${buildDataBlock(entries)}
+        "data": ${dataStr}
     }
 }`;
 
@@ -467,23 +589,35 @@ document.getElementById("openMap").addEventListener("click", () => {
       document.getElementById("level-description").value = info?.description ?? "";
       document.getElementById("level-author").value      = info?.author      ?? "";
 
-      map      = makeEmptyMap();
-      startPos = null;
-      endPos   = null;
+      // Suporte a formato legado (array plano) e novo (array de arrays)
+      let scenesRaw;
+      if (Array.isArray(data[0])) {
+        // Novo formato: array de cenas
+        scenesRaw = data;
+      } else {
+        // Formato legado: array plano → uma única cena
+        scenesRaw = [data];
+      }
 
-      data.forEach((entry, i) => {
-        const x      = i % COLS;
-        const y      = Math.floor(i / COLS);
-        if (y >= ROWS) return;
-        const cellId = parseInt(entry, 10);
-        if (isNaN(cellId) || cellId === 0) return;
-        map[y][x] = cellId;
-        if (cellId === TILE_ID_START) startPos = { x, y };
-        if (cellId === TILE_ID_END)   endPos   = { x, y };
+      scenes = scenesRaw.map(rawScene => {
+        const sc = makeEmptyScene();
+        rawScene.forEach((entry, i) => {
+          const x = i % COLS;
+          const y = Math.floor(i / COLS);
+          if (y >= ROWS) return;
+          const cellId = parseInt(entry, 10);
+          if (isNaN(cellId) || cellId === 0) return;
+          sc.map[y][x] = cellId;
+          if (cellId === TILE_ID_START) sc.startPos = { x, y };
+          if (cellId === TILE_ID_END)   sc.endPos   = { x, y };
+        });
+        return sc;
       });
 
+      currentScene = 0;
       draw();
       updateStatus();
+      renderScenePreviews();
     });
     reader.readAsText(file);
   });
@@ -495,4 +629,5 @@ document.getElementById("openMap").addEventListener("click", () => {
 sizeCanvas();
 updateStatus();
 renderBlockGrid();
+renderScenePreviews();
 loadSprites();

@@ -15,16 +15,35 @@
     <div id="modal-box">
       <div id="modal-header">
         <div class="modal-icon">⚠</div>
-        <span id="modal-title">LIMPAR GRADE</span>
+        <span id="modal-title">LIMPAR CENA</span>
       </div>
       <div id="modal-body">
-        Todos os blocos serão removidos do mapa.<br>
+        Todos os blocos da cena atual serão removidos.<br>
         <strong>Esta ação não pode ser desfeita.</strong><br>
         Deseja continuar?
       </div>
       <div id="modal-footer">
         <button class="btn-modal-cancel" id="modal-cancel">Cancelar</button>
-        <button class="btn-modal-confirm" id="modal-confirm">Limpar tudo</button>
+        <button class="btn-modal-confirm" id="modal-confirm">Limpar cena</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MODAL REMOVER CENA ── -->
+  <div id="modal-remove-overlay">
+    <div id="modal-box">
+      <div id="modal-header">
+        <div class="modal-icon">⚠</div>
+        <span id="modal-title">REMOVER CENA</span>
+      </div>
+      <div id="modal-body">
+        A cena será removida permanentemente.<br>
+        <strong>Esta ação não pode ser desfeita.</strong><br>
+        Deseja continuar?
+      </div>
+      <div id="modal-footer">
+        <button class="btn-modal-cancel" id="modal-remove-cancel">Cancelar</button>
+        <button class="btn-modal-confirm" id="modal-remove-confirm">Remover</button>
       </div>
     </div>
   </div>
@@ -43,6 +62,12 @@
         <button class="btn btn-danger" id="clearMap">✕ Limpar</button>
         <button class="btn btn-save" id="saveMap">▼ Salvar JSON</button>
       </div>
+    </div>
+
+    <!-- ── SCENE BAR ── -->
+    <div id="scene-bar">
+      <div id="scene-previews" class="scene-previews"></div>
+      <button class="btn-add-scene" id="addScene" title="Adicionar cena">＋ Nova Cena</button>
     </div>
 
     <!-- ── MAIN ── -->
@@ -107,7 +132,7 @@
         </div>
 
         <div class="sidebar-block">
-          <div class="section-label">Status</div>
+          <div class="section-label">Status — Cena <span id="scene-num">1</span></div>
           <div id="status-info">
             <div class="status-row">
               <span class="status-label">Start</span>
@@ -120,6 +145,10 @@
             <div class="status-row">
               <span class="status-label">Tiles</span>
               <span class="status-badge badge-neutral" id="st-tiles">0</span>
+            </div>
+            <div class="status-row">
+              <span class="status-label">Cenas</span>
+              <span class="status-badge badge-neutral" id="st-scenes">1</span>
             </div>
           </div>
         </div>
@@ -138,7 +167,7 @@
 
     <!-- ── BOTTOM BAR ── -->
     <div id="bottom-bar">
-      <span class="bottom-info">PELLIZZOLA BROTHERS v1.0</span>
+      <span class="bottom-info">PELLIZZOLA BROTHERS v2.0</span>
       <span class="bottom-info" id="bottom-coords">CURSOR: —</span>
     </div>
 

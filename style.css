@@ -1,5 +1,5 @@
 /* ========================================
-   MAP STUDIO — Dark Military UI
+   MAP STUDIO — Dark Military UI v2
    ======================================== */
 
 *, *::before, *::after {
@@ -152,6 +152,132 @@ html, body {
 .btn-save:hover {
   background: #f5cc60;
   border-color: #f5cc60;
+}
+
+/* ── SCENE BAR ──────────────────────────── */
+#scene-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  min-height: 88px;
+}
+
+#scene-bar::-webkit-scrollbar { height: 4px; }
+#scene-bar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.scene-previews {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── SCENE THUMBNAIL ────────────────────── */
+.scene-thumb {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 4px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  background: var(--bg-deep);
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+
+.scene-thumb:hover {
+  border-color: var(--border-lit);
+  background: var(--bg-card);
+}
+
+.scene-thumb.active {
+  border-color: var(--accent);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 1px var(--accent-dim), 0 0 12px var(--accent-glow);
+}
+
+.scene-thumb canvas {
+  display: block;
+  border-radius: 3px;
+  image-rendering: pixelated;
+}
+
+.scene-label {
+  font-family: var(--title);
+  font-size: 7px;
+  letter-spacing: 2px;
+  color: var(--text-lo);
+  text-align: center;
+  line-height: 1;
+}
+
+.scene-thumb.active .scene-label {
+  color: var(--accent);
+}
+
+/* Botão remover cena */
+.scene-remove {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  width: 14px;
+  height: 14px;
+  background: #f0355820;
+  border: 1px solid #f0355840;
+  border-radius: 3px;
+  color: var(--red);
+  font-size: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: background 0.12s;
+}
+
+.scene-remove:hover {
+  background: #f0355840;
+}
+
+/* ── BOTÃO NOVA CENA ────────────────────── */
+.btn-add-scene {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  padding: 8px 14px;
+  border-radius: 5px;
+  border: 1px dashed var(--border-lit);
+  background: transparent;
+  color: var(--text-mid);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  height: 68px;
+  align-self: center;
+}
+
+.btn-add-scene:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.btn-add-scene:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 /* ── LAYOUT ─────────────────────────────── */
@@ -481,7 +607,6 @@ html, body {
 
 .block-cell.active .cell-name { color: var(--accent); }
 
-/* Botão de favorito no canto do bloco */
 .fav-btn {
   position: absolute;
   top: 2px;
@@ -498,7 +623,6 @@ html, body {
 .fav-btn:hover { color: var(--accent); }
 .fav-btn.fav-on { color: var(--accent); }
 
-/* Mensagem de vazio */
 .block-empty {
   grid-column: 1 / -1;
   font-size: 10px;
@@ -572,8 +696,9 @@ html, body {
   font-family: var(--mono);
 }
 
-/* ── MODAL DE CONFIRMAÇÃO ───────────────── */
-#modal-overlay {
+/* ── MODAIS ─────────────────────────────── */
+#modal-overlay,
+#modal-remove-overlay {
   display: none;
   position: fixed;
   inset: 0;
@@ -583,7 +708,8 @@ html, body {
   justify-content: center;
 }
 
-#modal-overlay.open {
+#modal-overlay.open,
+#modal-remove-overlay.open {
   display: flex;
 }
 
