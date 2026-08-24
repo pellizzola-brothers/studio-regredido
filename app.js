@@ -221,7 +221,7 @@ function rowmenu(ev, li, b, k, isscript)
 			fn: () => Panel.assign(e.def, k)
 		});
 	}
-	items.push({label: 'rename', fn: () => edit(li, b, k)});
+	items.push({label: 'rename', fn: () => edit(li, b, k, isscript)});
 	items.push({label: 'delete', fn: () => (isscript ? delscript : delmidi)(k)});
 	items.push(null);
 	items.push({label: 'new script', fn: addscript});
@@ -238,8 +238,11 @@ function panelmenu(ev)
 	]);
 }
 
-/* Electron has no window.prompt, so names are typed in place. */
-function edit(li, b, old)
+/* Electron has no window.prompt, so names are typed in place.  `isscript` is
+ * the row's own kind, forwarded by the caller rather than re-derived from
+ * `old`'s prefix - `old === null` (a brand new row) is only ever a script,
+ * since MIDI is always added by import, never by inline entry. */
+function edit(li, b, old, isscript)
 {
 	const inp = document.createElement('input');
 
@@ -257,23 +260,41 @@ function edit(li, b, old)
 	inp.onmousedown = e => e.stopPropagation();
 	inp.onclick = e => e.stopPropagation();
 	inp.onblur = () => {
-		const v = clean(inp.value);
-		if (v && old === null)
-			App.newscript(v, true);
-		else if (v && old !== null && old.startsWith('midi/'))
-			renmidi(old, 'midi/' + inp.value.trim().replace(/[\\/]/g, ''));
-		else if (v && old !== null && 'scripts/' + v !== old)
-			renscript(old, 'scripts/' + v);
+		if (old === null) {
+			const v = cleanscript(inp.value);
+			if (v)
+				App.newscript(v, true);
+		} else if (isscript) {
+			const v = cleanscript(inp.value);
+			if (v && 'scripts/' + v !== old)
+				renscript(old, 'scripts/' + v);
+		} else {
+			const v = cleanmidi(inp.value, old);
+			if (v && 'midi/' + v !== old)
+				renmidi(old, 'midi/' + v);
+		}
 		sidebar();
 	};
 }
 
-function clean(s)
+function cleanscript(s)
 {
 	s = s.trim().replace(/[\\/]/g, '');
 	if (!s)
 		return '';
 	return /\.lua$/i.test(s) ? s : s + '.lua';
+}
+
+/* Preserves whichever of .mid/.midi the file already used; a bare name
+ * defaults to .mid, since that is what MIDI import writes. */
+function cleanmidi(s, old)
+{
+	s = s.trim().replace(/[\\/]/g, '');
+	if (!s)
+		return '';
+	if (/\.midi?$/i.test(s))
+		return s;
+	return s + (old && /\.midi$/i.test(old) ? '.midi' : '.mid');
 }
 
 /* Start an inline entry at the end of the script list. */
@@ -286,15 +307,15 @@ function addscript()
 	b.textContent = '';
 	li.appendChild(b);
 	ul.appendChild(li);
-	edit(li, b, null);
+	edit(li, b, null, true);
 }
 
 App.newscript = function (name, opentoo)
 {
-	let p = 'scripts/' + clean(name || 'script.lua');
+	let p = 'scripts/' + cleanscript(name || 'script.lua');
 	let n = 2;
 	while (App.doc.scripts[p] !== undefined)
-		p = 'scripts/' + clean((name || 'script').replace(/\.lua$/i, '') + '_' + n++);
+		p = 'scripts/' + cleanscript((name || 'script').replace(/\.lua$/i, '') + '_' + n++);
 
 	Undo.act(() => {
 		App.doc.scripts[p] = '-- ' + p + '\n';
@@ -330,8 +351,12 @@ function renscript(old, p)
 
 function renmidi(old, p)
 {
-	if (p === old || App.doc.midi[p] !== undefined)
+	if (p === old)
 		return;
+	if (App.doc.midi[p] !== undefined) {
+		App.say('a MIDI file named ' + p + ' already exists', true);
+		return;
+	}
 	Undo.act(() => {
 		App.doc.midi[p] = App.doc.midi[old];
 		delete App.doc.midi[old];
