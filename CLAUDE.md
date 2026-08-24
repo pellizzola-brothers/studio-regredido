@@ -29,6 +29,8 @@ relaunch. See "Driving the app headlessly" below for how to verify changes.
 ```
 main.js       Electron main: window, dialogs, the app:// protocol, all IPC.
               The only process that touches the filesystem.
+menu.js       The application menu (main process). Rebuilt on every renderer
+              state change so Undo/Redo/Close Tab are honestly enabled.
 preload.js    contextBridge surface — the renderer's entire view outward.
 lvl.js        .lvl read/write plus the level.json validator (main process).
 catalog.js    Block ids, entity definitions, backgrounds, texture loading.
@@ -140,7 +142,21 @@ diff cannot describe a resize. `Undo` calls `App.refresh()` afterwards, which
 rebuilds every view and re-syncs Monaco's models through `Code.sync()`.
 
 Ctrl+Z is bound only while the Level Editor tab is active; inside a script tab
-it belongs to Monaco, which keeps its own text history.
+it belongs to Monaco, which keeps its own text history. This is enforced by
+`menu.js`: the Edit menu's Undo/Redo items are disabled whenever the active
+tab is not `'level'`, and a disabled menu item's accelerator does not fire —
+that is what hands the key back to Monaco instead of two undo systems racing
+for it. `App.syncmenu()` (`app.js`) pushes `{tab, canUndo, canRedo}` to main
+on every tab switch and undo/redo step, driven from `undo.js`'s `Undo.end()`
+and `shift()`, and main rebuilds the whole menu from that state.
+
+The level's dirty flag follows the same depth-tracking idea: `Undo.clean`
+(`undo.js`) holds the undo depth that matches what is on disk, and
+`App.dirty` is `Undo.depth() !== Undo.clean` (`App.recheck()` in `app.js`),
+not "has anything happened since open" — so undoing back to the opened state
+clears it and redoing past it sets it again. Script edits bypass `Undo`
+entirely (Monaco's own history, above), so they set a separate
+`App.textdirty` flag that `App.recheck()` ORs in.
 
 **Rendering is viewport-culled.** `Grid.draw()` walks only visible columns and
 rows, so a 540x200 level costs what a 540x12 one does. Tile edges are snapped
@@ -185,8 +201,15 @@ definition still uses is refused.
 additions were needed for the app to be usable:
 
 - `new / open / save / save as` in the title bar. The window is frameless, so
-  there is no native menu bar to hang them on. Shortcuts: `Ctrl+N/O/S`,
-  `Ctrl+Shift+S`, `Ctrl+W` closes a script tab.
+  on Windows/Linux there is no visible menu bar to hang them on even though
+  `menu.js` sets a real one on every platform (its accelerators work
+  regardless of whether the bar itself is drawn). Kept on macOS too for now,
+  by choice rather than necessity, since removing it there is a deliberate
+  follow-up, not a default. Shortcuts (`Ctrl+N/O/S`, `Ctrl+Shift+S`,
+  `Ctrl+W` closes a script tab, `Ctrl+Z`/`Ctrl+Shift+Z` for the level's
+  undo/redo) are declared once, in the menu template, and dispatched through
+  `App`'s `ACTS` table over a `cmd` IPC channel — not matched by hand against
+  `keydown` in the renderer.
 - A status bar showing the hovered cell and the last message or error.
 - A context menu in the file manager, opened by **left**-clicking a row (right
   click works too). It carries open, assign, rename, delete, new script and
