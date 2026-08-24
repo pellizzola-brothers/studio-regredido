@@ -6,13 +6,16 @@
 	"main": "main.js",
 	"license": "MIT",
 	"scripts": {
-		"start": "electron ."
+		"start": "electron .",
+		"lint": "eslint .",
+		"check": "node tools/check.js"
 	},
 	"dependencies": {
 		"fflate": "^0.8.3",
 		"monaco-editor": "^0.53.0"
 	},
 	"devDependencies": {
-		"electron": "^43.4.1"
+		"electron": "^43.4.1",
+		"eslint": "^10.9.1"
 	}
 }

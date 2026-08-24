@@ -9,6 +9,10 @@
  * Give them ids in all three repos at once, then add them below. */
 'use strict';
 
+/* PLACEHOLDER, tex and ready are consumed by grid.js and panel.js in the
+ * renderer's shared global scope (CLAUDE.md), not by this file itself. */
+/* exported PLACEHOLDER, tex, ready */
+
 const B = 100;		/* world pixels per block; game/src/main.c draws 100x100 */
 const W = 540;		/* entries per block_data row */
 
