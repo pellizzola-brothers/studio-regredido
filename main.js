@@ -102,8 +102,27 @@ ipcMain.handle('lvl:open', guard(async () => {
 	return {path: r.filePaths[0], doc: lvl.read(r.filePaths[0])};
 }));
 
+/* A save failure is otherwise easy to miss entirely: the Text Editor tab
+ * hides the whole inspector, where the validator's output normally lands
+ * (style.css `body.text #right { display: none }`).  A native dialog reaches
+ * the user regardless of which tab is open; the inspector still gets the
+ * persistent record once the renderer sees the error come back. */
+function saveerr(err)
+{
+	dialog.showMessageBox(win, {
+		type: 'error', title: 'Save failed',
+		message: 'Could not save the level',
+		detail: String(err.message || err)
+	});
+}
+
 ipcMain.handle('lvl:save', guard(async (e, p, doc) => {
-	lvl.write(p, doc);
+	try {
+		lvl.write(p, doc);
+	} catch (err) {
+		saveerr(err);
+		throw err;
+	}
 	return {path: p};
 }));
 
@@ -114,7 +133,12 @@ ipcMain.handle('lvl:saveas', guard(async (e, doc, name) => {
 	});
 	if (r.canceled)
 		return {cancel: true};
-	lvl.write(r.filePath, doc);
+	try {
+		lvl.write(r.filePath, doc);
+	} catch (err) {
+		saveerr(err);
+		throw err;
+	}
 	return {path: r.filePath};
 }));
 
