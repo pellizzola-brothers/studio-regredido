@@ -19,10 +19,13 @@ Two modes share one window, switched by the tab strip:
 ```bash
 npm install     # also fetches the Electron binary on first run
 npm start       # launch
+npm run lint    # eslint . - tabs, 'use strict', no dead vars
+npm run check   # tools/check.js - collision grep, .lvl round trip, migrate()
 ```
 
 There is no test suite and no build step. Sources are loaded as-is; edit and
-relaunch. See "Driving the app headlessly" below for how to verify changes.
+relaunch. `npm run check` is not a substitute for exercising the running app -
+see "Driving the app headlessly" below for that.
 
 ## Layout
 
@@ -43,6 +46,7 @@ app.js        Document state, tabs, file manager, keyboard commands.
 index.html    Markup and script order.
 style.css     Colours sampled from `Pellizzola Brothers.svg`.
 textures/     Clone of github.com/pellizzola-brothers/textures at e66d748.
+tools/        check.js (npm run check) and probe.js (the headless harness).
 ```
 
 ## The .lvl format
@@ -244,6 +248,10 @@ one in `panel.js` collide, and the later file silently wins. `grid.js` uses
 grep -hoE '^(function [a-z_]+|const [A-Z_a-z]+ =)' catalog.js grid.js panel.js code.js app.js | sort | uniq -d
 ```
 
+`npm run check` (`tools/check.js`) runs the same check on every invocation, so
+a collision fails the command instead of surfacing as one file silently
+overwriting another's function at load time.
+
 **`textures/` is a plain clone, not a submodule**, because this directory is
 not itself a git repository. If you `git init` here, re-add it properly:
 `git submodule add https://github.com/pellizzola-brothers/textures.git textures`.
@@ -260,43 +268,35 @@ reference `Image` only because it is never called in the main process.
 
 ## Driving the app headlessly
 
-There is no test runner. To exercise the real app, boot it through a harness
-that installs hooks and then requires `main.js`, stubbing the native dialogs so
-open/save/discard can be driven:
-
-```js
-/* probe.js */
-const {app, dialog} = require('electron');
-const fs = require('fs');
-
-dialog.showOpenDialog = async () => ({canceled: false, filePaths: [process.env.PB_OPEN]});
-dialog.showSaveDialog = async () => ({canceled: false, filePath: process.env.PB_SAVEAS});
-dialog.showMessageBox = async () => ({response: +(process.env.PB_ANSWER || 1)});
-
-app.on('browser-window-created', (e, w) => {
-	w.webContents.on('console-message', (ev, lvl, msg) => lvl >= 1 && console.log(msg));
-	w.webContents.on('did-finish-load', () => setTimeout(async () => {
-		for (const [n, js] of JSON.parse(process.env.PB_STEPS || '[]'))
-			console.log(n, await w.webContents.executeJavaScript(js, true));
-		fs.writeFileSync(process.env.PB_SHOT, (await w.capturePage()).toPNG());
-		app.exit(0);
-	}, 3500));
-});
-
-require('/absolute/path/to/studio/main.js');
-```
+There is no test runner. `tools/probe.js` boots the real app, stubbing the
+native dialogs so open/save/discard can be driven, then runs `PB_STEPS` (a
+JSON array of `[name, js]` pairs) through `executeJavaScript` once the
+renderer has loaded and optionally writes a screenshot:
 
 ```bash
 PB_SHOT=/tmp/shot.png PB_STEPS='[["h","JSON.stringify(Grid.h)"]]' \
-	./node_modules/electron/dist/electron /tmp/probe.js
+	./node_modules/electron/dist/Electron.app/Contents/MacOS/Electron tools/probe.js   # macOS
+./node_modules/electron/dist/electron tools/probe.js                                  # Linux/Windows
 ```
 
-Run the binary at `node_modules/electron/dist/electron` directly — a
-`NODE_OPTIONS=--require` preload runs before Electron registers its built-in
-`electron` module and fails to resolve it.
+Run the platform's real binary directly rather than `npx electron` or a
+`NODE_OPTIONS=--require` preload — either runs before Electron registers its
+built-in `electron` module and fails to resolve it. The macOS binary lives
+inside `Electron.app`, not at `dist/electron` as on the other two platforms;
+`node_modules/electron/path.txt` names the exact relative path if it moves.
+
+Other env vars `tools/probe.js` reads: `PB_OPEN`/`PB_SAVEAS` (paths a stubbed
+Open/Save-As dialog returns), `PB_ANSWER` (the button index a stubbed message
+box returns, default 1), `PB_WAIT` (ms before `PB_STEPS` runs, default 3500).
+`PB_SHOT` is optional; omit it to skip the screenshot.
 
 Because the renderer scripts share a global scope, internals are reachable from
 `executeJavaScript`: `Grid`, `App`, `Panel`, `Code`, `Undo`, `setblock()`,
 `stroke()`, `at()`, `newdef()`, `menu()`, `closemenu()`. Synthetic
 `MouseEvent`s on `#cv` and on `#scripts li` go through the same handlers as
 real input, which is the useful way to test the editing rules and the menu.
+Main-process-only behaviour (a crashed or hung renderer, dialog button
+choices) is easiest driven from a copy of `tools/probe.js` that calls
+`webContents.forcefullyCrashRenderer()` or stubs `dialog.showMessageBox` to
+never resolve, rather than from a `PB_STEPS` entry, since those are outside
+what `executeJavaScript` can reach.
