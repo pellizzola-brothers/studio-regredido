@@ -22,10 +22,10 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The five items below have shipped and are removed from the findings sections
-below (4-14). Kept here, in the same `#### ID —` form the rest of the document
-uses, so every remaining cross-reference to one of these IDs still resolves to
-a real place in the file instead of a dead link.
+The fourteen items below have shipped and are removed from the findings
+sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
+document uses, so every remaining cross-reference to one of these IDs still
+resolves to a real place in the file instead of a dead link.
 
 ---
 
@@ -93,6 +93,131 @@ which does not yet exist.
 
 ---
 
+#### BUG-06 — Renaming a MIDI file mangled its name
+
+Shipped: `clean()` (`app.js`) is split into `cleanscript()` (unchanged
+behaviour) and `cleanmidi()`, which strips separators, rejects an empty
+result, and enforces `.mid`/`.midi` — preserving whichever extension the file
+already used rather than defaulting to `.lua`. `edit()` now takes the row's
+own `isscript` flag from its caller instead of re-deriving the kind from
+`old`'s `midi/` prefix. `renmidi()` no longer swallows a name collision; it
+reports it through `App.say()` exactly like `renscript()` already did.
+Verified with the probe harness: `cleanmidi("intro", "midi/intro.mid")` now
+produces `intro.mid` and `cleanmidi("a/b\\c", null)` produces `abc.mid`,
+where the old code wrote the bare, extensionless `intro`/`abc`; a colliding
+rename now reports "a MIDI file named ... already exists" through the status
+bar instead of silently doing nothing.
+
+---
+
+#### BUG-04 — Save dialog offered `.json`, but `write()` always emitted a ZIP
+
+Shipped: `main.js` now defines separate `OPENFILTERS` (`lvl`, `json`) and
+`SAVEFILTERS` (`lvl` only), passed to `showOpenDialog` and `showSaveDialog`
+respectively, so Save/Save As can no longer offer an extension the writer
+cannot honour. Verified with the probe harness: the save-as flow now only
+ever sees the `lvl`-only filter.
+
+---
+
+#### BUG-05 — A typed filename with no extension was written extensionless
+
+Shipped: `main.js`'s new `forcelvl()` appends `.lvl` to whatever
+`showSaveDialog` returns before `lvl:saveas` writes it, so a bare name typed
+into a GTK save dialog is normalised the same way macOS's and Windows'
+dialogs already normalise it. Verified with the probe harness: a stubbed save
+dialog returning `/tmp/pbtest_noext` (no extension) produced a real ZIP at
+`/tmp/pbtest_noext.lvl`, and the renderer's `App.path` was updated to match.
+
+---
+
+#### BUG-08 — The renderer supplied the path that main wrote to
+
+Shipped: `main.js` now owns a module-level `doc = {path, dirty}`. `lvl:save`
+takes only the document and writes to `doc.path`, which main itself set on
+`lvl:new`/`lvl:open`/`lvl:saveas`; `preload.js`'s `save()` no longer accepts a
+path argument at all, so the renderer has no channel through which to name an
+arbitrary write target. `doc.dirty` also replaces the ad-hoc `win.dirty`
+property, which is half of BUG-09's fix too. The renderer still keeps
+`App.path` as a display-only mirror, populated from the same responses it
+already read the path from — no new IPC event was needed for that, since
+every path-setting operation already returns the new path synchronously to
+its caller. Verified with the probe harness: `api.save()` before any path is
+known fails cleanly (`"no file to save to"`) instead of crashing or guessing a
+path; open → mutate → save round-trips to the opened file; save-as → mutate →
+save (no path argument, unlike before) writes to the path save-as recorded,
+confirmed by reading it back with `lvl.read()`.
+
+---
+
+#### ARCH-01 — Document identity lived on the wrong side of the process boundary
+
+Covered in detail as **BUG-08**, above — the same commit closes both.
+
+---
+
+#### BUG-09 — `win.dirty` was monkey-patched onto BrowserWindow; a dead renderer wedged close
+
+Shipped: the ad-hoc `win.dirty` property is gone, subsumed by BUG-08's
+`doc.dirty`. `main.js`'s `close` handler now time-bounds the renderer's
+confirm round-trip (3 s) instead of waiting on it forever, and
+`render-process-gone`/`unresponsive` on `win.webContents` both route to a new
+`deadrenderer()` that stops trusting the renderer, shows a native "Studio
+stopped responding — Reopen / Close" dialog, and lets the close through
+either way. Neither mechanism existed before this change — confirmed by
+reading the prior `main.js`, which checked only `win.dirty` and had no
+listener on either event, so a hung renderer left the window, and on
+Windows/Linux the whole app, permanently unclosable. Verified with the probe
+harness two ways: `webContents.forcefullyCrashRenderer()` while idle now
+surfaces the dialog and closes the window cleanly instead of leaving an
+orphaned one; a dirty document whose own discard dialog is made to hang
+forever (simulating a wedged renderer that never answers `req:close`) now
+recovers via the 3 s timeout and closes, instead of hanging indefinitely.
+
+---
+
+#### VIS-01 — The resting text colour failed contrast; hover was the only readable state
+
+Shipped: `--dim` retuned from `#6a4ba2` to `#9b7fd4` (5.12:1 on `--frame`, the
+worst surface — up from 2.52:1) and a new `--acc-text: #9a74e0` (4.77:1 on
+`--frame`) took over every place `--acc` had been used as a text colour
+(`.tab.on`, `.hdr`, `li.on`, `.run`, `.mi:hover`); `--acc` itself is now
+non-text use only (borders, rings, grid lines). Verified by recomputing WCAG
+relative-luminance contrast for both new values against all six surfaces they
+appear on: `--dim` now measures 5.12-5.91:1 and `--acc-text` 4.77-5.51:1
+everywhere, clearing the 4.5:1 AA threshold with what was previously the worst
+case now the closest margin, matching the audit's own measurement method.
+
+---
+
+#### VIS-02 — Control borders were invisible
+
+Shipped: `--line` (`#241938`, 1.18:1) stays for decorative separators only; a
+new `--control-border` (aliased to the existing `--acc`, `#7b56ba`) now
+borders `input`/`select`/`textarea` and the `.act` button. Verified by
+recomputing contrast: 3.12-3.59:1 against every surface a control sits on,
+clearing WCAG 1.4.11's 3:1 non-text boundary requirement (previously 1.18:1,
+failing everywhere).
+
+---
+
+#### VIS-06 — There were no focus indicators
+
+Shipped: both `outline: 0` declarations (`canvas`; `#props input/select/
+textarea:focus`) are deleted, and a single global `:focus-visible { outline:
+2px solid var(--acc); outline-offset: 2px }` rule now applies everywhere,
+including the canvas, which previously suppressed its own outline
+unconditionally. Verified statically: `style.css` now contains exactly one
+`outline` declaration — the new rule — with nothing left to override it. A
+live capture of the ring was not possible in the headless probe harness,
+since the offscreen window there never gains real OS input focus
+(`document.hasFocus()` stayed `false` even after `BrowserWindow.focus()` and
+`app.focus({steal: true})`); that is a limitation of the harness, not a claim
+about the CSS, which the browser applies unconditionally once nothing
+suppresses it.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -138,31 +263,28 @@ The **shell around that core is the problem**. Studio is a web page wearing a
 desktop application's clothes. It draws fake macOS traffic lights on every
 platform, builds its own context menus out of `<div>`s, invents its own title
 bar, and has never been packaged. Its geometry is a collection of unrelated
-pixel constants. Its resting text colour fails WCAG contrast by a factor of
-nearly two. And the font it was designed in is neither installed nor bundled,
-so the app has never actually been seen in its own typeface. It now ships a
-real application menu under its own name rather than Electron's default one
-(NAT-01, see "Already completed" above), which also closed the ⌘R data-loss
-bug and three other data-safety findings — the shell's remaining problems are
-below.
+pixel constants. And the font it was designed in is neither installed nor
+bundled, so the app has never actually been seen in its own typeface. It now
+ships a real application menu under its own name rather than Electron's
+default one (NAT-01, see "Already completed" above), which also closed the
+⌘R data-loss bug and three other data-safety findings; document identity now
+lives in main rather than split across the process boundary (BUG-08/ARCH-01);
+a dead or wedged renderer can no longer leave the window permanently
+unclosable (BUG-09); and the resting text, accent text and control-boundary
+colours all now clear WCAG AA/1.4.11 contrast (VIS-01, VIS-02), with a real
+focus ring restored everywhere (VIS-06) — see "Already completed" above for
+all of these. The shell's remaining problems are below.
 
-### The four biggest remaining sources of perceived unpolish
+### The three biggest remaining sources of perceived unpolish
 
-1. **Text is unreadable at rest and readable only on hover.** `--dim: #6a4ba2`
-   measures **2.52–2.91:1** against the three surfaces it sits on. It is the
-   colour of the title, every toolbar button, every inactive tab, every file
-   row, every inspector label, the hint text, and the whole status bar. WCAG AA
-   requires 4.5:1. `--acc: #7b56ba` (section headers, active tab, active row)
-   measures 3.33–3.59:1 — also failing at 12 px. `--line: #241938` measures
-   **1.18:1**, so every input border is invisible (VIS-01, VIS-02).
-2. **Geometry is arbitrary.** The stylesheet contains 23 distinct pixel
+1. **Geometry is arbitrary.** The stylesheet contains 23 distinct pixel
    literals with no scale: chrome bands of 34/32/24/22/13 px unrelated to the
    18 px line box; side panels pinned at 184 px and 212 px that consume 41 % of
    the 960 px minimum window; `#props { flex: 0 1 46% }`; `#scripts { flex: 1 1
    60% }`; a palette of `repeat(4, 1fr)` that computes to **42.25 px cells for
    32 px sprites** — a fractional, shimmering scale factor of 1.32 (GEO-01,
    GEO-03, GEO-07).
-3. **Nothing is native but the file dialogs, the menu and the About panel.**
+2. **Nothing is native but the file dialogs, the menu and the About panel.**
    Custom window controls, custom title, DOM context menus, no recent
    documents, no `open-file` handler, no file association, no single-instance
    lock, no drag-and-drop, no window-state persistence, no icon, no packaging
@@ -170,7 +292,7 @@ below.
    `nativeTheme`. Most of the Electron APIs that exist precisely to make this
    application feel native are still unreferenced anywhere in the tree
    (verified by grep).
-4. **The typeface is a fiction.** Measured in the running app: the strings
+3. **The typeface is a fiction.** Measured in the running app: the strings
    `"JetBrains Mono"`, `"DejaVu Sans Mono"`, `ui-monospace`, `monospace` and
    the deliberately bogus `"NoSuchFontXYZ"` all render at **exactly
    103.341796875 px** for the same test string. Every entry falls through to
@@ -184,12 +306,10 @@ In order of user-visible payoff per unit of work:
 
 | # | Change | Why |
 |---|--------|-----|
-| 1 | Retune `--dim`, `--acc`, `--line` for contrast | Fixes the "dim and unfinished" impression across the entire UI in ~6 lines |
-| 2 | Bundle JetBrains Mono as a woff2 | The app finally looks like its own design, identically on all three platforms |
-| 3 | `titleBarStyle: 'hiddenInset'` on macOS / `titleBarOverlay` on Windows; delete the fake dots | Real window controls, real focus dimming, real double-click-to-zoom |
-| 4 | One spacing/size scale derived from the 18 px line box; proportional panels with splitters | Removes every arbitrary dimension at once |
-| 5 | Native `Menu.popup()` for context menus | Keyboard navigation, screen-reader support, platform look, for less code than the DOM version |
-| 6 | Document identity owned by main (`{path, dirty}`, BUG-08) | Removes the remaining way to lose a level, and unblocks recent documents, window title conventions and window-state persistence |
+| 1 | Bundle JetBrains Mono as a woff2 | The app finally looks like its own design, identically on all three platforms |
+| 2 | `titleBarStyle: 'hiddenInset'` on macOS / `titleBarOverlay` on Windows; delete the fake dots | Real window controls, real focus dimming, real double-click-to-zoom |
+| 3 | One spacing/size scale derived from the 18 px line box; proportional panels with splitters | Removes every arbitrary dimension at once |
+| 4 | Native `Menu.popup()` for context menus | Keyboard navigation, screen-reader support, platform look, for less code than the DOM version |
 
 ---
 
@@ -260,7 +380,7 @@ refactor. This codebase is 2 627 lines and should stay small.
 | All filesystem I/O | `main.js` + `lvl.js` | Yes |
 | `.lvl` read/write/validate/migrate | `lvl.js` (main) | Yes — one copy, no renderer duplicate |
 | Native dialogs (open/save/discard/midi) | `main.js` | Yes |
-| **Which file is open; whether it is dirty** | **renderer (`App.path`, `App.dirty`)**, mirrored to main via `ipcMain.on('dirty')` | **No** — see ARCH-01 |
+| Which file is open; whether it is dirty | `main.js` (`doc = {path, dirty}`); renderer keeps a display-only mirror | Yes — done, BUG-08/ARCH-01 |
 | **Window controls (min/max/close)** | **renderer** → `win:ctl` IPC | **No** — see NAT-02 |
 | Application menu | `menu.js` (main), rebuilt on renderer state | Yes — done, NAT-01 |
 | **Context menus** | **renderer DOM** (`#menu`, `menu()` in `app.js`) | **No** — see NAT-05 |
@@ -336,151 +456,6 @@ anything else ships, P3 = nice to have).
 
 These are ordinary bugs found while auditing. They come first because polish on
 top of data loss is worthless.
-
----
-
-#### BUG-04 — Save dialog offers `.json`, but `write()` always emits a ZIP
-
-**Category** Correctness · **Severity** Medium · **Priority** P1 · **Affects** UX
-
-**Current.** `main.js:15` defines one `FILTERS` constant,
-`[{name: 'Level', extensions: ['lvl', 'json']}]`, and uses it for **both**
-`showOpenDialog` and `showSaveDialog`. `lvl.write()` unconditionally produces a
-ZIP archive. Saving as `foo.json` therefore writes a ZIP named `.json` — a file
-the website's `upload.html` and any JSON tool will reject.
-
-**Why it's a problem.** The dialog promises a format the writer cannot produce.
-
-**Evidence.** `main.js:15, 97-98, 111-112`; `lvl.js:217-222`.
-
-**Recommended.** Two constants: `OPENFILTERS` accepts `lvl` and `json` (reading
-bare JSON is a deliberate, documented feature — `lvl.js:200`); `SAVEFILTERS`
-accepts `lvl` only.
-
-**Implementation.** Split the constant; pass the right one to each dialog. Also
-force the extension on the returned path (BUG-05).
-
-**Platforms.** All three, but the symptom differs: macOS's save panel appends
-the first filter extension when the user types a bare name, GTK's does not, and
-the Windows common dialog appends the *selected* filter's extension. Forcing it
-in code makes all three identical.
-
----
-
-#### BUG-05 — A typed filename with no extension is written extensionless
-
-**Category** Correctness · **Severity** Low · **Priority** P2 · **Affects** UX
-
-**Current.** `main.js:117` writes to `r.filePath` verbatim. On Linux (GTK
-save dialog) typing `mylevel` produces a file literally called `mylevel`, which
-neither Studio's own open filter nor the OS's file association will match.
-
-**Recommended.** Normalise in main:
-`if (path.extname(p).toLowerCase() !== '.lvl') p += '.lvl';` before writing.
-Do this in one place so open, save-as, drag-drop and command-line paths agree.
-
-**Platforms.** Primarily Linux; harmless and correct on macOS/Windows.
-
----
-
-#### BUG-06 — Renaming a MIDI file mangles its name
-
-**Category** Correctness · **Severity** Medium · **Priority** P1 · **Affects** UX
-
-**Current.** `app.js:229-238`. The inline rename commit does:
-```
-const v = clean(inp.value);                       /* appends ".lua" ! */
-…
-else if (v && old !== null && old.startsWith('midi/'))
-        renmidi(old, 'midi/' + inp.value.trim().replace(/[\\/]/g, ''));
-```
-Two defects in three lines:
-1. `clean()` (`app.js:241`) is the *script* name normaliser — it appends
-   `.lua` to anything not already ending in `.lua`. It is used here only as an
-   emptiness test, but that means a MIDI renamed to a blank string that
-   `clean()` happens to make non-empty still passes the guard.
-2. The MIDI branch then ignores `v` entirely and builds its own path with no
-   normalisation at all. Renaming `intro.mid` to `intro` writes
-   `midi/intro` — no extension. The archive still contains it (`lvl.js:219`
-   copies `doc.midi` keys verbatim), so a `.lvl` ships with a MIDI the game
-   cannot recognise.
-
-**Recommended.** One normaliser per kind. `cleanscript(s)` enforces `.lua`;
-`cleanmidi(s)` strips separators, rejects empty, and enforces `.mid`/`.midi`
-(preserving whichever the original used). Validate before committing and report
-rejection through the status bar and an inline field state, not silently.
-
-**Implementation.** Split `clean()`; branch on the row's kind, which `edit()`
-already knows (`isscript` is passed to `rowmenu()` at `app.js:143` but not
-forwarded to `edit()` — forward it rather than re-deriving the kind from the
-`old.startsWith('midi/')` string test).
-
-**Risks.** `renmidi()` (`app.js:301`) silently returns on a collision. Surface
-it like `renscript()` does (`app.js:281`).
-
----
-
-#### BUG-08 — The renderer supplies the path that main writes to
-
-**Category** Architecture / security · **Severity** Medium · **Priority** P1 · **Affects** Architecture
-
-**Current.** `preload.js:12` — `save: (p, doc) => ipcRenderer.invoke('lvl:save', p, doc)`;
-`main.js:105` writes to whatever `p` arrives. The renderer holds document
-identity in `App.path` (`app.js:8`) and main holds a duplicate of the dirty
-flag as an ad-hoc property on the window object (`main.js:145`).
-
-**Why it's a problem.** Two issues, one architectural and one security:
-- **Architectural.** Document identity is a main-process concern — it is what
-  the window title, the represented file, the recent-documents list, the
-  window-state record and the save path all derive from. Splitting it across
-  the boundary means five features that need it (NAT-03, NAT-06, NAT-07,
-  NAT-10) each have to re-plumb it.
-- **Security.** A compromised or buggy renderer can write a ZIP to any path the
-  user can write to. `contextIsolation` is on and there is no remote content,
-  so this is defence in depth rather than an open hole — but the fix costs
-  nothing.
-
-**Recommended.** Main owns `{path, dirty}` for the open document. `lvl:save`
-takes only the document. `lvl:saveas` returns the new path and main records it.
-The renderer receives path changes on a `doc:path` event and uses them for
-display only.
-
-**Implementation.** Introduce a small `doc` module in main holding
-`{path, dirty}`; wire `setDocumentEdited`/`setRepresentedFilename`/
-`addRecentDocument` off its setters (NAT-03, NAT-06) so all of that lands in
-one place.
-
-**Risks.** Touches every file-operation path. Do it once, early, before NAT-03
-and NAT-06 build on it.
-
----
-
-#### BUG-09 — `win.dirty` is monkey-patched onto BrowserWindow; a dead renderer wedges close
-
-**Category** Architecture · **Severity** Medium · **Priority** P1 · **Affects** Architecture, UX
-
-**Current.** `main.js:146` sets `win.dirty = v` — an undeclared property on an
-Electron object. `main.js:47-52` refuses to close while it is truthy and asks
-the renderer to confirm. If the renderer is gone, hung, or never answers,
-`req:close` goes nowhere and **the window cannot be closed at all**; on
-Windows/Linux the app also cannot be quit, since `window-all-closed` never
-fires.
-
-**Recommended.**
-1. A module-level `let dirty = false` (subsumed by BUG-08's `doc` module).
-2. Handle `render-process-gone` and `unresponsive` on `win.webContents`: on
-   either, stop trusting the renderer, offer a native "Studio stopped
-   responding — Reopen / Close" dialog, and allow the close through.
-3. Time-bound the confirm round-trip (e.g. 3 s) and fall back to a native
-   prompt owned by main.
-
-**Platforms.** The wedge is most severe on Windows/Linux where an unclosable
-window means an unquittable app. NAT-01 has since shipped a real application
-menu, and its macOS Quit item (`role: 'appMenu'`) calls `app.quit()`, which
-closes each window through this same `win.on('close')` guard — so the wedge
-this finding describes is no longer hypothetical on macOS either; it is live
-the moment a renderer hangs while dirty. This is now the most pressing
-unfixed item in this section.
 
 ---
 
@@ -692,7 +667,7 @@ title `"untitled - Pellizzola Brothers Studio"` while `#name` reads
 `"untitled"`.
 
 **Recommended.** Main owns the title, derived from main's document state
-(BUG-08):
+(`doc = {path, dirty}` in `main.js`, done — see "Already completed", BUG-08):
 - always `win.setTitle(name + (platform === 'win32' ? ' — Pellizzola Brothers Studio' : ''))`;
 - macOS additionally `setRepresentedFilename(path || '')` and
   `setDocumentEdited(dirty)`;
@@ -816,7 +791,8 @@ save-as. Feed a File → Open Recent submenu from a persisted list of the last
 10 paths (skipping ones that no longer exist, checked lazily on menu build).
 `app.clearRecentDocuments()` behind an "Clear Menu" item.
 
-**Implementation.** In main's `doc` module (BUG-08), alongside `setPath`.
+**Implementation.** In main's `doc` module (`{path, dirty}`, done — see
+"Already completed", BUG-08), alongside the assignments to `doc.path`.
 Persist the list in `app.getPath('userData') + '/recent.json'` — the same store
 as window state (NAT-10).
 
@@ -1137,8 +1113,9 @@ that is feature quantity, not polish.
 
 **Do** handle three things that are about respecting the system rather than
 theming:
-1. **`prefers-contrast: more`** — raise border and text contrast; this
-   interacts with VIS-01/VIS-02 and is nearly free once tokens exist.
+1. **`prefers-contrast: more`** — raise border and text contrast further still
+   on top of the VIS-01/VIS-02 retune (done — see "Already completed"); nearly
+   free once the rest of the token block (GEO-01) exists.
 2. **`forced-colors: active`** (Windows High Contrast) — Chromium overrides
    colours wholesale; make sure the layout does not collapse and that
    canvas-drawn content, which forced colours cannot reach, gets a fallback
@@ -1750,108 +1727,6 @@ already exists for exactly this purpose and is the right home for the record.
 
 ---
 
-#### VIS-01 — The resting text colour fails contrast; hover is the only readable state
-
-**Category** Visual / Accessibility · **Severity** Critical · **Priority** P0 · **Affects** UI, Accessibility
-
-**Current.** `--dim: #6a4ba2` is the colour of: the window title (`#name`), all
-four hotbar buttons, every inactive tab, every file-manager row, every palette
-group heading, every inspector `<label>`, the `.act` button text, `.hint` text,
-the disabled `.mi` state, and the entire status bar. `--fg: #b9a6d6` — the
-readable colour — is used almost exclusively for `:hover`.
-
-**Measured contrast ratios** (WCAG 2.1 relative luminance):
-
-| Pair | Ratio | AA normal (4.5) | AA large (3.0) |
-|---|---|---|---|
-| `--dim` on `--panel` `#100a1a` | **2.91** | fail | fail |
-| `--dim` on `--chrome` `#100b1b` | **2.89** | fail | fail |
-| `--dim` on `--frame` `#1c1d20` | **2.52** | fail | fail |
-| `--dim` on `--hdr` `#161026` | **2.76** | fail | fail |
-| `--dim` on menu `#17102a` | **2.75** | fail | fail |
-| `--acc` `#7b56ba` on `--hdr` | **3.42** | fail | pass* |
-| `--acc` on `--chrome` | **3.58** | fail | pass* |
-| `--acc` on `--tab` `#1a122c` | **3.33** | fail | pass* |
-| `--fg` on `--panel` | 8.78 | pass | pass |
-| `--fg` on `--frame` | 7.62 | pass | pass |
-
-\* "AA large" requires ≥18.66 px bold or ≥24 px. All this text is 12 px or
-smaller, so the accent fails too.
-
-**Why it's a problem.** Two reasons, and the second is the one that matters for
-this brief.
-- **Accessibility.** The majority of the application's text is below the AA
-  threshold, some of it by 44 %.
-- **Perceived quality.** This is *why* the app reads as dim and unfinished in
-  the screenshot. The design has inverted the normal relationship: instead of
-  "readable at rest, emphasised on hover", it is "unreadable at rest, readable
-  on hover". A user's eye is being asked to work continuously.
-
-**Recommended.** Invert it back, and retune the secondary colour. Candidates
-measured against the *lightest* surface the token appears on (`--frame`), which
-is the binding constraint:
-
-| Candidate | on `--panel` | on `--frame` |
-|---|---|---|
-| `#8f6fd0` | 4.95 | 4.30 — still short on frame |
-| **`#9b7fd4`** | **5.91** | **5.12** — passes everywhere |
-| `#a08adb` | 6.62 | 5.74 |
-
-- **`--fg: #b9a6d6`** (unchanged) becomes the *default* text colour for rows,
-  buttons, labels and the title — not just the hover colour.
-- **`--dim: #9b7fd4`** becomes genuinely secondary text (hints, group headings,
-  the status bar's idle state), passing AA at 5.12:1 minimum.
-- **`--acc: #7b56ba`** is retired from small text and kept for **non-text** use
-  — borders, focus rings, the active-tab underline, canvas grid lines — where
-  it measures 3.12–3.59:1 and therefore satisfies WCAG 1.4.11's 3:1
-  requirement for UI component boundaries. For accent *text* (the active tab
-  label, the active row) introduce **`--acc-text: #9a74e0`** (4.77 on frame,
-  5.51 on panel).
-- Hover then becomes a real state change (background tint plus a small colour
-  step) rather than "text becomes legible".
-
-**Implementation.** Six token edits plus reassigning `color:` on about a dozen
-rules. This is the highest ratio of visible improvement to lines changed in the
-entire document.
-
-**Risks.** The design file's own text colour is `#7E58BE` — the design is
-itself specifying a low-contrast value. This is a case where the design must
-move: record the change and the measured ratios in `CLAUDE.md`'s deviations
-section, and, if possible, update the SVG so the two stop disagreeing (VIS-03).
-
----
-
-#### VIS-02 — Control borders are invisible
-
-**Category** Visual / Accessibility · **Severity** High · **Priority** P0 · **Affects** UI, Accessibility
-
-**Current.** `--line: #241938` measures **1.18:1** against `--panel`. It is the
-border of every `input`, `select` and `textarea` (`style.css:199`), of the
-`.act` buttons (`style.css:215`), of the context menu (`style.css:228`), and
-the separator above `#status` and `#hbar`.
-
-**Why it's a problem.** WCAG 1.4.11 requires **3:1** for the visual boundary of
-a user-interface component. At 1.18:1 the form fields in the screenshot have no
-perceptible edge — a text field is identifiable only by the text inside it, so
-an empty field (`description`, `author`) is invisible.
-
-**Recommended.** Split the token by role, because "the line between two panels"
-and "the edge of a text input" are different jobs with different requirements:
-
-- **`--line: #241938`** stays for **decorative separators** between surfaces
-  (panel edges, the rule above the status bar). WCAG explicitly exempts purely
-  decorative separators, and a subtle panel seam is correct design.
-- **`--control-border: #77599f`** (3.25 on the menu surface, 3.44 on panel,
-  2.98 on frame — use `#7b56ba`, the existing accent, at 3.39/3.59/3.12 if a
-  single value must clear 3:1 on all three) for input, select, textarea and
-  button boundaries.
-- `--acc` for the *focused* boundary, which must then be distinguishable from
-  the resting one — so pair the colour change with a ring (A11Y-03) rather than
-  relying on a 1 px colour swap alone, which is the current mechanism
-  (`style.css:204-207`) and is not sufficient on its own.
-
----
-
 #### VIS-03 — Colours diverge from the design file for no recorded reason
 
 **Category** Visual · **Severity** Low · **Priority** P2 · **Affects** UI
@@ -1873,12 +1748,12 @@ one that matters: `#7b56ba` is not the design's `#7E58BE`, nobody recorded why,
 and the design also uses a second, lighter accent `#815AC1` for filled
 elements that the implementation has no equivalent of.
 
-**Recommended.** Pick one accent deliberately. Given VIS-01 requires a lighter
-accent for text anyway, resolve all three at once: `--acc` (non-text, 3:1),
-`--acc-text` (text, 4.5:1), and record the mapping to the design's `#7E58BE` /
-`#815AC1` in `CLAUDE.md`. Then update the SVG or the deviations note so the two
-artefacts agree — a design file that silently disagrees with the build is worse
-than no design file.
+**Recommended.** Pick one accent deliberately. The contrast retune already
+shipped `--acc` (non-text, 3:1) and `--acc-text` (text, 4.5:1) — see "Already
+completed" — so what is left is recording the mapping to the design's
+`#7E58BE` / `#815AC1` in `CLAUDE.md`. Then update the SVG or the deviations
+note so the two artefacts agree — a design file that silently disagrees with
+the build is worse than no design file.
 
 ---
 
@@ -1906,9 +1781,10 @@ than no design file.
 
 Plus `backgroundColor: '#1c1d20'` in `main.js:38`, a fifth copy of `--frame`.
 
-**Why it's a problem.** Changing the accent — which VIS-01 requires — means
-finding and editing it in five files, with no way to know you got them all.
-`rgba(123,86,186,.14)` will not be found by a search for `#7b56ba`.
+**Why it's a problem.** Changing the accent — which the VIS-01 retune already
+had to do once, see "Already completed" — means finding and editing it in five
+files, with no way to know you got them all. `rgba(123,86,186,.14)` will not be
+found by a search for `#7b56ba`.
 
 **Recommended.** One source of truth, consumed three ways:
 
@@ -1984,46 +1860,6 @@ redistribution is permitted with the licence file included.
 
 ---
 
-#### VIS-06 — There are no focus indicators
-
-**Category** Visual / Accessibility · **Severity** Critical · **Priority** P0 · **Affects** UI, Accessibility
-
-**Current.** `style.css:141` — `canvas { outline: 0 }`. `style.css:206` —
-`#props … :focus { border-color: var(--acc); outline: 0 }`. Measured on a live
-input: `outlineStyle: "none"`. `:focus-visible` appears **zero times** in the
-stylesheet.
-
-Every native focus ring in the application is suppressed, and the only
-replacement is a 1 px border-colour change on form fields — from `#241938`
-(1.18:1) to `#7b56ba` (3.59:1), which is a change the eye can miss entirely on
-a field that already contains text.
-
-**Why it's a problem.** WCAG 2.4.7 (Focus Visible) is a Level A requirement,
-and beyond compliance: without a focus ring, keyboard operation is
-guesswork. Combined with A11Y-01 (most controls are not focusable at all), the
-app is effectively mouse-only.
-
-**Recommended.** One `:focus-visible` rule applied globally:
-```
-:focus-visible {
-        outline: 2px solid var(--acc);
-        outline-offset: 2px;
-        border-radius: var(--radius-1);
-}
-```
-`:focus-visible` rather than `:focus` so a mouse click does not leave a ring —
-that is the behaviour the `outline: 0` was presumably reaching for, achieved
-correctly. The 2 px width and 2 px offset are the values needed to clear WCAG
-2.4.13's minimum-area requirement against a 1 px border; state that as the
-reason in a comment.
-
-The canvas keeps `tabindex="0"` and **gains** a focus ring, because once
-keyboard editing exists (A11Y-04) the user must be able to tell the canvas has
-focus. Draw it as an inset ring inside the canvas element so it does not
-disturb the layout.
-
----
-
 #### VIS-07 — There is no interaction-state system
 
 **Category** Visual · **Severity** Medium · **Priority** P1 · **Affects** UI
@@ -2033,7 +1869,6 @@ and it is always the same mechanism: swap the text colour from `--dim` to
 `--fg`. There is:
 
 - no `:active` / pressed state on any control;
-- no `:focus-visible` (VIS-06);
 - no distinct **selected** state — `li.on`, `.tab.on` and `.cell.on` each use
   a different mechanism (colour only; colour + background; border + background)
   for the same semantic;
@@ -2052,7 +1887,7 @@ interactive surface (rows, tabs, palette cells, buttons, menu items):
 | hover | surface tint (`--surface-hover`), text unchanged |
 | active/pressed | deeper tint, no transform |
 | selected | `--acc-text` text + `--surface-selected` + a 2 px accent marker on the leading edge |
-| focus-visible | the ring from VIS-06, composable with any of the above |
+| focus-visible | the ring already shipped (VIS-06, see "Already completed"), composable with any of the above |
 | disabled | `--fg-disabled` at ≥3:1, **plus** `cursor: default`, **plus** `aria-disabled`; never opacity alone |
 
 Selected-and-focused must be distinguishable from selected-alone — that is what
@@ -2213,8 +2048,9 @@ confined to the file manager — but it is the first thing a new user sees.
 **Recommended.** An empty-state block per list: one line of secondary text
 naming what goes there and one affordance to create it —
 "No scripts yet · **New script**", "No MIDI files · **Import…**" — centred in
-the list's minimum height, using `--dim` (post-VIS-01, so it is actually
-readable) at `--font-size-sm`. Not an illustration; one line and one link.
+the list's minimum height, using `--dim` (already readable — the VIS-01
+retune is shipped, see "Already completed") at `--font-size-sm`. Not an
+illustration; one line and one link.
 
 **Depends on.** GEO-05 (so the empty state sits in a sensibly-sized region).
 
@@ -2584,8 +2420,9 @@ and nothing says so.
 
 **Recommended.** A restrained first-run:
 - Restore the **last session's document** if it still exists on disk and was
-  saved — this is what a document-based app does, and it is one line once main
-  owns the path (BUG-08) and persists it beside the window state (NAT-10).
+  saved — this is what a document-based app does, and it is one line now that
+  main owns the path (BUG-08, done — see "Already completed") once it also
+  persists it beside the window state (NAT-10).
 - Otherwise show a **start view** in place of the canvas: New Level · Open… ·
   Recent (list) — reusing the same commands, no new surfaces.
 - Empty states in the file manager (VIS-12).
@@ -2601,9 +2438,11 @@ Do not build a tour, a modal, or a settings wizard. One screen, three commands.
 **Category** UX / Data safety · **Severity** High · **Priority** P1 · **Affects** UX, Architecture
 
 **Current.** The document lives only in renderer memory until an explicit save.
-A crash, a power loss, or a `render-process-gone` (BUG-09) loses everything
-since the last save (⌘R no longer risks this — BUG-01 is shipped, see "Already
-completed"). There is no `.bak`, no journal, no recovery prompt.
+A crash, a power loss, or a `render-process-gone` event still loses everything
+since the last save — BUG-09 (shipped, see "Already completed") stops such an
+event from also wedging the window shut, but does nothing to recover the
+document itself, which is what this finding is about (⌘R no longer risks this
+either — BUG-01 is shipped). There is no `.bak`, no journal, no recovery prompt.
 
 **Recommended.** A recovery snapshot, not a full autosave (autosaving over the
 user's file is a different and more opinionated decision):
@@ -2618,8 +2457,8 @@ user's file is a different and more opinionated decision):
   (the previous contents), which costs one `copyFile` and covers "I saved over
   something good".
 
-**Depends on.** BUG-08 (main owns the document). BUG-02's atomic write is
-already in place, so a recovery snapshot only needs to reuse it.
+**Depends on.** BUG-08 (main owns the document) and BUG-02's atomic write are
+both already in place, so a recovery snapshot only needs to reuse them.
 
 **Risks.** The snapshot must not run while the renderer is mid-gesture; gate it
 on `!Grid.pan && Grid.paint < 0 && !Grid.moving`, and on `Grid.commit()` having
@@ -2717,12 +2556,12 @@ validator catching it if the user forgets.
 
 **Category** UX · **Severity** Medium · **Priority** P2 · **Affects** UX
 
-**Current.** `edit()` (`app.js:212-239`) commits on `blur`. On failure —
-duplicate name (`renscript`, `app.js:281`), a name that `clean()` empties, a
-MIDI collision (`renmidi` returns silently, `app.js:303`) — the input is
-already gone, `sidebar()` has rebuilt the list, and the user's typed text is
-lost. The only signal is a status-bar line, in a colour that fails contrast
-(VIS-01), that they may not be looking at.
+**Current.** `edit()` (`app.js`) commits on `blur`. On failure — a duplicate
+script name (`renscript`) or a duplicate MIDI name (`renmidi`, which now
+reports the collision instead of silently discarding it, BUG-06) — the input
+is already gone, `sidebar()` has rebuilt the list, and the user's typed text
+is lost. The only signal is a status-bar line (now legible at rest, VIS-01)
+that they may not be looking at.
 
 Also: Escape sets `inp.onblur = null` and calls `sidebar()`, which is correct,
 but Enter calls `inp.blur()`, so Enter and click-away are indistinguishable —
@@ -2734,7 +2573,6 @@ there is no way to say "commit" versus "I clicked elsewhere by accident".
   one-line message under it — with commit disabled while invalid.
 - On a failed commit, **keep the field open** with the text intact.
 - Enter commits, Escape cancels, blur commits-if-valid / stays-open-if-not.
-- Trim and normalise per file kind (BUG-06).
 
 ---
 
@@ -2801,9 +2639,9 @@ exists for that, and Studio should not grow a synthesiser.
 ### 4.6 Accessibility (A11Y)
 
 The brief asks that accessibility be treated as part of "professional and
-polished", not as a separate workstream. Three findings above are already
-accessibility findings — VIS-01 (contrast), VIS-02 (control borders), VIS-06
-(focus indicators) — and are not repeated here.
+polished", not as a separate workstream. Three accessibility findings —
+VIS-01 (contrast), VIS-02 (control borders), VIS-06 (focus indicators) — are
+already shipped (see "Already completed") and are not repeated here.
 
 ---
 
@@ -2890,9 +2728,10 @@ the brief warns against.
 **Category** Accessibility · **Severity** High · **Priority** P2 · **Affects** UI, UX
 
 **Current.** `<canvas id="cv" tabindex="0">` (`index.html:36`) — focusable, so
-it appears in the tab order, with `outline: 0` so focus is invisible (VIS-06),
-no accessible name, no description, and **no keyboard interaction whatsoever**.
-A keyboard user can focus the level editor and then do nothing with it.
+it appears in the tab order and (since VIS-06, shipped) now shows a visible
+focus ring, but still has no accessible name, no description, and **no
+keyboard interaction whatsoever**. A keyboard user can focus the level editor
+and then do nothing with it.
 
 **Recommended.** A canvas-based editor cannot be made fully screen-reader
 navigable without an enormous parallel DOM, and that is not a reasonable ask
@@ -2910,8 +2749,8 @@ here. What *is* reasonable, and is what comparable tools do:
    (A11Y-05) as the cursor moves: `column 14, row 2 — brick`.
 4. Keep the pointer gestures exactly as they are.
 
-**Depends on.** VIS-06 (a visible focus ring, without which step 2 is
-unusable), UX-06 (a tool indicator).
+**Depends on.** UX-06 (a tool indicator); VIS-06's focus ring, which step 2
+needs to be usable, is already shipped.
 
 ---
 
@@ -3032,16 +2871,6 @@ The codebase is small, consistently formatted, and unusually well commented —
 the module comments in `grid.js`, `undo.js`, `lvl.js` and `catalog.js` explain
 decisions rather than restating code, which is exactly right and should be
 preserved. The findings below are targeted, not a call for restructuring.
-
----
-
-#### ARCH-01 — Document identity lives on the wrong side of the process boundary
-
-Covered in detail as **BUG-08**. Summary: `App.path` and `App.dirty` live in
-the renderer and are mirrored to main by an ad-hoc `dirty` message and an
-undeclared `win.dirty` property. Six features that main must implement — window
-title, represented filename, document-edited dot, recent documents, window-state
-persistence, crash recovery — all need this state. Move it once, early.
 
 ---
 
@@ -3481,13 +3310,11 @@ chosen deliberately, not as the default the other two inherit.
 
 | Improvement | Finding |
 |---|---|
-| Main owns `{path, dirty}`; renderer displays it | BUG-08, ARCH-01 |
 | `will-navigate` + `setWindowOpenHandler` (BUG-01's own reload path is already guarded a different way, see "Already completed") | NAT-09, NAT-18 |
 | `sandbox: true` (verify, or document why not) | NAT-18 |
 | Window state persistence with display validation | NAT-10 |
 | Display-derived default window size | NAT-10, GEO-12 |
 | DPI-change handling for the canvas | BUG-12, A11Y-06 |
-| `render-process-gone` / `unresponsive` handling | BUG-09 |
 | Recovery snapshots in `userData` | UX-10 |
 | One `chrome.js` for every platform branch; `api.platform` to the renderer | ARCH-03 |
 | Consistent IPC envelope, string verdicts, one unwrap helper | ARCH-06, BUG-10 |
@@ -3568,14 +3395,20 @@ chosen deliberately, not as the default the other two inherit.
 	--canvas-bg:       #0b0813;                          /* was in grid.js */
 	--checker-a / --checker-b                            /* was literal */
 
-	/* ---- colour: text and lines (retuned for contrast, VIS-01/02) --- */
-	--fg:              #b9a6d6;   /* 7.6–8.8:1 — now the DEFAULT text   */
+	/* ---- colour: text and lines --------------------------------- */
+	/* --fg, --dim, --acc, --acc-text, --line and --control-border are
+	   shipped already (VIS-01/VIS-02, see "Already completed") with the
+	   values below; --control-border there is aliased to --acc (#7b56ba,
+	   3.1-3.6:1) rather than the alternate #77599f this block originally
+	   proposed, per the audit's own "if a single value must clear 3:1 on
+	   all three" fallback.  --fg-disabled and --danger are still open. */
+	--fg:              #b9a6d6;   /* 7.6–8.8:1 — the DEFAULT text       */
 	--dim:             #9b7fd4;   /* 5.1–5.9:1 — secondary text         */
 	--acc:             #7b56ba;   /* 3.1–3.6:1 — NON-TEXT only          */
 	--acc-text:        #9a74e0;   /* 4.8–5.5:1 — accent text            */
 	--fg-disabled:                /* ≥3:1, never opacity alone          */
 	--line:            #241938;   /* decorative separators only         */
-	--control-border:  #77599f;   /* ≥3:1 — inputs, buttons (WCAG 1.4.11) */
+	--control-border:  var(--acc);/* ≥3:1 — inputs, buttons (WCAG 1.4.11) */
 	--danger:          #ff8f8f;   /* 8.8:1 — was literal ×2             */
 
 	/* ---- borders, radius, elevation -------------------------------- */
@@ -3629,14 +3462,14 @@ the finding that resolves it.
 | **Spacing** | 23 pixel literals, 9 of them one-offs; six different gaps between the title bar and status bar alone | One 7-step scale (GEO-01) |
 | **Rows / heights** | Five unrelated band heights, none derived from the 18 px line box; `li` rows 20 px tall | Three `--row-*` tokens derived from the line box (GEO-01, GEO-02, A11Y-04) |
 | **Colour** | Nine tokens plus ~16 literals in CSS, 7 in `grid.js`, 11 in `code.js`, 1 in `main.js` | One definition, three consumers (VIS-04) |
-| **Contrast** | Resting text 2.5–2.9:1; accent text 3.3–3.6:1; borders 1.18:1; disabled ≈1.5:1; `.mi.off` ≈1.3:1 | Retuned tokens with measured ratios (VIS-01, VIS-02, VIS-07) |
-| **Borders** | One width, one colour used for both decorative seams and control edges | Split `--line` from `--control-border` (VIS-02); add `--border-strong` |
+| **Contrast** | Resting and accent text, and control borders, are fixed (VIS-01, VIS-02, done — see "Already completed"); still failing: disabled ≈1.5:1, `.mi.off` ≈1.3:1 | `--fg-disabled` at ≥3:1, never opacity alone (VIS-07) |
+| **Borders** | `--line` is now split from `--control-border` (VIS-02, done); still one width only, no distinct strong/emphasis weight | Add `--border-strong` |
 | **Radius** | `50%` and `6px`, nothing else; design specifies 26 px window/tab radius | Three-step radius scale; adopt the tab flare (VIS-09, GEO-13) |
 | **Shadows** | Exactly one, on the context menu, which is about to become native | Two-step elevation; panel `--elev-1` per the design's filters (VIS-09, GEO-13) |
 | **Scrollbars** | One of five containers styled; unstyled palette scrollbar visible in the default window; layout width varies by platform and by an OS setting | One treatment, tokenised metrics, `scrollbar-gutter: stable`, Monaco keys set (NAT-20, GEO-09, VIS-18) |
 | **Hover** | The only state; always the same mechanism (text colour swap) | Surface tint, text unchanged (VIS-07) |
 | **Active / pressed** | Does not exist | Deeper tint (VIS-07) |
-| **Focus** | Suppressed everywhere (`outline: 0`); replaced by a 1 px border-colour change on inputs only | Global `:focus-visible` ring, 2 px + 2 px offset (VIS-06) |
+| **Focus** | Fixed — a global `:focus-visible` ring, 2 px + 2 px offset, now applies everywhere including the canvas (VIS-06, done — see "Already completed") | — |
 | **Disabled** | `opacity: .35` only; ≈1.5:1; reason lives only in `title` | `--fg-disabled` at ≥3:1 + `aria-disabled` + cursor (VIS-07, VIS-13, A11Y-08) |
 | **Selected** | Three different mechanisms for one semantic (`li.on`, `.tab.on`, `.cell.on`) | One treatment: accent text + surface + leading-edge marker (VIS-07) |
 | **Icons** | Five text glyphs at four effective sizes, three of them `+`; an unused icon set exists in `textures/icons/` | Inline-SVG set, `currentColor`, one `--icon` token (VIS-11) |
@@ -3649,7 +3482,7 @@ the finding that resolves it.
 | **Error states** | `#ff8f8f` text, colour-only; save failures now reach a native dialog regardless of tab (BUG-07, shipped) but are still colour-only and unannounced otherwise | Icon + colour; live region (VIS-14, A11Y-05, A11Y-08) |
 | **Context menus** | DOM divs, no keyboard, no semantics, clamps instead of flipping | Native `Menu.popup()` (NAT-05) |
 | **Dialogs** | One message box, no `detail`, non-platform wording and button order | Per-platform template (NAT-21) |
-| **Forms** | Inputs with invisible borders; a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `--control-border`; `appearance: none` on the select control only; one shared `.field` class (VIS-02, NAT-16, VIS-15) |
+| **Forms** | Borders now visible via `--control-border` (VIS-02, done); still: a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `appearance: none` on the select control only; one shared `.field` class (NAT-16, VIS-15) |
 | **Buttons** | Text-only, no border except `.act`, no pressed state, `.acts` and `.hdr button` and `#add` all differently sized | One button component with size variants (VIS-07, GEO-08) |
 | **Resizers / splitters** | Do not exist | Four splitters, keyboard-operable (GEO-04) |
 | **Panels** | Flat, no elevation, fixed widths, not collapsible | Elevation, proportional widths, collapsible sections (GEO-03, GEO-05, VIS-09) |
@@ -3682,9 +3515,9 @@ their size (GEO-04); tabs that overflow into a scroller instead of vanishing
 
 **Files and scripts** — double-click to open a script (UX-01); row menus that
 carry row actions only (UX-02); rename that validates as you type and does not
-throw away your text (UX-15); rename that does not mangle MIDI names (BUG-06);
-delete-in-use offering reassignment instead of refusal (UX-13); MIDI export and
-metadata (UX-18).
+throw away your text (UX-15 — MIDI renaming no longer mangles the name,
+BUG-06, shipped, see "Already completed"); delete-in-use offering reassignment
+instead of refusal (UX-13); MIDI export and metadata (UX-18).
 
 **Trust and recovery** — atomic saves, an honest dirty flag, and save failures
 that are impossible to miss are shipped (BUG-02, BUG-03, BUG-07 — see "Already
@@ -3702,32 +3535,30 @@ remain (UX-03).
 
 ## 9. Accessibility summary
 
-Studio is currently **not operable without a pointer** and **fails WCAG AA
-contrast across the majority of its text**. Neither is a niche concern: the
-contrast failure is also the main reason the interface reads as unfinished.
+Studio is currently **not operable without a pointer**. Contrast and focus
+visibility — previously the main reason the interface read as unfinished —
+are fixed (VIS-01, VIS-02, VIS-06, see "Already completed").
 
 | Requirement | Status | Fix |
 |---|---|---|
 | 1.4.1 Use of Colour | Fail — disabled, error and selected states are colour-only | A11Y-08, VIS-07 |
-| 1.4.3 Contrast (Minimum) | Fail — 2.5–2.9:1 for the majority of text | VIS-01 |
-| 1.4.11 Non-text Contrast | Fail — control borders at 1.18:1 | VIS-02 |
+| 1.4.3 Contrast (Minimum) | Fixed — was 2.5–2.9:1, now 4.77–5.91:1 for the affected text | VIS-01, done |
+| 1.4.11 Non-text Contrast | Fixed — was 1.18:1, now 3.12–3.59:1 for control borders | VIS-02, done |
 | 1.4.12 Text Spacing | Fail — all-`px` layout, no response to OS text size | A11Y-06 |
 | 2.1.1 Keyboard | Fail — palette, rows, tabs, menu, canvas all unreachable | A11Y-01, A11Y-03 |
 | 2.4.3 Focus Order | Fail — 17 focusable elements, no defined order | A11Y-01 |
-| 2.4.7 Focus Visible | Fail — `outline: 0`, no `:focus-visible` anywhere | VIS-06 |
+| 2.4.7 Focus Visible | Fixed — global `:focus-visible` rule, nothing left to suppress it | VIS-06, done |
 | 2.5.8 Target Size | Fail — 12 px window controls, ~7 px tab close, 20 px rows | A11Y-04 |
 | 4.1.2 Name, Role, Value | Fail — zero `role`/`aria-*` in the application | A11Y-02 |
 | 4.1.3 Status Messages | Fail — nothing is announced | A11Y-05 |
 | 2.3.3 Animation from Interactions | N/A today; becomes required with VIS-08 | VIS-08, A11Y-07 |
 | System high contrast | Untested; will break canvas indicators | A11Y-07, VIS-16 |
 
-The highest-leverage accessibility work is not ARIA. It is, in order:
-**(1)** retune three colour tokens (VIS-01, VIS-02) — six lines, fixes four
-criteria; **(2)** add one `:focus-visible` rule (VIS-06) — five lines;
-**(3)** replace clickable `<div>`s with real controls (A11Y-01) — this is where
-the effort is, and it fixes keyboard, focus order and semantics together;
-**(4)** adopt native menus (NAT-05), which deletes an entire inaccessible
-subsystem rather than fixing it.
+The highest-leverage accessibility work remaining is not ARIA. It is, in
+order: **(1)** replace clickable `<div>`s with real controls (A11Y-01) — this
+is where the effort is, and it fixes keyboard, focus order and semantics
+together; **(2)** adopt native menus (NAT-05), which deletes an entire
+inaccessible subsystem rather than fixing it.
 
 ---
 
@@ -3743,7 +3574,6 @@ code; the flat global scope with its documented collision grep.
 
 | Problem | Finding |
 |---|---|
-| Document identity split across the process boundary | BUG-08, ARCH-01 |
 | `W` defined twice, `H`/`B` handled three different ways | ARCH-02 |
 | No platform abstraction; no platform info in the renderer | ARCH-03 |
 | Full innerHTML rebuilds on a drag hot path; hand-rolled `esc()` | ARCH-04, PERF-01 |
@@ -3814,7 +3644,7 @@ relitigated.
 | Proxy icon / edited dot | ❌ | n/a | n/a | NAT-03 |
 | Context menus | ❌ DOM | ❌ DOM | ❌ DOM (ignores GTK theme) | NAT-05 |
 | File dialogs | ✅ | ✅ | ✅ | — |
-| Save extension handling | ⚠️ OS appends | ⚠️ | ❌ no extension appended | BUG-04, BUG-05 |
+| Save extension handling | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | — |
 | Unsaved-changes dialog | ⚠️ wrong wording | ⚠️ wrong order, may render as links | ⚠️ wrong case | NAT-21 |
 | Recent documents | ❌ | ❌ | ❌ | NAT-06 |
 | File association / launch by file | ❌ | ❌ | ❌ | NAT-07 |
@@ -3834,7 +3664,7 @@ relitigated.
 | Screen reader | ❌ VoiceOver reaches nothing | ❌ Narrator | ❌ Orca | A11Y-01, A11Y-02 |
 | Notifications | ❌ | ❌ | ❌ | NAT-19 |
 | Full screen | ❌ regression: the default menu's Toggle Full Screen (⌃⌘F) had no replacement when NAT-01's own menu shipped without a View menu | ⚠️ | ⚠️ | needs a new View menu item, unfiled |
-| Quit / lifecycle | ⚠️ ⌘Q works (`role: 'appMenu'`, NAT-01) but still wedges on a hung/dirty renderer | ❌ unclosable if renderer hangs | ❌ same | BUG-09 |
+| Quit / lifecycle | ✅ ⌘Q works (`role: 'appMenu'`, NAT-01); a hung/dirty renderer no longer wedges close (BUG-09, shipped) | ✅ shipped (BUG-09) | ✅ shipped (BUG-09) | — |
 | Packaging / signing | ❌ | ❌ | ❌ | NAT-07 |
 
 **Linux desktop variance.** Every Linux row above depends on the desktop:
@@ -3855,21 +3685,16 @@ documented as one.
 | ID | Title |
 |---|---|
 | NAT-02 | Fake macOS traffic lights on every platform |
-| VIS-01 | Resting text fails contrast; hover is the only readable state |
-| VIS-02 | Control borders at 1.18:1 |
-| VIS-06 | No focus indicators anywhere |
 | A11Y-01 | Most of the interface is unreachable by keyboard |
 
-BUG-01, BUG-02, BUG-07 and NAT-01, the other four items that were listed here,
-are done — see "Already completed" at the top of this document.
+BUG-01, BUG-02, BUG-07, NAT-01, VIS-01, VIS-02 and VIS-06, the other six items
+that were listed here, are done — see "Already completed" at the top of this
+document.
 
 ### High — the difference between "works" and "finished"
 
 | ID | Title |
 |---|---|
-| BUG-06 | MIDI rename mangles the filename |
-| BUG-08 | Renderer supplies the write path; document identity split |
-| BUG-09 | `win.dirty` monkey-patch; dead renderer wedges close |
 | BUG-12 | DPI change leaves the canvas blurry |
 | NAT-03 | Title, dirty state and proxy icon ignore every convention |
 | NAT-04 | Hotbar duplicates what belongs in the menu |
@@ -3900,7 +3725,6 @@ are done — see "Already completed" at the top of this document.
 
 | ID | Title |
 |---|---|
-| BUG-04, BUG-05 | Save filters and extension handling |
 | BUG-10 | Magic integers across IPC |
 | BUG-11 | Nothing checks that a level is playable |
 | BUG-13 | Prefix-only path containment |
@@ -3949,131 +3773,126 @@ are done — see "Already completed" at the top of this document.
 
 ## 14. Implementation order
 
-The order matters because six later items depend on three foundations. Do not
+The order matters because several later items depend on foundations. Do not
 start visual work before phase 1; it will be redone.
 
 ### Phase 0 — Stop the bleeding (days)
 
-Independent, small, and each removes a way to lose work. **BUG-02** (atomic
-write), **BUG-07** (native error dialog on save failure) and **BUG-03**
-(honest dirty flag) are done — see "Already completed". Remaining:
-
-1. **BUG-04 / BUG-05** save filters and extension normalisation.
-2. **BUG-06** MIDI rename.
-
-No prerequisites. Ship these first regardless of everything else.
+Independent, small, and each removed a way to lose work. **BUG-01, BUG-02,
+BUG-03, BUG-04, BUG-05, BUG-06 and BUG-07** are all done — see "Already
+completed". Nothing remains in this phase.
 
 ### Phase 1 — Foundations (these unblock everything downstream)
 
-3. **ARCH-07** — `npm run lint`, `npm run check` (the collision grep + a
+1. **ARCH-07** — `npm run lint`, `npm run check` (the collision grep + a
    `blank → write → read` round-trip + `migrate()` over `website/levels/*`),
    and `tools/probe.js` committed. Do this first so every later change is
    verifiable at all; there is currently no way to tell whether a change broke
    something.
-4. **BUG-08 / ARCH-01** — main owns `{path, dirty}`. Unblocks NAT-03, NAT-06,
-   NAT-10, UX-10. (NAT-01 shipped without this: the menu's Undo/Redo/Close Tab
-   enablement turned out to need only `{tab, canUndo, canRedo}`, which the
-   renderer already had — document path/dirty state was never actually on the
-   critical path for the menu itself. The audit's stated dependency was
-   overcautious; corrected here so the roadmap matches what was actually
-   built.)
-5. **ARCH-03** — `chrome.js` in main, `api.platform` to the renderer,
+2. **ARCH-03** — `chrome.js` in main, `api.platform` to the renderer,
    `<html data-platform>`. Unblocks NAT-02, NAT-04, NAT-21, VIS-10. Also
    folds in `menu.js`'s own `process.platform` branch, which NAT-01 added
    outside this module and which is exactly the drift this step exists to stop.
-6. **GEO-01 + VIS-04** — the token block, in one commit: spacing, rows, type,
-   colour (retuned per VIS-01/VIS-02), radius, elevation, motion, z-index, plus
-   the `tokens.js` reader that `grid.js` and `code.js` consume. Unblocks every
-   visual finding. Nothing in §7 should be attempted before this lands.
-7. **ARCH-02** — one definition of `W`/`H`/`B`. Trivial, do it while touching
+3. **GEO-01 + VIS-04** — the token block, in one commit: spacing, rows, type,
+   radius, elevation, motion, z-index, plus the `tokens.js` reader that
+   `grid.js` and `code.js` consume. The colour half of this block (VIS-01,
+   VIS-02) is already shipped — see "Already completed" — so this step is
+   narrower than originally scoped: everything except colour. Unblocks every
+   remaining visual finding. Nothing in §7 should be attempted before this
+   lands.
+4. **ARCH-02** — one definition of `W`/`H`/`B`. Trivial, do it while touching
    `lvl.js`.
 
 ### Phase 2 — Native shell
 
 **NAT-01** (menu template + `productName` + `setName` + About panel, Reload/
 DevTools behind `!app.isPackaged`) is done and **closed BUG-01** — see
-"Already completed". That also means **BUG-09 is now the most urgent item in
-this phase**, not a co-requisite to land alongside it: macOS's ⌘Q already
-routes through `role: 'appMenu'` → `app.quit()` → the same `win.on('close')`
-guard a hung renderer wedges, so the risk is already live, unguarded, today.
+"Already completed". **BUG-09** (renderer-death handling) is also done, so the
+wedge risk that a hung renderer posed under NAT-01's ⌘Q → `app.quit()` path is
+already closed.
 
-8. **BUG-09** renderer-death handling — do this next, before anything else in
-   this phase; it is the one live gap NAT-01 opened.
-9. **NAT-18** `will-navigate`, `setWindowOpenHandler`, `sandbox: true` — closes
+5. **NAT-18** `will-navigate`, `setWindowOpenHandler`, `sandbox: true` — closes
    the drag-and-drop navigation hole (NAT-09) that BUG-01's own fix did not
    cover.
-10. **NAT-02** real window chrome per platform; delete the fake dots and
-    `win:ctl`.
-11. **NAT-03** title, represented filename, edited dot (needs 4 and 10).
-12. **NAT-04** hotbar per platform (needs 5; the menu itself no longer blocks
-    this).
-13. **NAT-05** native context menus; delete `#menu` and ~55 lines of `app.js`.
-    Reuse the `cmd`/`ACTS` dispatcher NAT-01 already built rather than adding a
-    second one.
-14. **NAT-21** dialog per platform; **BUG-10** string verdicts.
-15. **NAT-10** window state persistence with display validation.
-16. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
+6. **NAT-02** real window chrome per platform; delete the fake dots and
+   `win:ctl`.
+7. **NAT-03** title, represented filename, edited dot (needs 6; document
+   identity itself is already in main, BUG-08, done).
+8. **NAT-04** hotbar per platform (needs 2; the menu itself no longer blocks
+   this).
+9. **NAT-05** native context menus; delete `#menu` and ~55 lines of `app.js`.
+   Reuse the `cmd`/`ACTS` dispatcher NAT-01 already built rather than adding a
+   second one.
+10. **NAT-21** dialog per platform; **BUG-10** string verdicts.
+11. **NAT-10** window state persistence with display validation.
+12. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
     **NAT-06** recent documents; **NAT-09** drag and drop. These four are one
-    coherent piece of work and share prerequisites.
+    coherent piece of work and share prerequisites — all can build directly on
+    the `doc` module (BUG-08, done).
 
 ### Phase 3 — Design system made real
 
-17. **VIS-01 / VIS-02 / VIS-06** — token retune plus the global
-    `:focus-visible` rule. Six lines of CSS for four WCAG criteria; do it the
-    moment phase 1 lands.
-18. **VIS-05** bundle JetBrains Mono. Everything after this is measured in the
+The contrast/focus-ring step originally scheduled here (VIS-01, VIS-02,
+VIS-06) is done — see "Already completed" — so this phase starts one step
+later than originally scoped.
+
+13. **VIS-05** bundle JetBrains Mono. Everything after this is measured in the
     real typeface, so it must precede any type-metric work.
-19. **VIS-07** the five-state contract, applied to every interactive surface.
-20. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
+14. **VIS-07** the five-state contract, applied to every interactive surface.
+15. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
     capitalisation.
-21. **NAT-20 / GEO-09** one scrollbar treatment across all five containers;
+16. **NAT-20 / GEO-09** one scrollbar treatment across all five containers;
     **VIS-18** Monaco theme generated from tokens.
-22. **GEO-07** integer palette cells; **GEO-02 / GEO-08** band heights and
+17. **GEO-07** integer palette cells; **GEO-02 / GEO-08** band heights and
     one-offs onto the scale.
-23. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
+18. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
     messages, `.field`/`.cell.add` classes, canvas indicators, missing-texture
     treatment.
 
 ### Phase 4 — Layout and interaction
 
-24. **PERF-04** resize coalescing — **before** GEO-04, or splitter drags will
+19. **PERF-04** resize coalescing — **before** GEO-04, or splitter drags will
     stutter.
-25. **GEO-03 / GEO-04** proportional panels and four keyboard-operable
+20. **GEO-03 / GEO-04** proportional panels and four keyboard-operable
     splitters; **GEO-05 / GEO-06** content-driven list and inspector heights.
-26. **NAT-11** wheel semantics; **GEO-11** named canvas constants;
+21. **NAT-11** wheel semantics; **GEO-11** named canvas constants;
     **GEO-10** vertical scrollbar; **UX-04** zoom controls and a real fit,
     including the new View menu that also gives Toggle Full Screen a home
     again (see §12, "Full screen").
-27. **NAT-13** cursors; **NAT-12** canvas context menu and Ctrl+click;
+22. **NAT-13** cursors; **NAT-12** canvas context menu and Ctrl+click;
     **UX-12** gesture cancel.
-28. **PERF-01** `Panel.update()` split (with **ARCH-04**); **PERF-02** cached
+23. **PERF-01** `Panel.update()` split (with **ARCH-04**); **PERF-02** cached
     rect and refs.
-29. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
+24. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
     tab switching, region operations — the menu/shortcut consolidation itself
     is done, NAT-01).
 
 ### Phase 5 — Accessibility completion
 
-30. **A11Y-01** real controls with roving tabindex — palette, rows, tabs. The
+25. **A11Y-01** real controls with roving tabindex — palette, rows, tabs. The
     largest single piece of work in this document.
-31. **A11Y-02** semantics and landmarks; **A11Y-05** live regions.
-32. **A11Y-04** hit targets (mostly free once GEO-01's `--row` lands).
-33. **A11Y-03** canvas keyboard cursor; **A11Y-06** scaling; **A11Y-07**
-    system preferences; **A11Y-08** non-colour cues.
+26. **A11Y-02** semantics and landmarks; **A11Y-05** live regions.
+27. **A11Y-04** hit targets (mostly free once GEO-01's `--row` lands).
+28. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
+    already in place); **A11Y-06** scaling; **A11Y-07** system preferences;
+    **A11Y-08** non-colour cues.
 
 ### Phase 6 — Reliability and remaining QOL
 
-34. **UX-10** recovery snapshots and `.bak` (its atomic-write dependency,
-    BUG-02, is already in place); **BUG-11** playability warnings.
-35. **ARCH-08** lazy Monaco; **PERF-07** show-after-ready; **PERF-05** refresh
+29. **UX-10** recovery snapshots and `.bak` (its dependencies, BUG-02's atomic
+    write and BUG-08's `doc` module, are already in place); **BUG-11**
+    playability warnings.
+30. **ARCH-08** lazy Monaco; **PERF-07** show-after-ready; **PERF-05** refresh
     granularity.
-36. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
+31. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
     async I/O *if* measurement justifies it.
-37. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
+32. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
     UX-15 / UX-17** — the remaining workflow items, each independent. UX-03 is
     narrower than originally scoped: the menu items themselves already exist
-    (NAT-01), only per-action labelling is left.
-38. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
+    (NAT-01), only per-action labelling is left. UX-15 is also narrower: the
+    contrast and MIDI-collision problems it cited are already fixed (VIS-01,
+    BUG-06).
+33. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
     NAT-17 is narrower too: the About panel already shipped (NAT-01), only the
     Dock menu and JumpList tasks are left.
 
@@ -4081,19 +3900,21 @@ guard a hung renderer wedges, so the risk is already live, unguarded, today.
 
 ```
 ARCH-07 (checks) ─────────────────────────────► everything (verifiability)
-BUG-08 (doc state) ───┬─► NAT-03 ─► NAT-10 ─► UX-10
-                      └─► NAT-06 ─► NAT-07 ─► NAT-08
 ARCH-03 (platform) ───┬─► NAT-02 ─► NAT-03, NAT-04
                       ├─► NAT-21, VIS-10
                       └─► absorbs menu.js's own process.platform branch (NAT-01)
-GEO-01 + VIS-04 ──────┬─► VIS-01, VIS-02, VIS-06, VIS-07, VIS-08, VIS-09
-   (tokens)           ├─► GEO-02, GEO-07, GEO-08, GEO-09, NAT-20, VIS-18
-                      └─► NAT-02 (traffic-light position, overlay colours)
+GEO-01 + VIS-04 ──────┬─► VIS-07, VIS-08, VIS-09
+   (tokens; colour     ├─► GEO-02, GEO-07, GEO-08, GEO-09, NAT-20, VIS-18
+   half already done)  └─► NAT-02 (traffic-light position, overlay colours)
 VIS-05 (font) ────────► anything depending on type metrics
-BUG-09 ───────────────► the live gap NAT-01 (closed) opened; do this first in phase 2
 PERF-04 ──────────────► GEO-04 (splitters)
 A11Y-01 ──────────────► A11Y-02, A11Y-03, A11Y-04
 NAT-05 ───────────────► deletes an entire inaccessible subsystem
+
+Done and no longer on this graph: BUG-08 (doc state) unblocked NAT-03, NAT-06,
+NAT-07, NAT-08, NAT-10, UX-10, all of which can now build on it directly;
+BUG-09 closed the live gap NAT-01 opened; VIS-01/VIS-02/VIS-06 unblocked
+nothing else in this graph (the rest of GEO-01/VIS-04 does not depend on them).
 ```
 
 ---
@@ -4206,8 +4027,8 @@ demonstrably true. Each is checkable, not a matter of opinion.
       legacy levels.
 - [ ] `tools/probe.js` is committed and documented, so the app can be driven
       headlessly with one command.
-- [ ] Document identity lives in the main process; the renderer never supplies
-      a filesystem path.
+- [x] Document identity lives in the main process; the renderer never supplies
+      a filesystem path. (BUG-08/ARCH-01)
 - [ ] Exactly two places contain platform branches: `chrome.js` in main, and
       `[data-platform]` selectors in CSS.
 - [ ] `W`, `H` and `B` are each defined once.
