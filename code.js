@@ -68,6 +68,8 @@ Code.model = function (path)
 		if (Code.quiet)
 			return;			/* our own write, from an undo */
 		App.doc.scripts[path] = m.getValue();
+		App.textdirty = true;		/* Monaco keeps its own history, so
+						 * Undo.depth() knows nothing of this */
 		App.touch();
 	});
 	Code.models.set(path, m);

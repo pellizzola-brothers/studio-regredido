@@ -10,7 +10,10 @@
  * strings and byte arrays, so the copy is a handful of pointers. */
 'use strict';
 
-const Undo = {past: [], future: [], step: null, quiet: false};
+/* `clean` is the depth at which the document last matched disk, so dirty is
+ * `depth() !== clean` instead of "anything happened since open", which is
+ * what let undoing every edit back to the opened state still read as dirty. */
+const Undo = {past: [], future: [], step: null, quiet: false, clean: 0};
 
 function shot()
 {
@@ -79,8 +82,16 @@ Undo.end = function ()
 	s.after = shot();
 	if (!s.cells.length && !s.grid && same(s.before, s.after))
 		return;				/* the gesture changed nothing */
+	/* The clean marker may be sitting in the redo path this edit is about to
+	 * discard.  Once that path is gone the saved state can never be reached
+	 * again, so pin the marker somewhere depth() can never land, or a later
+	 * coincidence of depth would read as clean when it is not. */
+	if (Undo.future.length && Undo.clean > Undo.past.length)
+		Undo.clean = -1;
 	Undo.past.push(s);
 	Undo.future.length = 0;
+	if (App.syncmenu)
+		App.syncmenu();
 };
 
 /* Run fn as a single undoable step. */
@@ -102,6 +113,9 @@ Undo.clear = function ()
 	Undo.past.length = 0;
 	Undo.future.length = 0;
 	Undo.step = null;
+	Undo.clean = 0;
+	if (App.syncmenu)
+		App.syncmenu();
 };
 
 Undo.depth = function () { return Undo.past.length; };
@@ -116,6 +130,8 @@ function shift(from, to, side, what)
 	}
 	to.push(s);
 	apply(s, side);
+	if (App.syncmenu)
+		App.syncmenu();
 	App.say(what + ' (' + Undo.past.length + ' left)');
 }
 

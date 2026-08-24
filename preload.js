@@ -13,5 +13,7 @@ contextBridge.exposeInMainWorld('api', {
 	saveas:		(doc, name) => ipcRenderer.invoke('lvl:saveas', doc, name),
 	midi:		() => ipcRenderer.invoke('midi:import'),
 	discard:	name => ipcRenderer.invoke('ask:discard', name),
-	onclose:	fn => ipcRenderer.on('req:close', () => fn())
+	onclose:	fn => ipcRenderer.on('req:close', () => fn()),
+	menustate:	s => ipcRenderer.send('menu:state', s),
+	oncmd:		fn => ipcRenderer.on('cmd', (e, name) => fn(name))
 });

@@ -10,11 +10,20 @@ const path = require('path');
 const fs = require('fs');
 const {pathToFileURL} = require('url');
 const lvl = require('./lvl');
+const menu = require('./menu');
 
 const ROOT = __dirname;
 const FILTERS = [{name: 'Level', extensions: ['lvl', 'json']}];
+const NAME = 'Pellizzola Brothers Studio';
+
+/* `productName` in package.json is only honoured once the app is packaged,
+ * and `npm start` never is - so the app is called "Electron" everywhere
+ * (menu bar, About panel, Dock) until this runs, and it must run before
+ * whenReady() to take effect there. */
+app.setName(NAME);
 
 let win = null;
+let menustate = {tab: 'level', canUndo: false, canRedo: false};
 
 protocol.registerSchemesAsPrivileged([{
 	scheme: 'app',
@@ -51,10 +60,16 @@ function createwin()
 		win.webContents.send('req:close');
 	});
 	win.on('closed', () => { win = null; });
+	menu.set(win, menustate);
 }
 
 app.whenReady().then(() => {
 	protocol.handle('app', serve);
+	app.setAboutPanelOptions({
+		applicationName: NAME,
+		applicationVersion: app.getVersion(),
+		copyright: 'Pellizzola Brothers'
+	});
 	createwin();
 	app.on('activate', () => {
 		if (!BrowserWindow.getAllWindows().length)
@@ -168,6 +183,12 @@ ipcMain.handle('ask:discard', async (e, name) => {
 ipcMain.on('dirty', (e, v) => {
 	if (win)
 		win.dirty = v;
+});
+
+ipcMain.on('menu:state', (e, state) => {
+	menustate = state;
+	if (win)
+		menu.set(win, menustate);
 });
 
 ipcMain.on('forceclose', () => {

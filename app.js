@@ -5,7 +5,10 @@
  * a save, and main.js refuses to write a level that fails validation. */
 'use strict';
 
-const App = {doc: null, path: null, dirty: false, tab: 'level', open: []};
+/* `textdirty` covers edits Undo never sees: Monaco keeps its own history for
+ * scripts (CLAUDE.md), so a script edit cannot be read off Undo.depth() the
+ * way a level edit can. */
+const App = {doc: null, path: null, dirty: false, textdirty: false, tab: 'level', open: []};
 
 App.touch = function ()
 {
@@ -14,6 +17,32 @@ App.touch = function ()
 		api.dirty(true);
 	}
 	App.retitle();
+};
+
+/* The authority on whether the level itself is dirty: true unless the undo
+ * history is sitting at the depth it was at when the document was opened or
+ * last saved.  Used after undo/redo, where App.touch()'s "anything happened"
+ * model was wrong - undoing back to that depth must clear dirty again. */
+App.recheck = function ()
+{
+	const d = Undo.depth() !== Undo.clean || App.textdirty;
+	if (App.dirty !== d) {
+		App.dirty = d;
+		api.dirty(d);
+	}
+	App.retitle();
+};
+
+/* Tells main which menu items are honest to enable: Undo/Redo apply to the
+ * level, not to a script tab, and there is nothing to redo/undo until an
+ * edit exists. */
+App.syncmenu = function ()
+{
+	api.menustate({
+		tab: App.tab,
+		canUndo: Undo.past.length > 0,
+		canRedo: Undo.future.length > 0
+	});
 };
 
 App.say = function (m, bad)
@@ -101,6 +130,7 @@ App.select = function (id)
 	else
 		Code.show(id);
 	sidebar();
+	App.syncmenu();
 };
 
 App.opentab = function (p)
@@ -367,7 +397,7 @@ App.refresh = function ()
 	Panel.palette();
 	Panel.inspect();
 	Grid.redraw();
-	App.touch();
+	App.recheck();
 	if (App.tab !== 'level')
 		Code.show(App.tab);
 };
@@ -377,11 +407,12 @@ App.setdoc = function (doc, path)
 	App.doc = doc;
 	App.path = path || null;
 	App.dirty = false;
+	App.textdirty = false;
 	api.dirty(false);
 	App.open = [];
 	App.tab = 'level';
 	Code.reset();
-	Undo.clear();
+	Undo.clear();			/* also resets Undo.clean to 0, matching depth 0 */
 	Grid.fitted = false;
 	Grid.load();
 	Panel.palette();
@@ -458,54 +489,53 @@ function saved(p)
 {
 	App.path = p;
 	App.dirty = false;
+	App.textdirty = false;
+	Undo.clean = Undo.depth();		/* this depth now matches disk */
 	api.dirty(false);
 	App.retitle();
 	App.say('saved ' + p);
 }
 
-/* ---- wiring ---- */
+/* ---- wiring ----
+ *
+ * Every global command lives here once, named the same way whether it was
+ * triggered by the menu (main.js sends 'cmd', see menu.js) or the hotbar. The
+ * accelerators that used to be hand-matched against e.key in this file now
+ * belong to the menu template, which is layout-aware where e.key never was. */
 
-const ACTS = {'new': () => App.new(), open: () => App.open_(),
-	save: () => App.save(), saveas: () => App.saveas()};
+const ACTS = {
+	'new':		() => App.new(),
+	open:		() => App.open_(),
+	save:		() => App.save(),
+	saveas:		() => App.saveas(),
+	undo:		() => Undo.undo(),
+	redo:		() => Undo.redo(),
+	closetab:	() => { if (App.tab !== 'level') App.closetab(App.tab); },
+	/* Reload must cross the same unsaved-changes guard as closing the window
+	 * (BUG-01) - a bare location.reload() would silently discard the level
+	 * exactly like the default menu's Reload item used to. */
+	reload:		async () => { if (await guard()) location.reload(); }
+};
 
+/* Canvas-local keys only: Escape and Delete apply to the selection, not to
+ * any command the menu already owns. */
 function keys(e)
 {
-	const c = e.ctrlKey || e.metaKey;
-
-	if (c && e.key.toLowerCase() === 's') {
-		e.preventDefault();
-		e.shiftKey ? App.saveas() : App.save();
-	} else if (c && e.key.toLowerCase() === 'o') {
-		e.preventDefault();
-		App.open_();
-	} else if (c && e.key.toLowerCase() === 'n') {
-		e.preventDefault();
-		App.new();
-	} else if (c && App.tab === 'level' && e.key.toLowerCase() === 'z') {
-		e.preventDefault();
-		e.shiftKey ? Undo.redo() : Undo.undo();
-	} else if (c && App.tab === 'level' && e.key.toLowerCase() === 'y') {
-		e.preventDefault();
-		Undo.redo();
-	} else if (c && e.key.toLowerCase() === 'w') {
-		e.preventDefault();
-		if (App.tab !== 'level')
-			App.closetab(App.tab);
-	} else if (App.tab === 'level' && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
-		if (e.key === 'Escape') {
-			closemenu();
+	if (App.tab !== 'level' || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))
+		return;
+	if (e.key === 'Escape') {
+		closemenu();
+		Grid.sel = -1;
+		Panel.inspect();
+		Grid.redraw();
+	} else if ((e.key === 'Delete' || e.key === 'Backspace') && Grid.sel >= 0) {
+		Undo.act(() => {
+			App.doc.json.level.entities.splice(Grid.sel, 1);
 			Grid.sel = -1;
-			Panel.inspect();
-			Grid.redraw();
-		} else if ((e.key === 'Delete' || e.key === 'Backspace') && Grid.sel >= 0) {
-			Undo.act(() => {
-				App.doc.json.level.entities.splice(Grid.sel, 1);
-				Grid.sel = -1;
-				App.touch();
-			});
-			Panel.inspect();
-			Grid.redraw();
-		}
+			App.touch();
+		});
+		Panel.inspect();
+		Grid.redraw();
 	}
 }
 
@@ -534,6 +564,7 @@ addEventListener('DOMContentLoaded', () => {
 	}, true);
 	addEventListener('keydown', keys, true);
 	api.onclose(tryclose);
+	api.oncmd(name => { if (ACTS[name]) ACTS[name](); });
 
 	Code.init(() => {
 		if (App.tab !== 'level')
