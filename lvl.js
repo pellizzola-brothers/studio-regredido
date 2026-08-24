@@ -219,7 +219,19 @@ function write(p, doc)
 		files[k] = strToU8(doc.scripts[k]);
 	for (const k in doc.midi)
 		files[k] = new Uint8Array(doc.midi[k]);
-	fs.writeFileSync(p, zipSync(files, {level: 6}));
+
+	/* Write to a temp file in the same directory, then rename over the
+	 * target: rename(2) is atomic within one filesystem, so a crash or a
+	 * full disk mid-write leaves the previous good file in place instead of
+	 * a truncated one. */
+	const tmp = p + '.tmp-' + process.pid;
+	try {
+		fs.writeFileSync(tmp, zipSync(files, {level: 6}));
+		fs.renameSync(tmp, p);
+	} catch (e) {
+		try { fs.unlinkSync(tmp); } catch (_) { /* nothing to clean up */ }
+		throw e;
+	}
 }
 
 module.exports = {W, H, BG, blank, read, write, validate, migrate};
