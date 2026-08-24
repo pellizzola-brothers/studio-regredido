@@ -1,0 +1,17 @@
+{
+	"name": "pb-studio",
+	"version": "1.0.0",
+	"description": "Level designer studio for Pellizzola Brothers (.lvl)",
+	"main": "main.js",
+	"license": "MIT",
+	"scripts": {
+		"start": "electron ."
+	},
+	"dependencies": {
+		"fflate": "^0.8.3",
+		"monaco-editor": "^0.56.0"
+	},
+	"devDependencies": {
+		"electron": "^43.4.1"
+	}
+}

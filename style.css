@@ -1,0 +1,252 @@
+/* Colours sampled from the design file: dark neutral frame, near-black violet
+   chrome, one purple accent. */
+:root {
+	--frame: #1c1d20;
+	--chrome: #100b1b;
+	--tab: #1a122c;
+	--panel: #100a1a;
+	--hdr: #161026;
+	--line: #241938;
+	--fg: #b9a6d6;
+	--dim: #6a4ba2;
+	--acc: #7b56ba;
+	--bar: 34px;
+	--tabs: 32px;
+	--side: 184px;
+	--right: 212px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	overflow: hidden;
+	background: var(--frame);
+	color: var(--fg);
+	font: 12px/1.5 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
+	user-select: none;
+	cursor: default;
+}
+
+button {
+	background: none;
+	border: 0;
+	color: var(--dim);
+	font: inherit;
+	cursor: pointer;
+}
+button:hover:not(:disabled) { color: var(--fg); }
+button:disabled { opacity: .35; cursor: default; }
+
+.drag { -webkit-app-region: drag; }
+.grow { flex: 1; }
+
+/* titlebar */
+#title {
+	display: flex;
+	align-items: center;
+	flex: 0 0 var(--bar);
+	gap: 10px;
+	padding: 0 12px;
+	background: var(--frame);
+}
+.dots { display: flex; gap: 8px; }
+.dots i {
+	width: 12px; height: 12px;
+	border-radius: 50%;
+	cursor: pointer;
+}
+#wclose { background: #ff736a; }
+#wmin { background: #ffbe2f; }
+#wmax { background: #2bc840; }
+#name { flex: 1; color: var(--dim); overflow: hidden; white-space: nowrap; }
+.acts { display: flex; gap: 14px; }
+
+/* tab strip */
+#tabs {
+	display: flex;
+	align-items: stretch;
+	flex: 0 0 var(--tabs);
+	background: var(--chrome);
+}
+#tablist { display: flex; overflow: hidden; }
+.tab {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	max-width: 260px;
+	padding: 0 14px;
+	color: var(--dim);
+	white-space: nowrap;
+	cursor: pointer;
+}
+.tab:hover { color: var(--fg); }
+.tab.on { background: var(--tab); color: var(--acc); }
+.tab b { overflow: hidden; font-weight: normal; text-overflow: ellipsis; }
+.tab i { font-style: normal; opacity: .6; }
+.tab i:hover { opacity: 1; }
+#add { padding: 0 12px; }
+.run { padding: 0 16px; color: var(--acc); font-size: 13px; }
+
+/* body */
+#body { display: flex; flex: 1; min-height: 0; }
+
+#side, #right {
+	display: flex;
+	flex-direction: column;
+	background: var(--panel);
+}
+#side { flex: 0 0 var(--side); }
+#right { flex: 0 0 var(--right); }
+
+.hdr {
+	display: flex;
+	align-items: center;
+	flex: 0 0 24px;
+	padding: 0 10px;
+	background: var(--hdr);
+	color: var(--acc);
+}
+.hdr.r { justify-content: flex-end; }
+.hdr button { margin-left: auto; line-height: 1; }
+
+#scripts, #midis { overflow: auto; padding: 8px 0; list-style: none; }
+#scripts { flex: 1 1 60%; }
+#midis { flex: 1 1 40%; }
+li {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 1px 10px 1px 18px;
+	color: var(--dim);
+	white-space: nowrap;
+	cursor: pointer;
+}
+li:hover { color: var(--fg); }
+li.on { color: var(--acc); }
+li b { overflow: hidden; font-weight: normal; text-overflow: ellipsis; }
+
+/* stage */
+#stage {
+	position: relative;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+}
+#wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+#code { position: absolute; inset: 0; display: none; }
+canvas { display: block; outline: 0; }
+
+/* The level scrollbar is a real overflow container driven by a spacer as wide
+   as the level; grid.js keeps it and the camera in step. */
+#hbar {
+	overflow-x: auto;
+	overflow-y: hidden;
+	flex: 0 0 13px;
+	background: var(--chrome);
+	border-top: 1px solid var(--line);
+}
+#hspace { height: 1px; }
+#hbar::-webkit-scrollbar { height: 12px; }
+#hbar::-webkit-scrollbar-track { background: var(--chrome); }
+#hbar::-webkit-scrollbar-thumb { border: 3px solid var(--chrome); border-radius: 6px; background: #3b285b; }
+#hbar::-webkit-scrollbar-thumb:hover { background: var(--acc); }
+
+body.text #wrap, body.text #hbar { display: none; }
+body.text #code { display: block; }
+body.text #right { display: none; }
+
+/* palette */
+#palette {
+	display: grid;
+	overflow: auto;
+	flex: 1 1 auto;
+	align-content: start;
+	gap: 4px;
+	padding: 8px;
+	grid-template-columns: repeat(4, 1fr);
+}
+.grp {
+	padding: 6px 2px 2px;
+	color: var(--dim);
+	font-size: 10px;
+	grid-column: 1 / -1;
+}
+.cell {
+	position: relative;
+	border: 1px solid transparent;
+	aspect-ratio: 1;
+	background: #17102a center/contain no-repeat;
+	cursor: pointer;
+	image-rendering: pixelated;
+}
+.cell:hover { border-color: var(--dim); }
+.cell.on { border-color: var(--acc); background-color: #251a3a; }
+.cell.air { background: repeating-conic-gradient(#1d1530 0 25%, #120d1f 0 50%) 0/12px 12px; }
+
+/* inspector */
+#props { overflow: auto; flex: 0 1 46%; padding: 10px; }
+#props h4 { margin: 10px 0 4px; color: var(--dim); font: inherit; font-size: 10px; }
+#props h4:first-child { margin-top: 0; }
+#props label { display: block; margin-bottom: 6px; color: var(--dim); }
+#props input, #props select, #props textarea {
+	display: block;
+	width: 100%;
+	padding: 3px 5px;
+	border: 1px solid var(--line);
+	background: #17102a;
+	color: var(--fg);
+	font: inherit;
+}
+#props input:focus, #props select:focus, #props textarea:focus {
+	border-color: var(--acc);
+	outline: 0;
+}
+#props textarea { height: 48px; resize: vertical; }
+#props .row { display: flex; gap: 6px; }
+#props .row > * { flex: 1; }
+#props .act {
+	width: 100%;
+	margin-top: 8px;
+	padding: 4px;
+	border: 1px solid var(--line);
+	color: var(--dim);
+}
+#props .act:hover { border-color: var(--acc); color: var(--fg); }
+#props .err { color: #ff8f8f; white-space: pre-wrap; }
+#props .hint { margin-top: 4px; color: var(--dim); font-size: 10px; }
+
+/* context menu */
+#menu {
+	position: fixed;
+	z-index: 10;
+	display: none;
+	min-width: 150px;
+	padding: 4px 0;
+	border: 1px solid var(--line);
+	background: #17102a;
+	box-shadow: 0 6px 20px rgba(0, 0, 0, .55);
+}
+#menu hr { margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
+.mi { padding: 4px 14px; color: var(--fg); cursor: pointer; white-space: nowrap; }
+.mi:hover { background: var(--tab); color: var(--acc); }
+.mi.off { color: var(--dim); opacity: .45; cursor: default; }
+.mi.off:hover { background: none; color: var(--dim); }
+
+/* status */
+#status {
+	display: flex;
+	flex: 0 0 22px;
+	align-items: center;
+	gap: 18px;
+	padding: 0 12px;
+	background: var(--chrome);
+	border-top: 1px solid var(--line);
+	color: var(--dim);
+	font-size: 11px;
+}
+#msg { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#msg.bad { color: #ff8f8f; }

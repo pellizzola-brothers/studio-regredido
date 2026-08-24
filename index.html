@@ -1,0 +1,58 @@
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' app:; script-src 'self' app: blob:; worker-src blob: app:; style-src 'self' app: 'unsafe-inline'; img-src 'self' app: data: blob:; font-src 'self' app: data:; connect-src 'self' app: blob:">
+<title>Pellizzola Brothers Studio</title>
+<link rel="stylesheet" href="style.css">
+
+<div id="title">
+	<div class="dots">
+		<i id="wclose"></i><i id="wmin"></i><i id="wmax"></i>
+	</div>
+	<div id="name" class="drag"></div>
+	<div class="acts">
+		<button data-act="new">new</button>
+		<button data-act="open">open</button>
+		<button data-act="save">save</button>
+		<button data-act="saveas">save as</button>
+	</div>
+</div>
+
+<div id="tabs">
+	<div id="tablist"></div>
+	<button id="add" title="New Lua script">+</button>
+	<div class="drag grow"></div>
+	<button id="run" class="run" disabled
+		title="Playtest is inert: the game cannot load .lvl archives yet (game/todo.txt 3.1)">&#9654;</button>
+</div>
+
+<div id="body">
+	<aside id="side">
+		<div class="hdr">scripts</div>
+		<ul id="scripts"></ul>
+		<div class="hdr">midi<button id="addmidi" title="Import MIDI">+</button></div>
+		<ul id="midis"></ul>
+	</aside>
+
+	<main id="stage">
+		<div id="wrap"><canvas id="cv" tabindex="0"></canvas></div>
+		<div id="hbar"><div id="hspace"></div></div>
+		<div id="code"></div>
+	</main>
+
+	<aside id="right">
+		<div class="hdr r">items</div>
+		<div id="palette"></div>
+		<div class="hdr r">properties</div>
+		<div id="props"></div>
+	</aside>
+</div>
+
+<div id="status"><span id="cursor"></span><span id="msg"></span></div>
+<div id="menu"></div>
+
+<script src="node_modules/monaco-editor/min/vs/loader.js"></script>
+<script src="catalog.js"></script>
+<script src="undo.js"></script>
+<script src="grid.js"></script>
+<script src="panel.js"></script>
+<script src="code.js"></script>
+<script src="app.js"></script>
