@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The fourteen items below have shipped and are removed from the findings
+The fifteen items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -218,6 +218,37 @@ suppresses it.
 
 ---
 
+#### ARCH-07 — No build, no packaging, no lint, no checks
+
+Shipped, minus the packaging piece the finding itself deferred to NAT-07
+("`npm run dist` — electron-builder (NAT-07)"): `eslint.config.js` adds
+`npm run lint`, checking tabs, a `'use strict'` pragma and dead variables
+across every `.js` file — deliberately no `no-undef`, since the renderer
+scripts share one global scope on purpose (`CLAUDE.md`) and a name defined in
+one file being "undefined" in another is by design, not a bug; `catalog.js`
+gained a one-line `/* exported PLACEHOLDER, tex, ready */` comment so
+`no-unused-vars` does not flag the three names it only exposes to `grid.js`
+and `panel.js`. `tools/check.js` adds `npm run check`: the collision grep
+`CLAUDE.md` documents by hand, a `blank() → write() → read()` round-trip
+(level, a script, and a MIDI file, compared with `assert.deepStrictEqual`),
+and `migrate()` over every `.json` in `../website/levels` (skipped with a
+message if that directory is not checked out, rather than failing). `probe.js`
+is committed under `tools/` with the env-var interface `CLAUDE.md` already
+documented, now fixed to work on macOS too (the binary lives inside
+`Electron.app` there, not at `dist/electron` as on the other two platforms)
+and with `PB_SHOT` made optional. `CLAUDE.md`'s "Driving the app headlessly"
+section now points at the committed file instead of embedding the snippet.
+Verified: `npm run lint` and `npm run check` both exit 0 on a clean tree;
+temporarily reintroducing a real collision (`function tex` added to `app.js`,
+which already exists in `catalog.js`) made `npm run check` fail with
+`tex: catalog.js and app.js`, confirming the check actually checks something,
+then the reproduction was reverted; `tools/probe.js` driven directly through
+the real Electron binary to boot the app, paint and undo a cell, and confirm
+the palette still renders all 31 cells through `tex()`/`ready()`/`PLACEHOLDER`
+after the `/* exported */` comment was added.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -370,7 +401,9 @@ refactor. This codebase is 2 627 lines and should stay small.
   plain module-level objects.
 - **fflate** for ZIP, **monaco-editor 0.53** loaded through its AMD loader
   straight out of `node_modules`.
-- **No tests, no linter, no packaging config.**
+- **No test framework, no packaging config.** `npm run lint`/`npm run check`
+  exist (ARCH-07, done — see "Already completed"); there is still nothing
+  that exercises the running app itself beyond `tools/probe.js` run by hand.
 
 ### Process responsibilities (as built)
 
@@ -836,7 +869,7 @@ a no-bundler project) with:
   `textures/icons/` or the design file, at 1024 × 1024 down to 16 × 16, keeping
   the pixel art crisp at small sizes (hand-tune 16/32, do not just downscale).
 - `files` narrowed so the whole `textures/` clone and the whole
-  `monaco-editor` package do not ship (ARCH-07, ARCH-08).
+  `monaco-editor` package do not ship (ARCH-08).
 - macOS `hardenedRuntime` + notarisation; Windows Authenticode; Linux AppImage
   and/or `.deb`.
 
@@ -2980,8 +3013,9 @@ which changes script execution timing and `catalog.js`'s dual-load contract
 `require`d by main), for no user-facing gain.
 
 **Recommended, if anything:** move `$()` and `esc()` into a `util.js` loaded
-first, so the implicit dependency becomes explicit, and add the collision grep
-to a `npm run check` script so it is run rather than remembered.
+first, so the implicit dependency becomes explicit. The collision grep is
+already automated in `npm run check` (`tools/check.js`, ARCH-07, done — see
+"Already completed"), so it is run rather than remembered.
 
 ---
 
@@ -3008,31 +3042,6 @@ that removes a whole class of silent-failure bug.
 Also: `App.open_` (`app.js:421`) carries a trailing underscore to dodge the
 `open` keyword collision — rename to `App.openlevel` and let the name say what
 it does.
-
----
-
-#### ARCH-07 — No build, no packaging, no lint, no checks
-
-**Category** Architecture · **Severity** High · **Priority** P1 · **Affects** Architecture
-
-**Current.** `package.json` has one script (`start`), no `productName`, no
-`build` block, no linter, no formatter config, and no test or check of any
-kind. `CLAUDE.md` documents the headless probe harness, which is genuinely
-useful and should be formalised rather than left as a snippet in prose.
-
-**Recommended.**
-- `npm run lint` — ESLint with a minimal config matching the existing style
-  (tabs, `'use strict'`, no unused vars). The sibling `website/` project
-  already uses ESLint, so the house has a precedent.
-- `npm run check` — the global-collision grep from `CLAUDE.md`, plus a
-  round-trip test: `lvl.blank()` → `write` → `read` → deep-equal, and
-  `migrate()` over `website/levels/*.json` (verified during this audit:
-  `1774028825093-pellizzola.json` migrates cleanly to 2 rows). These are two
-  small Node scripts, no framework needed.
-- `probe.js` committed under `tools/` with the environment-variable interface
-  `CLAUDE.md` describes, so "drive the app headlessly" is a command rather than
-  a recipe.
-- `npm run dist` — electron-builder (NAT-07).
 
 ---
 
@@ -3318,7 +3327,7 @@ chosen deliberately, not as the default the other two inherit.
 | Recovery snapshots in `userData` | UX-10 |
 | One `chrome.js` for every platform branch; `api.platform` to the renderer | ARCH-03 |
 | Consistent IPC envelope, string verdicts, one unwrap helper | ARCH-06, BUG-10 |
-| electron-builder config, icons, associations, signing | NAT-07, ARCH-07 |
+| electron-builder config, icons, associations, signing | NAT-07 |
 | Lazy Monaco; narrowed packaged files | ARCH-08 |
 
 ---
@@ -3580,7 +3589,6 @@ code; the flat global scope with its documented collision grep.
 | Three IPC naming conventions, two response shapes, forgettable `cancel` | ARCH-06 |
 | Magic integers crossing the IPC boundary | BUG-10 |
 | Renderer implementing window controls and title logic (the menu moved to main, NAT-01, shipped) | NAT-02, NAT-03, NAT-05 |
-| No build, lint, checks, packaging, or committed probe harness | ARCH-07 |
 | Monaco eager and shipped whole | ARCH-08 |
 | Synchronous main-process I/O | ARCH-09, NAT-19 |
 | Colour defined in four places | VIS-04 |
@@ -3717,7 +3725,6 @@ document.
 | UX-10 | No autosave, crash recovery, or backup |
 | ARCH-02 | `W` defined twice |
 | ARCH-03 | No platform abstraction |
-| ARCH-07 | No build, lint, checks, or packaging |
 | ARCH-08 | Monaco eager and shipped whole |
 | PERF-01 | Inspector rebuilt from a string on every drag cell |
 
@@ -3784,23 +3791,24 @@ completed". Nothing remains in this phase.
 
 ### Phase 1 — Foundations (these unblock everything downstream)
 
-1. **ARCH-07** — `npm run lint`, `npm run check` (the collision grep + a
-   `blank → write → read` round-trip + `migrate()` over `website/levels/*`),
-   and `tools/probe.js` committed. Do this first so every later change is
-   verifiable at all; there is currently no way to tell whether a change broke
-   something.
-2. **ARCH-03** — `chrome.js` in main, `api.platform` to the renderer,
+**ARCH-07** (`npm run lint`, `npm run check` — the collision grep + a
+`blank → write → read` round-trip + `migrate()` over `website/levels/*` —
+and `tools/probe.js` committed under `tools/`) is done — see "Already
+completed". Every step below, and every future change, is verifiable through
+it.
+
+1. **ARCH-03** — `chrome.js` in main, `api.platform` to the renderer,
    `<html data-platform>`. Unblocks NAT-02, NAT-04, NAT-21, VIS-10. Also
    folds in `menu.js`'s own `process.platform` branch, which NAT-01 added
    outside this module and which is exactly the drift this step exists to stop.
-3. **GEO-01 + VIS-04** — the token block, in one commit: spacing, rows, type,
+2. **GEO-01 + VIS-04** — the token block, in one commit: spacing, rows, type,
    radius, elevation, motion, z-index, plus the `tokens.js` reader that
    `grid.js` and `code.js` consume. The colour half of this block (VIS-01,
    VIS-02) is already shipped — see "Already completed" — so this step is
    narrower than originally scoped: everything except colour. Unblocks every
    remaining visual finding. Nothing in §7 should be attempted before this
    lands.
-4. **ARCH-02** — one definition of `W`/`H`/`B`. Trivial, do it while touching
+3. **ARCH-02** — one definition of `W`/`H`/`B`. Trivial, do it while touching
    `lvl.js`.
 
 ### Phase 2 — Native shell
@@ -3811,21 +3819,21 @@ DevTools behind `!app.isPackaged`) is done and **closed BUG-01** — see
 wedge risk that a hung renderer posed under NAT-01's ⌘Q → `app.quit()` path is
 already closed.
 
-5. **NAT-18** `will-navigate`, `setWindowOpenHandler`, `sandbox: true` — closes
+4. **NAT-18** `will-navigate`, `setWindowOpenHandler`, `sandbox: true` — closes
    the drag-and-drop navigation hole (NAT-09) that BUG-01's own fix did not
    cover.
-6. **NAT-02** real window chrome per platform; delete the fake dots and
+5. **NAT-02** real window chrome per platform; delete the fake dots and
    `win:ctl`.
-7. **NAT-03** title, represented filename, edited dot (needs 6; document
+6. **NAT-03** title, represented filename, edited dot (needs 5; document
    identity itself is already in main, BUG-08, done).
-8. **NAT-04** hotbar per platform (needs 2; the menu itself no longer blocks
+7. **NAT-04** hotbar per platform (needs 1; the menu itself no longer blocks
    this).
-9. **NAT-05** native context menus; delete `#menu` and ~55 lines of `app.js`.
+8. **NAT-05** native context menus; delete `#menu` and ~55 lines of `app.js`.
    Reuse the `cmd`/`ACTS` dispatcher NAT-01 already built rather than adding a
    second one.
-10. **NAT-21** dialog per platform; **BUG-10** string verdicts.
-11. **NAT-10** window state persistence with display validation.
-12. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
+9. **NAT-21** dialog per platform; **BUG-10** string verdicts.
+10. **NAT-10** window state persistence with display validation.
+11. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
     **NAT-06** recent documents; **NAT-09** drag and drop. These four are one
     coherent piece of work and share prerequisites — all can build directly on
     the `doc` module (BUG-08, done).
@@ -3836,70 +3844,69 @@ The contrast/focus-ring step originally scheduled here (VIS-01, VIS-02,
 VIS-06) is done — see "Already completed" — so this phase starts one step
 later than originally scoped.
 
-13. **VIS-05** bundle JetBrains Mono. Everything after this is measured in the
+12. **VIS-05** bundle JetBrains Mono. Everything after this is measured in the
     real typeface, so it must precede any type-metric work.
-14. **VIS-07** the five-state contract, applied to every interactive surface.
-15. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
+13. **VIS-07** the five-state contract, applied to every interactive surface.
+14. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
     capitalisation.
-16. **NAT-20 / GEO-09** one scrollbar treatment across all five containers;
+15. **NAT-20 / GEO-09** one scrollbar treatment across all five containers;
     **VIS-18** Monaco theme generated from tokens.
-17. **GEO-07** integer palette cells; **GEO-02 / GEO-08** band heights and
+16. **GEO-07** integer palette cells; **GEO-02 / GEO-08** band heights and
     one-offs onto the scale.
-18. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
+17. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
     messages, `.field`/`.cell.add` classes, canvas indicators, missing-texture
     treatment.
 
 ### Phase 4 — Layout and interaction
 
-19. **PERF-04** resize coalescing — **before** GEO-04, or splitter drags will
+18. **PERF-04** resize coalescing — **before** GEO-04, or splitter drags will
     stutter.
-20. **GEO-03 / GEO-04** proportional panels and four keyboard-operable
+19. **GEO-03 / GEO-04** proportional panels and four keyboard-operable
     splitters; **GEO-05 / GEO-06** content-driven list and inspector heights.
-21. **NAT-11** wheel semantics; **GEO-11** named canvas constants;
+20. **NAT-11** wheel semantics; **GEO-11** named canvas constants;
     **GEO-10** vertical scrollbar; **UX-04** zoom controls and a real fit,
     including the new View menu that also gives Toggle Full Screen a home
     again (see §12, "Full screen").
-22. **NAT-13** cursors; **NAT-12** canvas context menu and Ctrl+click;
+21. **NAT-13** cursors; **NAT-12** canvas context menu and Ctrl+click;
     **UX-12** gesture cancel.
-23. **PERF-01** `Panel.update()` split (with **ARCH-04**); **PERF-02** cached
+22. **PERF-01** `Panel.update()` split (with **ARCH-04**); **PERF-02** cached
     rect and refs.
-24. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
+23. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
     tab switching, region operations — the menu/shortcut consolidation itself
     is done, NAT-01).
 
 ### Phase 5 — Accessibility completion
 
-25. **A11Y-01** real controls with roving tabindex — palette, rows, tabs. The
+24. **A11Y-01** real controls with roving tabindex — palette, rows, tabs. The
     largest single piece of work in this document.
-26. **A11Y-02** semantics and landmarks; **A11Y-05** live regions.
-27. **A11Y-04** hit targets (mostly free once GEO-01's `--row` lands).
-28. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
+25. **A11Y-02** semantics and landmarks; **A11Y-05** live regions.
+26. **A11Y-04** hit targets (mostly free once GEO-01's `--row` lands).
+27. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
     already in place); **A11Y-06** scaling; **A11Y-07** system preferences;
     **A11Y-08** non-colour cues.
 
 ### Phase 6 — Reliability and remaining QOL
 
-29. **UX-10** recovery snapshots and `.bak` (its dependencies, BUG-02's atomic
+28. **UX-10** recovery snapshots and `.bak` (its dependencies, BUG-02's atomic
     write and BUG-08's `doc` module, are already in place); **BUG-11**
     playability warnings.
-30. **ARCH-08** lazy Monaco; **PERF-07** show-after-ready; **PERF-05** refresh
+29. **ARCH-08** lazy Monaco; **PERF-07** show-after-ready; **PERF-05** refresh
     granularity.
-31. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
+30. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
     async I/O *if* measurement justifies it.
-32. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
+31. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
     UX-15 / UX-17** — the remaining workflow items, each independent. UX-03 is
     narrower than originally scoped: the menu items themselves already exist
     (NAT-01), only per-action labelling is left. UX-15 is also narrower: the
     contrast and MIDI-collision problems it cited are already fixed (VIS-01,
     BUG-06).
-33. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
+32. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
     NAT-17 is narrower too: the About panel already shipped (NAT-01), only the
     Dock menu and JumpList tasks are left.
 
 ### Dependency summary
 
 ```
-ARCH-07 (checks) ─────────────────────────────► everything (verifiability)
 ARCH-03 (platform) ───┬─► NAT-02 ─► NAT-03, NAT-04
                       ├─► NAT-21, VIS-10
                       └─► absorbs menu.js's own process.platform branch (NAT-01)
@@ -3911,10 +3918,12 @@ PERF-04 ──────────────► GEO-04 (splitters)
 A11Y-01 ──────────────► A11Y-02, A11Y-03, A11Y-04
 NAT-05 ───────────────► deletes an entire inaccessible subsystem
 
-Done and no longer on this graph: BUG-08 (doc state) unblocked NAT-03, NAT-06,
-NAT-07, NAT-08, NAT-10, UX-10, all of which can now build on it directly;
-BUG-09 closed the live gap NAT-01 opened; VIS-01/VIS-02/VIS-06 unblocked
-nothing else in this graph (the rest of GEO-01/VIS-04 does not depend on them).
+Done and no longer on this graph: ARCH-07 (checks) unblocked everything below
+it by making every later change verifiable at all; BUG-08 (doc state)
+unblocked NAT-03, NAT-06, NAT-07, NAT-08, NAT-10, UX-10, all of which can now
+build on it directly; BUG-09 closed the live gap NAT-01 opened;
+VIS-01/VIS-02/VIS-06 unblocked nothing else in this graph (the rest of
+GEO-01/VIS-04 does not depend on them).
 ```
 
 ---
@@ -4022,11 +4031,11 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 ### Code and process
 
-- [ ] `npm run lint` and `npm run check` pass, and `check` includes the
+- [x] `npm run lint` and `npm run check` pass, and `check` includes the
       global-collision grep, a `.lvl` round-trip, and migration of the known
-      legacy levels.
-- [ ] `tools/probe.js` is committed and documented, so the app can be driven
-      headlessly with one command.
+      legacy levels. (ARCH-07)
+- [x] `tools/probe.js` is committed and documented, so the app can be driven
+      headlessly with one command. (ARCH-07)
 - [x] Document identity lives in the main process; the renderer never supplies
       a filesystem path. (BUG-08/ARCH-01)
 - [ ] Exactly two places contain platform branches: `chrome.js` in main, and
