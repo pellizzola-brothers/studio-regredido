@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('api', {
 	forceclose:	() => ipcRenderer.send('forceclose'),
 	blank:		() => ipcRenderer.invoke('lvl:new'),
 	open:		() => ipcRenderer.invoke('lvl:open'),
-	save:		(p, doc) => ipcRenderer.invoke('lvl:save', p, doc),
+	save:		doc => ipcRenderer.invoke('lvl:save', doc),
 	saveas:		(doc, name) => ipcRenderer.invoke('lvl:saveas', doc, name),
 	midi:		() => ipcRenderer.invoke('midi:import'),
 	discard:	name => ipcRenderer.invoke('ask:discard', name),

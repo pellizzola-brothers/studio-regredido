@@ -13,7 +13,11 @@ const lvl = require('./lvl');
 const menu = require('./menu');
 
 const ROOT = __dirname;
-const FILTERS = [{name: 'Level', extensions: ['lvl', 'json']}];
+/* Bare .json is a deliberately supported *read* format (lvl.js migrate()
+ * opens it directly) but write() always emits a ZIP, so offering it on save
+ * would produce a .json file that is secretly a ZIP - hence two filters. */
+const OPENFILTERS = [{name: 'Level', extensions: ['lvl', 'json']}];
+const SAVEFILTERS = [{name: 'Level', extensions: ['lvl']}];
 const NAME = 'Pellizzola Brothers Studio';
 
 /* `productName` in package.json is only honoured once the app is packaged,
@@ -24,6 +28,13 @@ app.setName(NAME);
 
 let win = null;
 let menustate = {tab: 'level', canUndo: false, canRedo: false};
+
+/* Document identity: which file is open, and whether the renderer has
+ * unsaved changes.  Owned here rather than passed by the renderer on every
+ * save (which is what let it write to any path it named) or hung off the
+ * BrowserWindow as an ad-hoc `win.dirty` property (which vanished with the
+ * window, and was never really a window property to begin with). */
+const doc = {path: null, dirty: false};
 
 protocol.registerSchemesAsPrivileged([{
 	scheme: 'app',
@@ -40,6 +51,31 @@ function serve(req)
 	return net.fetch(pathToFileURL(p).toString());
 }
 
+let closetimer = null;
+
+/* A renderer that is gone or wedged will never answer 'req:close', which
+ * otherwise leaves the window - and on Windows/Linux the whole app, since
+ * window-all-closed never fires - permanently unclosable.  Once the renderer
+ * can no longer be trusted to answer, stop waiting on it and ask natively. */
+function deadrenderer(detail)
+{
+	clearTimeout(closetimer);
+	if (!win)
+		return;
+	doc.dirty = false;
+	dialog.showMessageBox(win, {
+		type: 'warning', buttons: ['Reopen', 'Close'], defaultId: 0, cancelId: 1,
+		message: 'Studio stopped responding.', detail: detail
+	}).then(r => {
+		if (!win)
+			return;
+		if (r.response === 0)
+			win.reload();
+		else
+			win.close();
+	});
+}
+
 function createwin()
 {
 	win = new BrowserWindow({
@@ -54,11 +90,21 @@ function createwin()
 	win.loadURL('app://studio/index.html');
 	win.once('ready-to-show', () => win.show());
 	win.on('close', e => {
-		if (!win.dirty)
+		if (!doc.dirty)
 			return;
 		e.preventDefault();			/* let the renderer ask first */
 		win.webContents.send('req:close');
+		/* Time-bound the round trip rather than wait on a renderer that may
+		 * never answer; forceclose() (below) clears this once it does. */
+		clearTimeout(closetimer);
+		closetimer = setTimeout(
+			() => deadrenderer('The window did not respond to a close request.'),
+			3000);
 	});
+	win.webContents.on('render-process-gone', (e, details) =>
+		deadrenderer('The window\'s process exited (' + details.reason + ').'));
+	win.webContents.on('unresponsive', () =>
+		deadrenderer('The window is not responding.'));
 	win.on('closed', () => { win = null; });
 	menu.set(win, menustate);
 }
@@ -106,15 +152,20 @@ ipcMain.on('win:ctl', (e, a) => {
 		win.close();
 });
 
-ipcMain.handle('lvl:new', guard(async () => ({doc: lvl.blank()})));
+ipcMain.handle('lvl:new', guard(async () => {
+	doc.path = null;
+	return {doc: lvl.blank()};
+}));
 
 ipcMain.handle('lvl:open', guard(async () => {
 	const r = await dialog.showOpenDialog(win, {
-		title: 'Open level', filters: FILTERS, properties: ['openFile']
+		title: 'Open level', filters: OPENFILTERS, properties: ['openFile']
 	});
 	if (r.canceled)
 		return {cancel: true};
-	return {path: r.filePaths[0], doc: lvl.read(r.filePaths[0])};
+	const d = lvl.read(r.filePaths[0]);
+	doc.path = r.filePaths[0];
+	return {path: doc.path, doc: d};
 }));
 
 /* A save failure is otherwise easy to miss entirely: the Text Editor tab
@@ -131,30 +182,43 @@ function saveerr(err)
 	});
 }
 
-ipcMain.handle('lvl:save', guard(async (e, p, doc) => {
+ipcMain.handle('lvl:save', guard(async (e, d) => {
+	if (!doc.path)
+		throw new Error('no file to save to');
 	try {
-		lvl.write(p, doc);
+		lvl.write(doc.path, d);
 	} catch (err) {
 		saveerr(err);
 		throw err;
 	}
-	return {path: p};
+	return {path: doc.path};
 }));
 
-ipcMain.handle('lvl:saveas', guard(async (e, doc, name) => {
+/* GTK's save dialog does not append a filter's extension the way macOS's and
+ * Windows' do, so a typed "mylevel" would otherwise be written extensionless -
+ * matching neither this app's own open filter nor the OS file association.
+ * Forcing it here makes the three platforms agree. */
+function forcelvl(p)
+{
+	return path.extname(p).toLowerCase() === '.lvl' ? p : p + '.lvl';
+}
+
+ipcMain.handle('lvl:saveas', guard(async (e, d, name) => {
 	const r = await dialog.showSaveDialog(win, {
-		title: 'Save level as', filters: FILTERS,
+		title: 'Save level as', filters: SAVEFILTERS,
 		defaultPath: (name || 'untitled') + '.lvl'
 	});
 	if (r.canceled)
 		return {cancel: true};
+	const p = forcelvl(r.filePath);
 	try {
-		lvl.write(r.filePath, doc);
+		lvl.write(p, d);
 	} catch (err) {
 		saveerr(err);
 		throw err;
 	}
-	return {path: r.filePath};
+	doc.path = p;
+	return {path: p};
 }));
 
 ipcMain.handle('midi:import', guard(async () => {
@@ -180,10 +244,7 @@ ipcMain.handle('ask:discard', async (e, name) => {
 	return r.response;
 });
 
-ipcMain.on('dirty', (e, v) => {
-	if (win)
-		win.dirty = v;
-});
+ipcMain.on('dirty', (e, v) => { doc.dirty = v; });
 
 ipcMain.on('menu:state', (e, state) => {
 	menustate = state;
@@ -192,8 +253,8 @@ ipcMain.on('menu:state', (e, state) => {
 });
 
 ipcMain.on('forceclose', () => {
-	if (win) {
-		win.dirty = false;
+	clearTimeout(closetimer);
+	doc.dirty = false;
+	if (win)
 		win.close();
-	}
 });

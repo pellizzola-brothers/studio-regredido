@@ -493,7 +493,7 @@ App.save = async function ()
 	if (!App.path)
 		return App.saveas();
 
-	const r = await api.save(App.path, App.doc);
+	const r = await api.save(App.doc);
 	if (!r.ok)
 		return App.fail(r.err);
 	saved(r.path);
