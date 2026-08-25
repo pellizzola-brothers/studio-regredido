@@ -83,6 +83,39 @@ Grid.init = function (cv)
 	cv.addEventListener('contextmenu', e => e.preventDefault());
 	addEventListener('mousemove', onmove);
 	addEventListener('mouseup', onup);
+	watchdpr();
+};
+
+/* BUG-12: Grid.dpr is only re-read inside Grid.resize(), which only runs from
+ * the ResizeObserver on #wrap - dragging the window to a different-DPI
+ * display doesn't change #wrap's CSS size, so the observer never fires and
+ * the backing store stays at the old resolution.  A media query is valid
+ * only for the ratio it was created at, so each firing re-arms a fresh one
+ * for whatever the ratio just became. */
+function watchdpr()
+{
+	matchMedia('(resolution: ' + devicePixelRatio + 'dppx)')
+		.addEventListener('change', () => { Grid.resize(); watchdpr(); }, {once: true});
+}
+
+/* NAT-13: the only feedback channel for which tool is active, whether the
+ * pointer is over an entity it could grab, or whether a gesture is already
+ * under way.  Takes the cell explicitly rather than reading Grid.hov, so
+ * ondown() can update it immediately on press instead of waiting for the
+ * next mousemove. */
+Grid.cursor = function (c)
+{
+	let cur;
+
+	if (Grid.pan || Grid.moving)
+		cur = 'grabbing';
+	else if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= Grid.h)
+		cur = 'not-allowed';
+	else if (entat(c.x, c.y) >= 0)
+		cur = 'grab';
+	else
+		cur = Grid.tool.kind === 'entity' ? 'copy' : 'crosshair';
+	Grid.cv.style.cursor = cur;
 };
 
 Grid.resize = function ()
@@ -406,6 +439,7 @@ function ondown(ev)
 	Grid.cv.focus();
 	if (ev.button === 1 || ev.altKey) {
 		Grid.pan = {x: ev.clientX, y: ev.clientY, cx: Grid.cam.x, cy: Grid.cam.y};
+		Grid.cursor(c);
 		ev.preventDefault();
 		return;
 	}
@@ -434,6 +468,7 @@ function ondown(ev)
 		Undo.begin();
 		Grid.sel = hit;
 		Grid.moving = true;
+		Grid.cursor(c);
 		App.inspect();
 		Grid.redraw();
 		return;
@@ -448,6 +483,7 @@ function ondown(ev)
 		elist().push({def: Grid.tool.id, pos: [c.x * B, c.y * B]});
 		Grid.sel = elist().length - 1;
 		Grid.moving = true;
+		Grid.cursor(c);
 		setblock(c.x, c.y, 0);
 		App.touch();
 		App.inspect();
@@ -467,6 +503,7 @@ function onmove(ev)
 {
 	const c = at(ev);
 
+	Grid.cursor(c);
 	if (Grid.pan) {
 		Grid.cam.x = Grid.pan.cx - (ev.clientX - Grid.pan.x) / Grid.cam.z;
 		Grid.cam.y = Grid.pan.cy - (ev.clientY - Grid.pan.y) / Grid.cam.z;
@@ -507,5 +544,6 @@ function onup()
 	Grid.paint = -1;
 	Grid.last = null;
 	Grid.moving = false;
+	Grid.cursor(Grid.hov);
 	Undo.end();
 }
