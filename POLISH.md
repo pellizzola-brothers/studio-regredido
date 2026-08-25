@@ -85,11 +85,11 @@ without two undo systems racing for the same key; the hand-rolled
 `s`/`o`/`n`/`z`/`y`/`w` matching in `app.js`'s `keys()` is gone, replaced by
 the menu's accelerators dispatching through the renderer's existing `ACTS`
 table over a new `cmd` IPC channel. Not shipped, and still open: the View menu
-(zoom, fit), the Edit menu's Cut/Copy/Paste roles operate on focused text
-fields only (no canvas region clipboard exists to wire them to), and
-`chrome.js`/`api.platform` (ARCH-03) — `menu.js` branches on
-`process.platform` itself rather than consuming a shared platform module,
-which does not yet exist.
+(zoom, fit), and the Edit menu's Cut/Copy/Paste roles operate on focused text
+fields only (no canvas region clipboard exists to wire them to). `chrome.js`/
+`api.platform` (ARCH-03, done — see "Already completed") now exists;
+`menu.js`'s own `process.platform` branch was folded into it, so this menu
+template is no longer one of the places that checks platform directly.
 
 ---
 
@@ -293,12 +293,12 @@ Shipped: a new `discardbuttons()` in `main.js` returns the button words, order,
 `defaultId` and `cancelId` for the running platform - macOS
 `Cancel/Don't Save/Save`, Windows `Save/Don't Save/Cancel`, GNOME
 `Discard/Cancel/Save` - and the dialog itself now carries `detail`,
-`noLink: true` and a `title`. `discardbuttons()` lives directly in `main.js`
-next to the file's other `process.platform` checks rather than in a
-`chrome.js` module, since ARCH-03 (which would introduce that module) is not
-yet done; consolidating it there is still ARCH-03's job. Verified with the
-probe harness on macOS (`darwin`): the dialog's button/verdict mapping was
-exercised through all three outcomes (see BUG-10, above).
+`noLink: true` and a `title`. `discardbuttons()` originally lived directly in
+`main.js`, next to the file's other `process.platform` checks, since
+`chrome.js` did not exist yet; it has since moved there unchanged (ARCH-03,
+done — see "Already completed"). Verified with the probe harness on macOS
+(`darwin`): the dialog's button/verdict mapping was exercised through all
+three outcomes (see BUG-10, above).
 
 ---
 
@@ -356,6 +356,105 @@ live file holds the new content.
 
 ---
 
+#### ARCH-02 — `W` is defined twice and `H` only once
+
+Shipped: `catalog.js` now owns `B`, `W` and `H` (a new `const H = 12`,
+exported alongside the other two); `lvl.js` no longer redefines `W`/`H`
+itself and reads `cat.W`/`cat.H` at every site that used the bare names.
+Verified: `npm run check`'s `blank() -> write() -> read()` round trip and its
+migration pass over `website/levels/*` both still pass unchanged.
+
+---
+
+#### ARCH-03 — There is no platform abstraction and no way for the renderer to know its platform
+
+Shipped: a new `chrome.js` in main is now the only place `process.platform`
+is read - `main.js`'s `window-all-closed` guard, `menu.js`'s appMenu/
+windowMenu split and NAT-21's `discardbuttons()` (previously inline in
+`main.js`, done — see above) all consume it instead of each holding their own
+check. `preload.js` exposes `api.platform`; `app.js` stamps it onto
+`<html data-platform>` at boot, so `style.css` can key off
+`[data-platform=...]` with no platform branching in the renderer's own
+JavaScript at all. Verified with the probe harness: `[api.platform,
+document.documentElement.dataset.platform]` both read `"darwin"`;
+`chrome.windowoptions()` and `chrome.discardbuttons()`, called directly under
+a forced `process.platform`, produce the correct distinct shape for
+`darwin`, `win32` and `linux`.
+
+---
+
+#### NAT-02 — Fake macOS traffic lights are drawn on every platform
+
+Shipped: the hand-drawn `.dots`/`#wclose`/`#wmin`/`#wmax` markup, styles and
+the `win:ctl` IPC channel are gone. `chrome.js` (ARCH-03, done — see above)
+supplies real per-platform `BrowserWindow` options instead: macOS gets
+`titleBarStyle: 'hiddenInset'` with a `trafficLightPosition` computed from
+the existing 34px title-bar height and the design's own 14px dot size
+(VIS-03); Windows gets `titleBarStyle: 'hidden'` plus `titleBarOverlay`;
+Linux keeps a normal, WM-decorated `frame: true` window rather than guessing
+at Linux's inconsistent `titleBarOverlay` support, per the audit's own
+guidance that a native frame - not a hard-coded macOS-shaped layout - is the
+correct fallback there. `#title` reserves space for the native controls via
+two `[data-platform]` CSS rules instead of drawing anything itself. The green
+button now enters full screen rather than calling `maximize()`, for free -
+real OS behaviour, no code required. Verified on macOS, the only platform
+this shipped from: an on-screen screenshot (not `capturePage()`, which cannot
+see native window chrome at all) shows a real OS-drawn traffic-light triple
+at the window's top-left; `document.querySelectorAll('.dots, #wclose, #wmin,
+#wmax').length` is `0`; `#title`'s computed `padding-left` is `78px`; open,
+save, undo/redo, tab switching and closing a dirty document through the
+native controls all still work. The Windows/Linux branches are implemented
+against Electron's documented `titleBarOverlay`/`frame` behaviour but were
+not exercised on real Windows or Linux hardware - flagged for the next
+platform-equipped pass.
+
+---
+
+#### NAT-05 — Context menus are `<div>`s instead of native menus
+
+Shipped: the hand-rolled `#menu`/`menu()`/`closemenu()` and the capture-phase
+`mousedown` dismisser (~55 lines) are gone from `app.js` and `style.css`.
+`rowmenu()`/`panelmenu()` now send the context a click needs (`kind`, `key`,
+`entityDef` - read at click time, not left for main to ask again later, since
+`Grid.sel` can change before an async popup resolves) over a new `menu:row`
+channel; `main.js` builds the equivalent template with
+`Menu.buildFromTemplate()` and pops it at the cursor; the chosen action comes
+back over a new `rowcmd` channel to one dispatcher in `app.js` that reuses
+the existing `App.opentab`/`Panel.assign`/`edit`/`delscript`/`delmidi`/
+`addscript`/`addmidi` functions unchanged. Verified with a probe harness that
+intercepts `Menu.buildFromTemplate` so no real OS popup ever opens, and
+invokes the returned template's own `click()` handlers directly to drive the
+real production code path: a script row's menu built exactly `open, assign
+to entity (disabled - no entity selected), rename, delete, ---, new script,
+import midi`; invoking `delete` removed the script from `App.doc.scripts`
+end-to-end through the real IPC round trip; the panel-background menu built
+exactly `new script, import midi`, and invoking `new script` opened the same
+inline-rename `<input>` the old code did.
+
+---
+
+#### NAT-11 — The mouse wheel always zooms; trackpad gestures are not understood
+
+Shipped: `onwheel()` (`grid.js`) now checks `ev.ctrlKey` - set by the OS for a
+pinch, unset for a two-finger scroll or a plain wheel notch - instead of
+always zooming. Ctrl+wheel (and a real pinch) zooms about the pointer,
+unchanged in feel: the old, unexplained `0.0015` factor is now
+`Math.LN2 / ZOOM_PX_PER_DOUBLING` with `ZOOM_PX_PER_DOUBLING = 462`, an exact
+algebraic match. A bare wheel event pans by `(deltaX, deltaY)`; Shift+wheel
+pans horizontally from a vertical-only wheel - the classic convention - only
+when the device has not already supplied its own `deltaX`. `ev.deltaMode` is
+normalised (`LINE`/`PAGE` to pixels) so the same physical notch feels the
+same on every device. `ZMIN` is now shared between `Grid.fit()` and the
+wheel's own clamp (GEO-11's `0.03`/`3` row and half of its `0.0015` row are
+therefore already done - `FITPAD`, `GRIDMIN`, `SELW` and `BARSLOP` are not).
+Verified with the probe harness: a plain wheel event (`deltaX: 40,
+deltaY: 20`) panned the camera by `(80, 40)` world px at `z = 0.5` and left
+zoom untouched; the same event with `ctrlKey: true` changed zoom
+(`0.5 -> 0.58`) while re-centring on the pointer; `shiftKey: true, deltaX: 0,
+deltaY: 60` panned horizontally by `120` world px and left `y` untouched.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -398,48 +497,57 @@ well-commented decisions that a senior engineer would defend. The comments in
 improvement, not a rewrite.
 
 The **shell around that core is the problem**. Studio is a web page wearing a
-desktop application's clothes. It draws fake macOS traffic lights on every
-platform, builds its own context menus out of `<div>`s, invents its own title
-bar, and has never been packaged. Its geometry is a collection of unrelated
-pixel constants. And the font it was designed in is neither installed nor
-bundled, so the app has never actually been seen in its own typeface. It now
-ships a real application menu under its own name rather than Electron's
-default one (NAT-01, see "Already completed" above), which also closed the
-⌘R data-loss bug and three other data-safety findings; document identity now
-lives in main rather than split across the process boundary (BUG-08/ARCH-01);
-a dead or wedged renderer can no longer leave the window permanently
-unclosable (BUG-09); and the resting text, accent text and control-boundary
-colours all now clear WCAG AA/1.4.11 contrast (VIS-01, VIS-02), with a real
-focus ring restored everywhere (VIS-06) — see "Already completed" above for
-all of these. Data safety has since been carried further still: the renderer
-runs sandboxed and can no longer be navigated away from the app, losing the
-open document, by a dropped file or a stray link (NAT-18); a crash or power
-loss can be recovered from on the next launch, and an overwrite-save keeps a
-`.bak` (UX-10); the unsaved-changes dialog now speaks each platform's own
-words, order and button style, with a named verdict rather than a magic
-response index (NAT-21, BUG-10); and the editor now warns, without ever
-blocking a save, when a level is missing the start/end blocks or script
-references the game actually needs to run it (BUG-11) — see "Already
-completed" above for these five too. The shell's remaining problems are
-below.
+desktop application's clothes. It invents its own title bar and has never
+been packaged. Its geometry is a collection of unrelated pixel constants. And
+the font it was designed in is neither installed nor bundled, so the app has
+never actually been seen in its own typeface. It now ships a real application
+menu under its own name rather than Electron's default one (NAT-01, see
+"Already completed" above), which also closed the ⌘R data-loss bug and three
+other data-safety findings; document identity now lives in main rather than
+split across the process boundary (BUG-08/ARCH-01); a dead or wedged renderer
+can no longer leave the window permanently unclosable (BUG-09); and the
+resting text, accent text and control-boundary colours all now clear WCAG
+AA/1.4.11 contrast (VIS-01, VIS-02), with a real focus ring restored
+everywhere (VIS-06) — see "Already completed" above for all of these. Data
+safety has since been carried further still: the renderer runs sandboxed and
+can no longer be navigated away from the app, losing the open document, by a
+dropped file or a stray link (NAT-18); a crash or power loss can be recovered
+from on the next launch, and an overwrite-save keeps a `.bak` (UX-10); the
+unsaved-changes dialog now speaks each platform's own words, order and button
+style, with a named verdict rather than a magic response index (NAT-21,
+BUG-10); and the editor now warns, without ever blocking a save, when a level
+is missing the start/end blocks or script references the game actually needs
+to run it (BUG-11) — see "Already completed" above for these five too. The
+shell has since gained real per-platform window chrome in place of the fake
+traffic-light dots (NAT-02), a native `Menu.popup()` file-manager context
+menu in place of the hand-rolled `<div>` one (NAT-05), a single `chrome.js`
+platform module the renderer's own `<html data-platform>` attribute is
+derived from (ARCH-03), and a trackpad that pans on a scroll and zooms only
+on a pinch or Ctrl+wheel (NAT-11) — see "Already completed" above for these
+four too. The shell's remaining problems are below.
 
 ### The three biggest remaining sources of perceived unpolish
 
-1. **Geometry is arbitrary.** The stylesheet contains 23 distinct pixel
-   literals with no scale: chrome bands of 34/32/24/22/13 px unrelated to the
+1. **Geometry is arbitrary.** The stylesheet now contains 24 distinct pixel
+   literals with no scale (was 23; NAT-02's `[data-platform]` padding rules
+   removed a handful tied to the deleted fake dots and `#menu`, and added two
+   of its own — `78px`/`138px`, the space reserved for macOS's/Windows' real
+   window controls — which GEO-01's eventual token pass should name too):
+   chrome bands of 34/32/24/22/13 px unrelated to the
    18 px line box; side panels pinned at 184 px and 212 px that consume 41 % of
    the 960 px minimum window; `#props { flex: 0 1 46% }`; `#scripts { flex: 1 1
    60% }`; a palette of `repeat(4, 1fr)` that computes to **42.25 px cells for
    32 px sprites** — a fractional, shimmering scale factor of 1.32 (GEO-01,
    GEO-03, GEO-07).
-2. **Nothing is native but the file dialogs, the menu and the About panel.**
-   Custom window controls, custom title, DOM context menus, no recent
-   documents, no `open-file` handler, no file association, no single-instance
-   lock, no drag-and-drop, no window-state persistence, no icon, no packaging
-   config, no `setDocumentEdited`, no `setRepresentedFilename`, no
-   `nativeTheme`. Most of the Electron APIs that exist precisely to make this
-   application feel native are still unreferenced anywhere in the tree
-   (verified by grep).
+2. **Most of the rest is still not native.** Window controls and context
+   menus are now the OS's own (NAT-02, NAT-05, see "Already completed"), but
+   a custom title row remains, and there is still no recent documents, no
+   `open-file` handler, no file association, no single-instance lock, no
+   drag-and-drop, no window-state persistence, no icon, no packaging config,
+   no `setDocumentEdited`, no `setRepresentedFilename`, no `nativeTheme`.
+   Most of the Electron APIs that exist precisely to make this application
+   feel native are still unreferenced anywhere in the tree (verified by
+   grep).
 3. **The typeface is a fiction.** Measured in the running app: the strings
    `"JetBrains Mono"`, `"DejaVu Sans Mono"`, `ui-monospace`, `monospace` and
    the deliberately bogus `"NoSuchFontXYZ"` all render at **exactly
@@ -450,14 +558,15 @@ below.
 
 ### The highest-impact improvements
 
-In order of user-visible payoff per unit of work:
+In order of user-visible payoff per unit of work. Two of the original four
+are done — `titleBarStyle`/`titleBarOverlay` in place of the fake dots
+(NAT-02) and native `Menu.popup()` context menus (NAT-05), both see "Already
+completed" — and are not repeated below.
 
 | # | Change | Why |
 |---|--------|-----|
 | 1 | Bundle JetBrains Mono as a woff2 | The app finally looks like its own design, identically on all three platforms |
-| 2 | `titleBarStyle: 'hiddenInset'` on macOS / `titleBarOverlay` on Windows; delete the fake dots | Real window controls, real focus dimming, real double-click-to-zoom |
-| 3 | One spacing/size scale derived from the 18 px line box; proportional panels with splitters | Removes every arbitrary dimension at once |
-| 4 | Native `Menu.popup()` for context menus | Keyboard navigation, screen-reader support, platform look, for less code than the DOM version |
+| 2 | One spacing/size scale derived from the 18 px line box; proportional panels with splitters | Removes every arbitrary dimension at once |
 
 ---
 
@@ -531,24 +640,27 @@ refactor. This codebase is 2 627 lines and should stay small.
 | `.lvl` read/write/validate/migrate | `lvl.js` (main) | Yes — one copy, no renderer duplicate |
 | Native dialogs (open/save/discard/midi) | `main.js` | Yes |
 | Which file is open; whether it is dirty | `main.js` (`doc = {path, dirty}`); renderer keeps a display-only mirror | Yes — done, BUG-08/ARCH-01 |
-| **Window controls (min/max/close)** | **renderer** → `win:ctl` IPC | **No** — see NAT-02 |
+| Window controls (min/max/close) | the OS, via real per-platform `BrowserWindow` chrome | Yes — done, NAT-02 |
 | Application menu | `menu.js` (main), rebuilt on renderer state | Yes — done, NAT-01 |
-| **Context menus** | **renderer DOM** (`#menu`, `menu()` in `app.js`) | **No** — see NAT-05 |
+| Context menus | `Menu.buildFromTemplate().popup()` (main), triggered by `menu:row` IPC | Yes — done, NAT-05 |
 | Level document, undo, canvas, palette, inspector, Monaco | renderer | Yes |
 
-The preload (`preload.js`, now 19 lines) is a clean, minimal, correctly-shaped
+The preload (`preload.js`, now 26 lines) is a clean, minimal, correctly-shaped
 bridge: named functions, no object passthrough, no `ipcRenderer`
-exposure. It is the best-designed file in the project. Its only gap is that it
-exposes no platform information, which is why the renderer cannot adapt to the
-host OS (ARCH-03).
+exposure. It is the best-designed file in the project. It now also exposes
+`api.platform` (ARCH-03, done — see "Already completed"), so the gap this
+paragraph used to note - no platform information, so the renderer could not
+adapt to the host OS - is closed.
 
 ### UI architecture
 
 Five global-scope modules, coordinated by `App`:
 
-- `App` (`app.js`) owns the document, tab strip, file manager, key bindings and
-  the DOM context menu. `App.refresh()` is the universal "rebuild everything"
-  entry point; `Undo` calls it after every history step.
+- `App` (`app.js`) owns the document, tab strip, file manager and key
+  bindings, and sends the context a click needs for main to build a native
+  menu from (NAT-05, done — see "Already completed"). `App.refresh()` is the
+  universal "rebuild everything" entry point; `Undo` calls it after every
+  history step.
 - `Grid` (`grid.js`) owns the canvas: camera, `Uint16Array` mirror, culled
   draw, all pointer gestures.
 - `Panel` (`panel.js`) owns the palette and inspector, both rebuilt from
@@ -580,14 +692,15 @@ colour tokens and four layout tokens. Against that:
 
 ### Existing platform abstractions
 
-None in the renderer. `process.platform` now appears twice in the main
-process (`main.js`, the `window-all-closed` guard; `menu.js`, macOS vs.
-everyone-else menu shape — the second use NAT-01 introduced, and exactly the
-kind of branch ARCH-03 asks to consolidate into one module rather than let
-multiply). The renderer still has no way to know what OS it is on. Every
-platform-specific decision in the UI — the traffic lights, the ⌘/Ctrl
-handling, the label capitalisation, the scrollbar assumptions — is therefore
-either hard-coded to one platform or silently wrong on the others.
+Done — see "Already completed", ARCH-03. `chrome.js` is now the only place
+`process.platform` is read in the whole codebase: `main.js`'s
+`window-all-closed` guard, `menu.js`'s appMenu/windowMenu split and
+`discardbuttons()` (NAT-21) all consume it rather than each holding their own
+check. The renderer knows its OS through `api.platform` and the
+`<html data-platform>` attribute it drives; real per-platform window chrome
+(NAT-02) already keys off it. The ⌘/Ctrl handling, the label capitalisation
+(VIS-10) and the scrollbar assumptions (NAT-20) are not yet ported to use it,
+but the abstraction itself - the thing this finding was about - now exists.
 
 ---
 
@@ -670,71 +783,6 @@ is served if a `.git` directory is present, which it is.
 
 ---
 
-#### NAT-02 — Fake macOS traffic lights are drawn on every platform
-
-**Category** Native · **Severity** High · **Priority** P0 · **Affects** UI, UX
-
-**Current.** `main.js:38` creates the window with `frame: false`.
-`index.html:7-9` draws three `<i>` elements; `style.css:55-63` makes them 12 px
-circles coloured `#ff736a` / `#ffbe2f` / `#2bc840`; `app.js:523-525` wires them
-to `tryclose` and `api.ctl('min'|'max')`.
-
-**Why it's a problem.** This is the clearest instance of the app fighting the
-OS rather than cooperating with it.
-
-- **On macOS** it is an imitation that fails every detail the real control
-  gets right: no ⌃/–/+ glyphs on hover; no dimming when the window loses key
-  focus; no ⌥-click behaviours; no "Reduce transparency"/"Increase contrast"
-  response; wrong colours (see below); wrong size (12 px vs the design's 14 px
-  and the system's 12 px at a different pitch); and — importantly — the green
-  button calls `win.maximize()`, whereas the real green button enters
-  **full screen**, with *zoom* on ⌥-click. The imitation therefore behaves
-  differently from every other window on the user's Mac.
-- **On Windows** window controls belong at the **top right**, are rectangular,
-  are ~46 × 32 px, use the Segoe Fluent glyph set, and the close button turns
-  red on hover. Three coloured dots at the top left are simply wrong there.
-- **On Linux** button placement, order and presence are a *user preference*
-  (`org.gnome.desktop.wm.preferences.button-layout`), and many WMs use
-  server-side decorations. Hard-coding macOS's layout ignores the user's
-  configuration.
-
-**Evidence.** `index.html:6-17`, `style.css:46-65`, `app.js:523-525`,
-`main.js:38`. Colours: the design file specifies `#FF736A / #FEBC2E / #19C332`;
-the implementation uses `#ff736a / #ffbe2f / #2bc840` — the amber and green
-diverge from the reference for no recorded reason (VIS-03).
-
-**Recommended.** Delete the fake dots and the `win:ctl` channel. Per platform:
-
-- **macOS** — `titleBarStyle: 'hiddenInset'` plus
-  `trafficLightPosition: {x, y}` computed from the title-bar token so the real
-  controls sit exactly where the design places them. Real controls, real
-  behaviour, less code.
-- **Windows** — `titleBarStyle: 'hidden'` plus
-  `titleBarOverlay: {color, symbolColor, height}` fed from the same tokens.
-  Windows draws its own caption buttons, correctly placed and themed, over the
-  app's title bar.
-- **Linux** — `titleBarOverlay` is supported on Linux in current Electron;
-  prefer it. Where it is unavailable or the desktop uses server-side
-  decorations, fall back to `frame: true` and let the WM decorate, hiding the
-  in-app title row entirely. Do **not** fall back to the macOS dots.
-
-**Implementation.** One `chrome.js` module in main that returns the
-`BrowserWindow` options for `process.platform`, and one `api.platform` value
-exposed through the preload so `style.css` can key off
-`html[data-platform="darwin"]` for the inset padding the real traffic lights
-need. That is the *only* platform branch the renderer should contain
-(ARCH-03).
-
-**Depends on.** The design-token work (GEO-01) supplies the height and colours
-that `trafficLightPosition` and `titleBarOverlay` need.
-
-**Risks.** `titleBarOverlay` colours do not follow a theme change automatically
-— call `win.setTitleBarOverlay()` from a `nativeTheme.on('updated')` handler
-(NAT-15). On macOS, `hiddenInset` reserves ~78 px on the left; the layout must
-derive its left padding from that rather than assume it.
-
----
-
 #### NAT-03 — Window title, dirty state and proxy icon ignore every OS convention
 
 **Category** Native · **Severity** High · **Priority** P1 · **Affects** UI, UX
@@ -775,7 +823,7 @@ it behind the `doc` module's setters in main. Keep `#name` as pure display fed
 by a `doc:state` event.
 
 **Platforms.** As above. On macOS the proxy icon only appears with a real title
-bar or `hiddenInset` — another reason NAT-02 comes first.
+bar or `hiddenInset` — already true (NAT-02, done — see "Already completed").
 
 ---
 
@@ -813,61 +861,6 @@ buttons keep working through the shared command table.
 
 **Risks.** Discoverability on macOS: users who learned the buttons lose them.
 Acceptable — they move to the place users look first.
-
----
-
-#### NAT-05 — Context menus are `<div>`s instead of native menus
-
-**Category** Native · **Severity** High · **Priority** P1 · **Affects** UI, UX, Accessibility
-
-**Current.** `app.js:154-209` implements a menu from scratch: `#menu` is a
-fixed-position div, items are `.mi` divs with `onclick`, separators are `<hr>`,
-disabled items get a class, and `menu()` positions it by clamping
-`offsetWidth/Height` against `innerWidth/innerHeight`.
-
-**Why it's a problem.** The re-implementation is missing essentially everything
-the native menu provides:
-- **No keyboard**: arrow keys, Home/End, type-ahead, Return, Escape — none.
-- **No accessibility**: no `role`, no focus management; a screen reader sees
-  three unlabelled divs (A11Y-02).
-- **No platform appearance**: it does not match the OS in font, metrics,
-  corner radius, shadow, highlight colour, or animation, on any of the three.
-- **No accelerator column**, no checkmarks, no radio groups, no submenus, no
-  icons — all of which the file-manager and canvas menus will want.
-- **Cannot escape the window.** A native menu can extend past the window edge;
-  this one clamps to `innerWidth - offsetWidth - 4`, so near the bottom-right
-  it is squeezed inward rather than flipped, which is not what any platform
-  does. (Probed: opening at (1595, 945) in a 1600 × 950 window produced a menu
-  at x 1446–1596, y 910–946 — clamped, not flipped.)
-- Roughly 55 lines of renderer code exist to do worse what one main-process
-  call does.
-
-**Recommended.** `Menu.buildFromTemplate(template).popup({window: win})` in the
-main process, triggered by an IPC message carrying the context (which row, what
-kind, what is selected). Delete `#menu`, `menu()`, `closemenu()`, the `.mi`
-styles, and the global capture-phase `mousedown` dismisser (`app.js:530-534`).
-
-**Implementation.**
-1. Renderer sends `menu:show` with `{kind: 'script'|'midi'|'panel'|'canvas',
-   key, selection}`.
-2. Main builds the template — this is where "assign to <def>" gets its
-   `enabled: false` honestly, where the separator is `{type: 'separator'}`, and
-   where accelerators are displayed.
-3. Chosen item comes back on the `cmd` channel and the renderer's `ACTS` table
-   — both already exist (the menu bar uses them, see "Already completed") — so
-   this reuses the dispatcher rather than adding a second one. Commands this
-   menu needs that `ACTS` does not yet have (rename, delete, assign) are new
-   entries in the same table, not a parallel mechanism.
-4. Keep the documented left-click-to-open-menu behaviour (`CLAUDE.md`
-   "Deviations": it was asked for explicitly) — `popup()` works from a
-   left-click just as well.
-
-**Platforms.** All three benefit. On Linux the native menu inherits the GTK
-theme, which is the single fastest way to stop looking foreign there.
-
-**Risks.** `popup()` is asynchronous and the renderer loses the ability to
-inspect the menu; make sure `Grid.sel` and the row key are captured at popup
-time, not read later.
 
 ---
 
@@ -1055,51 +1048,6 @@ ignore programmatic positioning; treat restore as a request, not a guarantee.
 
 ---
 
-#### NAT-11 — The mouse wheel always zooms; trackpad gestures are not understood
-
-**Category** Native · **Severity** High · **Priority** P1 · **Affects** UX
-
-**Current.** `onwheel` (`grid.js:352-365`) treats every wheel event as zoom:
-`c.z *= Math.exp(-ev.deltaY * 0.0015)`. `ev.deltaX` is ignored entirely.
-`ev.ctrlKey` is not checked. `ev.deltaMode` is not checked.
-
-**Why it's a problem.** On macOS — and on Windows/Linux precision touchpads —
-a two-finger swipe is a **scroll**, and the OS synthesises a *pinch* as a wheel
-event with `ctrlKey: true`. Studio has this exactly backwards: two-finger
-scrolling zooms wildly (and with inertia, so it keeps zooming after the fingers
-lift), while pinch-to-zoom is indistinguishable from it. For a trackpad user
-the canvas is close to unusable, and this is the most common way a Mac user
-will first touch the app.
-
-Additionally, `deltaY` is compared against a fixed factor without checking
-`deltaMode`: `DOM_DELTA_LINE` (some Windows/Linux mice) and `DOM_DELTA_PAGE`
-report in lines/pages, not pixels, so the same physical notch produces a
-wildly different zoom step depending on the device.
-
-**Recommended.**
-```
-wheel with ctrlKey        -> zoom about the pointer     (pinch, and Ctrl+wheel)
-wheel without ctrlKey     -> pan by (deltaX, deltaY)    (two-finger / wheel)
-shift+wheel               -> pan horizontally           (classic convention)
-```
-Normalise the delta by `deltaMode` first (`LINE → × line-height`,
-`PAGE → × viewport`). Keep the exponential zoom curve — it is the right
-model — but name the constant and express it as "zoom doubles per N pixels of
-travel", which is a statement a reader can check, rather than `0.0015`.
-
-**Platforms.** macOS is where this is worst. Windows precision touchpads behave
-the same way. Traditional mice on all platforms send `ctrlKey: false`, so
-Ctrl+wheel remains the conventional zoom there — which the rule above gives for
-free.
-
-**Depends on.** GEO-11 (naming the zoom constants).
-
-**Risks.** Some Linux setups deliver horizontal scroll as buttons 6/7 rather
-than `deltaX`; that arrives as a wheel event with a non-zero `deltaX` under
-Chromium, so the rule still holds.
-
----
-
 #### NAT-12 — Right-click erases, which collides with Ctrl-click on macOS and blocks a canvas menu
 
 **Category** Native · **Severity** Medium · **Priority** P2 · **Affects** UX
@@ -1120,7 +1068,8 @@ unreachable by that route.
   alternative.
 - Add a **canvas context menu** on right-*click* without drag: if the pointer
   did not move between `mousedown` and `mouseup`, and the press did not modify
-  anything, show the native menu (NAT-05) instead of treating it as an erase.
+  anything, show the native menu (NAT-05, done — see "Already completed";
+  this canvas menu itself is not) instead of treating it as an erase.
   This makes the two gestures distinguishable by intent rather than by button.
 - On macOS specifically, do not treat `ctrlKey + button 0` as erase.
 - Document the erase gesture in a status-bar hint on first hover of the canvas,
@@ -1219,7 +1168,8 @@ theming:
    transitions), but VIS-09 adds some, and the media query must land in the
    same commit.
 Also: `nativeTheme.on('updated')` must re-push `titleBarOverlay` colours on
-Windows (NAT-02) if the OS accent/theme changes.
+Windows if the OS accent/theme changes - `titleBarOverlay` itself is done
+(NAT-02, see "Already completed"), the re-push on theme change is not.
 
 ---
 
@@ -1236,7 +1186,8 @@ the screenshot.
 
 **Why it's a problem — and the correct resolution.** This is the one case where
 "prefer native" and "visual consistency" collide. The right answer is *not* to
-build a custom listbox (that would repeat NAT-05's mistake and cost the
+build a custom listbox (that would repeat the mistake the old DOM context menu
+made before NAT-05 replaced it - done, see "Already completed" - and cost the
 keyboard and accessibility behaviour a `<select>` gives free). It is to keep
 the real `<select>` and style the **control** to match, letting the **popup**
 be native:
@@ -1355,17 +1306,25 @@ tokens that come out of it are collected in §6.
 
 **Category** Design system · **Severity** High · **Priority** P0 · **Affects** UI, Maintainability
 
-**Current.** Counted across `style.css`, the pixel literals are:
+**Current.** Counted across `style.css`, the pixel literals are (re-counted
+after NAT-02 and NAT-05, both done — see "Already completed" — removed the
+fake dots' and `#menu`'s literals and added two of their own for the real
+window controls' reserved space):
 
 ```
-1px ×10   12px ×9   10px ×8   4px ×7   6px ×6   8px ×5   14px ×3
-3px ×2    2px ×2    18px ×2   13px ×2  5px ×1   11px ×1  16px ×1
-20px ×1   22px ×1   24px ×1   32px ×1  34px ×1  48px ×1
-150px ×1  184px ×1  212px ×1  260px ×1
+1px ×9    10px ×8   2px ×7   12px ×7   8px ×5   6px ×5   4px ×4
+3px ×2    18px ×2   16px ×2  14px ×2   13px ×2  11px ×2
+5px ×1    22px ×1   24px ×1  32px ×1   34px ×1  48px ×1
+78px ×1   138px ×1  184px ×1 212px ×1  260px ×1
 ```
 
-Twenty-three distinct values, of which 2, 3, 5, 11, 13, 14, 18, 22 and 34 are
-one-offs. There is no relationship between them and nothing names them.
+Twenty-four distinct values (was 23), of which 5, 22, 24, 32, 34, 48, 78, 138,
+184, 212 and 260 are one-offs. `78px`/`138px` (`style.css`'s
+`[data-platform]` rules) are the two NAT-02 added - the space macOS's inset
+traffic lights and Windows' caption buttons need - and are exactly the kind
+of literal this finding is about: real, necessary, and still not derived from
+anything named. There is no relationship between any of them and nothing
+names them.
 
 **Why it's a problem.** Every new component invents its own spacing, so
 consistency has to be maintained by hand and cannot be. It is also the root
@@ -1620,11 +1579,14 @@ given its own finding.
 | Value | Location | What should determine it |
 |---|---|---|
 | `max-width: 260px` on `.tab` | `style.css:79` | A character count (`ch` units) — tabs hold filenames, so `max-width: 24ch` is a statement about content; 260 px is not. Add `min-width` too, so a one-character name is not a sliver. |
-| `min-width: 150px` on `#menu` | `style.css:227` | Moot — the menu becomes native (NAT-05) and the OS sizes it. |
-| `2` / `4` px clamps in `menu()` | `app.js:175-176` | Moot with NAT-05; until then, one `--menu-margin` token, and *flip* rather than clamp near an edge. |
 | `height: 48px` on `#props textarea` | `style.css:208` | `calc(var(--line) * 3)` — "three lines of description", which is a decision; 48 px is 2.67 lines, which is not. |
-| `width: 12px; height: 12px` on `.dots i` | `style.css:57` | Moot — real traffic lights (NAT-02). |
-| `gap: 8px` on `.dots`, `gap: 14px` on `.acts`, `gap: 10px` on `#title`, `gap: 18px` on `#status`, `gap: 6px` on `li`, `gap: 8px` on `.tab` | `style.css` passim | All become spacing tokens. Six different gutters in one title bar and status bar is the definition of unsystematic. |
+| `gap: 14px` on `.acts`, `gap: 10px` on `#title`, `gap: 18px` on `#status`, `gap: 6px` on `li`, `gap: 8px` on `.tab` | `style.css` passim | All become spacing tokens. Five different gutters in one title bar and status bar is the definition of unsystematic. |
+
+`#menu`'s `min-width: 150px`, the `2`/`4` px clamps in `menu()`, and the
+`.dots i` dimensions and gap are gone from this list entirely rather than
+resolved onto a token: the DOM context menu and the fake traffic-light dots
+they belonged to no longer exist in the codebase (NAT-05, NAT-02 — done, see
+"Already completed").
 | `padding: 1px 10px 1px 18px` on `li` | `style.css:123` | Asymmetric top/bottom (1 px) gives a 20 px row — below the 24 px minimum hit target (A11Y-08). The 18 px left indent is a hanging indent with no icon to hang; once rows get a file-type icon (VIS-12) the indent becomes `--space-4 + --icon`. |
 | `font-size: 10px` on `.grp`, `.hint`, `#props h4`; `11px` on `#status`; `13px` on `.run` | `style.css` passim | Four ad-hoc sizes below the 12 px body. Two are enough: `--font-size` and `--font-size-sm` (11 px). 10 px is below the practical legibility floor for a UI face and should go. |
 
@@ -1659,8 +1621,8 @@ Shared with the other four scroll containers (NAT-20) so all five agree.
 (a genuinely good decision — `CLAUDE.md` explains the reasoning and it is
 sound). There is no vertical equivalent, even though `Grid.setheight()`
 (`grid.js:134`) permits up to **999 rows**. Vertical navigation is
-middle-drag, Alt-drag, or the wheel — which currently zooms rather than scrolls
-(NAT-11).
+middle-drag, Alt-drag, or the wheel, which now scrolls (NAT-11, done — see
+"Already completed") — but still with no indicator of position.
 
 **Why it's a problem.** Asymmetry that the user cannot explain: one axis has a
 scrollbar and shows its position, the other has neither. On a 200-row level
@@ -1673,8 +1635,8 @@ the "shorter than the viewport" case, so the range the bar must represent
 already exists. Hide it (`visibility: hidden`, not `display: none`, so the
 layout does not shift) when the level fits the viewport.
 
-**Depends on.** NAT-11 (once the wheel scrolls, the vertical bar has something
-to reflect).
+**Depends on.** NAT-11 — done (see "Already completed"); the wheel now scrolls
+without a splitter, so the vertical bar has something to reflect.
 
 ---
 
@@ -1682,25 +1644,32 @@ to reflect).
 
 **Category** Layout / Code quality · **Severity** Medium · **Priority** P1 · **Affects** UI, Maintainability
 
-`grid.js` is the best-reasoned file in the project, and it still carries eight
-unnamed constants:
+`grid.js` is the best-reasoned file in the project, and it still carries six
+unnamed constants (two of the original eight - the wheel's own zoom clamps and
+factor - are already named; see below):
 
 | Literal | Location | What it means / what should determine it |
 |---|---|---|
 | `2 * B` in `Grid.fit()` | `grid.js:163` | One block of margin above and below the level. Name it `FITPAD = B` and write `Grid.h * B + 2 * FITPAD`, which then reads as the sentence it is. |
-| `0.03` and `1` in `Grid.fit()` | `grid.js:163` | Minimum and maximum fit zoom. The maximum of 1 means "never fit *above* 100 %", which is a real decision worth stating; 0.03 is the same floor as the wheel clamp and should be one shared `ZMIN`. |
-| `0.03` and `3` in `onwheel()` | `grid.js:361` | `ZMIN`/`ZMAX`. Derive `ZMIN` from something real: the zoom at which the whole 540-column level fits the narrowest supported viewport (`minWidth − panels`) — currently 0.03 is *below* that, so the user can zoom out into empty space. |
-| `0.0015` in `onwheel()` | `grid.js:361` | Zoom sensitivity. Express as a halving distance: `Math.LN2 / ZOOM_PX_PER_DOUBLING`, with `ZOOM_PX_PER_DOUBLING = 462` reproducing today's feel — a number a reader can reason about and tune. |
+| `1` (max fit zoom) in `Grid.fit()` | `grid.js:163` | "Never fit *above* 100 %", which is a real decision worth stating; name it rather than leave it bare - `ZMIN`, the other half of this pair, is already named and shared with the wheel (NAT-11, done, below). |
 | `B * z >= 10` grid-line threshold | `grid.js:257` | "Stop drawing grid lines once tiles are smaller than 10 device px." A legitimate decision; name it `GRIDMIN` and comment *why* (below this the lines outweigh the content). |
 | `sx + 1, sy + 1, s - 2, s - 2` selection inset | `grid.js:277` | Half of `lineWidth: 2`, so the 2 px stroke lands inside the tile. Derive it: `const w = SELW; strokeRect(sx + w/2, …, s - w)`. |
 | `+ .5` offsets | `grid.js:261-262, 287, 292` | Correct and idiomatic — a 1 px canvas stroke centred on a half-pixel. Keep; add a one-line comment, as it is the one magic number here that *should* stay. |
 | `1` px tolerance in `syncbar`/`onbar` | `grid.js:191, 199` | The documented re-entrancy tolerance (`CLAUDE.md` explains the reasoning, which is good). Name it `BARSLOP = 1` so both sites provably use the same value. |
 
+**Already done** (NAT-11, see "Already completed"): `ZMIN = 0.03` and
+`ZMAX = 3` are now named `const`s shared by `Grid.fit()` and `onwheel()`, and
+the old `0.0015` wheel factor is now `Math.LN2 / ZOOM_PX_PER_DOUBLING` with
+`ZOOM_PX_PER_DOUBLING = 462` - the exact algebraic equivalent, so today's feel
+is unchanged. `ZMIN` is still the old floor, not the "level fits the narrowest
+viewport" value this finding originally asked for; deriving it that way is
+still open.
+
 **Recommended.** A `const` block at the top of `grid.js` with a comment per
-entry, in the style the file already uses for `B` and `W` in `catalog.js`.
-None of these should become a formula; they should become named, explained
-constants. That is the distinction the brief draws, and this is the file where
-it matters most.
+entry, in the style the file already uses for `B` and `W` in `catalog.js` -
+`ZMIN`/`ZMAX`/`ZOOM_PX_PER_DOUBLING` already follow it. None of these should
+become a formula; they should become named, explained constants. That is the
+distinction the brief draws, and this is the file where it matters most.
 
 ---
 
@@ -1725,10 +1694,11 @@ absent from the implementation:
    radius** at the top of the window, and a matching 26 px flare on the right
    edge of the active tab (`M463 85H469C483.36 85 495 96.64 495 111V122H463V85Z`).
    The implementation has square corners everywhere and no radius token at all
-   (VIS-09). Whether to adopt the 26 px window radius depends on NAT-02 (with
-   `hiddenInset`/`titleBarOverlay` the OS owns the window's corners, and
-   `roundedCorners` handles macOS); the **tab flare** is purely internal and
-   should be honoured.
+   (VIS-09). The window's own corners are now the OS's to own (NAT-02, done —
+   see "Already completed" — shipped `hiddenInset`/`titleBarOverlay`, so
+   `roundedCorners` is what would apply on macOS if this is revisited); the
+   **tab flare**, which is purely internal, is still open and should be
+   honoured regardless.
 2. **A 36 px section-header band** (`122 → 158` in every panel). The
    implementation uses 24 px (`style.css:107`), which is why the headers read
    as cramped labels rather than as the panel headers the design draws.
@@ -1763,9 +1733,10 @@ already exists for exactly this purpose and is the right home for the record.
 | Accent (fill, 2 uses) | `#815AC1` | — | absent |
 | Dot diameter / pitch | 14 px / 23 px | 12 px / 20 px | diverged |
 
-**Assessment.** The dot colours become moot with NAT-02 (real traffic lights
-have the OS's colours, which is the point). The **accent** divergence is the
-one that matters: `#7b56ba` is not the design's `#7E58BE`, nobody recorded why,
+**Assessment.** The dot colours and diameter/pitch rows above are now moot
+(NAT-02, done — see "Already completed": real traffic lights have the OS's
+own colours and size, which was the point). The **accent** divergence is the
+one that still matters: `#7b56ba` is not the design's `#7E58BE`, nobody recorded why,
 and the design also uses a second, lighter accent `#815AC1` for filled
 elements that the implementation has no equivalent of.
 
@@ -1980,9 +1951,10 @@ the inspector's small controls, and drop-shadow filters on both side panels
 Three radius steps is enough; more is decoration. Two elevations is enough,
 because the app has exactly two layers above the surface.
 
-**Note.** With NAT-05 the context menu becomes native and `--elev-2` loses its
-only consumer — keep the token for future popovers, or drop it. Prefer
-dropping it until something needs it.
+**Note.** NAT-05 (done — see "Already completed") already made the context
+menu native, deleting the `#menu` box-shadow that would have been
+`--elev-2`'s only consumer — introduce the token only once something else
+needs it, rather than pre-emptively.
 
 ---
 
@@ -2312,9 +2284,10 @@ users will read as "3 things were undone".
 
 **Category** UX · **Severity** Medium · **Priority** P1 · **Affects** UX
 
-**Current.** Zoom is wheel-only (NAT-11). There is no numeric indicator, no
-zoom in/out command, no 100 % command, and `Grid.fit()` fits the **height**
-only (`grid.js:163`).
+**Current.** Zoom is wheel-only - Ctrl+wheel or a pinch, since NAT-11 (done,
+see "Already completed") gave a bare wheel event to panning instead. There is
+no numeric indicator, no zoom in/out command, no 100 % command, and
+`Grid.fit()` fits the **height** only (`grid.js:163`).
 
 **Why fit-height alone is a problem.** A level is 540 columns × 100 px = 54 000
 world pixels wide. In the measured default window, `Grid.fit()` on a 12-row
@@ -2580,7 +2553,9 @@ does the user.
 **Recommended.** `overflow-x: auto` with the shared scrollbar treatment
 (NAT-20), plus: scroll the active tab into view on `App.select()`; a
 `⌘1…⌘9` / `⌃Tab` keyboard route (NAT-14); and an overflow chevron listing
-hidden tabs via the native menu (NAT-05). Also add middle-click-to-close, which
+hidden tabs via the native menu (NAT-05, done — see "Already completed", so
+this is a new `menu:row`-style channel and template rather than a new
+mechanism). Also add middle-click-to-close, which
 every tabbed editor supports and which costs three lines.
 
 Related: the Level Editor tab is not closable but is visually identical to the
@@ -2640,9 +2615,11 @@ already shipped (see "Already completed") and are not repeated here.
 
 **Category** Accessibility · **Severity** Critical · **Priority** P0 · **Affects** UI, UX
 
-**Current.** Measured in the running app: **17** focusable elements exist in
-the whole document, against **31** palette cells alone. The non-focusable
-interactive elements are:
+**Current.** Re-measured in the running app after NAT-02/NAT-05 (done — see
+"Already completed"): **15** focusable elements exist in the whole document
+(was 17 - the fake window-control dots and the DOM context menu are gone,
+and neither was itself reachable by Tab even before), against **31** palette
+cells alone. The non-focusable interactive elements are:
 
 | Control | Built as | Location |
 |---|---|---|
@@ -2650,12 +2627,14 @@ interactive elements are:
 | File-manager rows | `<li>` + `onclick` | `app.js:130-152` |
 | Tabs | `<div class="tab">` + `onclick` | `app.js:78-93` |
 | Tab close buttons | `<i>` + `onclick` | `app.js:87-90` |
-| Context-menu items | `<div class="mi">` + `onclick` | `app.js:167-172` |
-| Window controls | `<i>` + `onclick` | `index.html:8` |
 | Section headers | `<div class="hdr">` | `index.html:29, 31` |
 
-None can be reached with Tab; none respond to Return or Space; none appear in
-the focus order at all. The application is operable only with a pointer.
+Context-menu items and window controls, both on this list in the original
+audit, are gone from it: both are now real native OS surfaces (NAT-05,
+NAT-02) with their own platform-correct keyboard behaviour, not DOM elements
+this finding could fix by replacing them. None of the rows above can be
+reached with Tab; none respond to Return or Space; none appear in the focus
+order at all. The application is still operable only with a pointer.
 
 **Recommended.** Use the right element rather than adding ARIA to the wrong one
 — the brief is explicit that native semantics beat ARIA:
@@ -2672,9 +2651,10 @@ the focus order at all. The application is operable only with a pointer.
   them and one Tab stop for the strip. The panels get `role="tabpanel"`.
 - **Tab close** → a real `<button>` with `aria-label="Close <name>"`, and a
   hit target meeting A11Y-08.
-- **Menu items** → moot; the menu becomes native (NAT-05), which is the single
-  biggest accessibility win available here.
-- **Window controls** → moot; they become the OS's own (NAT-02).
+- **Menu items** → done; the menu is now native (NAT-05, see "Already
+  completed"), which was the single biggest accessibility win available here.
+- **Window controls** → done; they are now the OS's own (NAT-02, see "Already
+  completed").
 
 **Implementation note.** Roving `tabindex` is the right pattern for all three
 lists: exactly one item carries `tabindex="0"`, the rest `-1`, and arrow keys
@@ -2753,7 +2733,6 @@ needs to be usable, is already shipped.
 
 | Target | Size | Minimum |
 |---|---|---|
-| `.dots i` window controls | 12 × 12 px | 24 × 24 (WCAG 2.5.8 AA); macOS HIG 28×28 |
 | `.tab i` close glyph (`×`) | ~7 × 18 px | 24 × 24 |
 | `li` file rows | ~20 px tall (`padding: 1px 10px 1px 18px` + 18 px line) | 24 |
 | `.hdr button` (`+`) | ~12 × 12 px | 24 × 24 |
@@ -2763,8 +2742,10 @@ needs to be usable, is already shipped.
 does not require 24 px of *visual* area — pad the clickable element, or use a
 transparent `::before` overlay, so the visual density the design wants is
 preserved while the target grows. `li` rows go to `--row` (30 px) from GEO-01,
-which also fixes the cramped list in the screenshot. Window controls become the
-OS's (NAT-02) and inherit correct sizing for free.
+which also fixes the cramped list in the screenshot. Window controls are
+already the OS's own (NAT-02, done — see "Already completed") and already
+inherit correct sizing for free - the row above this used to track them and
+is now removed.
 
 ---
 
@@ -2862,66 +2843,6 @@ The codebase is small, consistently formatted, and unusually well commented —
 the module comments in `grid.js`, `undo.js`, `lvl.js` and `catalog.js` explain
 decisions rather than restating code, which is exactly right and should be
 preserved. The findings below are targeted, not a call for restructuring.
-
----
-
-#### ARCH-02 — `W` is defined twice and `H` only once
-
-**Category** Code quality · **Severity** Medium · **Priority** P1 · **Affects** Maintainability
-
-**Current.** `catalog.js:13` defines `const W = 540` and exports it
-(`catalog.js:105`). `lvl.js:14` **re-defines** `const W = 540` with its own
-comment, while `lvl.js:12` already does `require('./catalog')`. The constant
-that `CLAUDE.md` calls a cross-repo contract ("Every `block_data` row holds
-**exactly 540** entries") therefore exists in two places, one of which imports
-the other and ignores it.
-
-Meanwhile `H = 12` (rows in a fresh level) exists only in `lvl.js:15` and is
-exported but never used by the renderer, and `B = 100` exists only in
-`catalog.js` and is used by `lvl.js` as `cat.B` (`lvl.js:143`) — so the three
-constants are handled three different ways.
-
-**Recommended.** `catalog.js` owns all three (`B`, `W`, `H`), since it is
-already the shared module and already carries the cross-repo contract comment.
-`lvl.js` uses `cat.W`, `cat.H`, `cat.B` uniformly. Delete `lvl.js:14-15`.
-
-**Risks.** None — `catalog.js`'s `module.exports` guard (`catalog.js:104`) and
-the "nothing above it may touch a browser global" rule (`CLAUDE.md`) already
-make it safe to require from main, and it already is.
-
----
-
-#### ARCH-03 — There is no platform abstraction and no way for the renderer to know its platform
-
-**Category** Architecture · **Severity** Medium · **Priority** P1 · **Affects** Architecture, UI
-
-**Current.** `process.platform` appears twice in main (`main.js`'s
-`window-all-closed` guard; `menu.js`'s macOS-vs-rest menu shape, added when
-NAT-01 shipped) and the preload still exposes no platform information, so the
-renderer cannot adapt. This is why the traffic lights are macOS-shaped
-everywhere (NAT-02), the hotbar exists on macOS where it should not (NAT-04),
-the capitalisation follows no platform convention (VIS-10), and the scrollbar
-assumptions are macOS-overlay-shaped (NAT-20). `menu.js`'s branch is a preview
-of exactly the drift this finding warns about: a second platform check already
-exists outside `main.js`, and every later platform-specific module will add
-another unless they consolidate here.
-
-**Recommended.** Two places, and only two:
-1. **`chrome.js` in main** — the single home for every platform branch that
-   affects the window: `BrowserWindow` options, `titleBarStyle`/
-   `titleBarOverlay`/`trafficLightPosition`, `menu.js`'s macOS/rest split, and
-   the "Settings" vs "Preferences" word (UX-11). The unsaved-changes dialog's
-   per-platform button order and labels are done (NAT-21, see "Already
-   completed") but still live as a `discardbuttons()` function inline in
-   `main.js`, next to the existing `process.platform` checks - exactly the
-   kind of branch this module exists to consolidate; move it here once
-   `chrome.js` exists rather than leaving it as a third scattered site.
-2. **`api.platform`** exposed through the preload, stamped onto the root as
-   `<html data-platform="darwin|win32|linux">` at boot, so CSS can key off it
-   declaratively (`[data-platform="darwin"] .acts { display: none }`) with no
-   JavaScript branching in the renderer at all.
-
-That is the whole abstraction. Resist anything larger.
 
 ---
 
@@ -3232,24 +3153,24 @@ window and menu layers.
 | Area | Do this | Finding |
 |---|---|---|
 | App identity | `.icns`; bundle id `com.pellizzolabrothers.studio` (`productName`, `app.setName()` and `setAboutPanelOptions` are already shipped, NAT-01) | NAT-07, NAT-17 |
-| Window chrome | `titleBarStyle: 'hiddenInset'` + `trafficLightPosition`. Delete the fake dots. The green button must be **full screen**, not zoom. | NAT-02 |
+| Window chrome | `titleBarStyle: 'hiddenInset'` + `trafficLightPosition`; the fake dots are deleted; the green button is real full screen, not `maximize()` — done, see "Already completed" | NAT-02 |
 | Title | Document name only; `setRepresentedFilename` for the proxy icon; `setDocumentEdited` for the close-button dot. Not a path, not an asterisk. | NAT-03 |
 | Toolbar | Remove the New/Open/Save hotbar — it duplicates File, and the menu bar exists regardless of window framing. | NAT-04 |
-| Context menus | `Menu.popup()`. Ctrl+click must not erase. | NAT-05, NAT-12 |
+| Context menus | `Menu.popup()` — done, see "Already completed". Ctrl+click must still not erase. | NAT-05, NAT-12 |
 | Open Recent | `addRecentDocument` — feeds both the File menu and the Dock icon menu. | NAT-06, NAT-17 |
 | File association | `CFBundleDocumentTypes` for `.lvl` via electron-builder; handle `app.on('open-file')`, including before `whenReady`. | NAT-07 |
-| Trackpad | Two-finger scroll pans; pinch (`wheel` + `ctrlKey`) zooms. This is the single biggest day-to-day usability defect on a Mac. | NAT-11 |
+| Trackpad | Two-finger scroll pans; pinch (`wheel` + `ctrlKey`) zooms — done, see "Already completed". This was the single biggest day-to-day usability defect on a Mac. | NAT-11 |
 | Shortcuts | `CmdOrCtrl` accelerators from the menu; drop the hand-rolled `Ctrl+Y`. Settings is **⌘,** and is called "Settings". | NAT-14, UX-11 |
 | Scrollbars | Respect the overlay/classic setting; `scrollbar-gutter: stable` so layout does not depend on it. | NAT-20 |
 | Dialogs | "Don't Save", not "Discard"; sheet-parented; `detail` added — done, see "Already completed" | NAT-21 |
 | Distribution | `hardenedRuntime`, code signing, notarisation — without these an unsigned build is blocked by Gatekeeper. | NAT-07 |
-| Accessibility | VoiceOver reaches nothing today; native menus (NAT-05) and real controls (A11Y-01) fix most of it at once. | A11Y-01, A11Y-02 |
+| Accessibility | VoiceOver reaches nothing today; native menus (NAT-05, done) and real controls (A11Y-01, open) fix most of it at once. | A11Y-01, A11Y-02 |
 
 ### 5.2 Windows
 
 | Area | Do this | Finding |
 |---|---|---|
-| Window chrome | `titleBarStyle: 'hidden'` + `titleBarOverlay: {color, symbolColor, height}` so Windows draws its own caption buttons, correctly placed top-right and themed. Re-push on theme change. | NAT-02, NAT-15 |
+| Window chrome | `titleBarStyle: 'hidden'` + `titleBarOverlay: {color, symbolColor, height}` so Windows draws its own caption buttons, correctly placed top-right and themed — done, see "Already completed" (implemented against Electron's documented behaviour; not yet run on real Windows hardware). Re-pushing the colours on an OS theme change is still open. | NAT-02, NAT-15 |
 | Toolbar | The application menu is already set unconditionally (NAT-01, shipped) so its accelerators work even with no visible menu bar; keep an in-window toolbar as the visible surface, since `titleBarStyle: 'hidden'` shows none. Consider a hamburger that calls `Menu.popup()`. | NAT-04 |
 | Title | `Document — Pellizzola Brothers Studio`, with dirty state reflected in the OS title, not only in the DOM. | NAT-03 |
 | File association | Registry entries + `.ico` via electron-builder; handle the path in `process.argv` **and** in `second-instance`. | NAT-07, NAT-08 |
@@ -3268,10 +3189,10 @@ chosen deliberately, not as the default the other two inherit.
 
 | Area | Do this | Finding |
 |---|---|---|
-| Window chrome | Prefer `titleBarOverlay`. Where the desktop uses server-side decorations (KDE, XFCE, most tiling WMs) or the overlay is unavailable, fall back to `frame: true` and let the WM decorate — hiding the in-app title row entirely. **Never** fall back to the macOS dots. | NAT-02 |
-| Button layout | On GNOME, control placement and order are a user setting (`org.gnome.desktop.wm.preferences.button-layout`). A custom title bar that hard-codes a layout overrides the user's explicit configuration. This is the strongest argument for `frame: true` on Linux. | NAT-02 |
+| Window chrome | Landed as `frame: true`, not `titleBarOverlay` — done, see "Already completed": Electron's Linux `titleBarOverlay` support is inconsistent across desktops and was untestable on the machine this shipped from, so guessing at it was judged worse than the documented fallback, which the audit itself names as correct here. Letting the WM decorate also means the fake macOS dots never applied on Linux at all, on this platform or any other. | NAT-02 |
+| Button layout | Resolved as a side effect of the `frame: true` choice above: `org.gnome.desktop.wm.preferences.button-layout` is now entirely the WM's own to honour, since Studio no longer draws window controls itself on any platform. | NAT-02 |
 | Toolbar | The application menu is already set (NAT-01, shipped) and GNOME may surface parts of it in the shell; keep the in-window toolbar as on Windows. | NAT-04 |
-| Context menus | Native menus inherit the GTK theme — the fastest single change to stop looking foreign. | NAT-05 |
+| Context menus | Native menus inherit the GTK theme — the fastest single change to stop looking foreign — done, see "Already completed" (not run on real Linux hardware). | NAT-05 |
 | Dialogs | GNOME convention: destructive action leftmost, "Discard" is the right word here (unlike macOS/Windows) — done, see "Already completed", NAT-21. Sentence case elsewhere is not yet applied. | VIS-10 |
 | File association | `.desktop` file + MIME XML (`application/x-pellizzola-level`) + hicolor icons via electron-builder; handle `process.argv`. | NAT-07 |
 | Recent files | `addRecentDocument` writes `recently-used.xbel`, honoured by GTK file choosers. | NAT-06 |
@@ -3289,7 +3210,7 @@ chosen deliberately, not as the default the other two inherit.
 | Display-derived default window size | NAT-10, GEO-12 |
 | DPI-change handling for the canvas | BUG-12, A11Y-06 |
 | Recovery snapshots and `.bak` in `userData` — done, see "Already completed" | UX-10 |
-| One `chrome.js` for every platform branch; `api.platform` to the renderer | ARCH-03 |
+| One `chrome.js` for every platform branch; `api.platform` to the renderer — done, see "Already completed" | ARCH-03 |
 | Consistent IPC envelope, one unwrap helper (string verdicts on `ask:discard` already done, BUG-10) | ARCH-06 |
 | electron-builder config, icons, associations, signing | NAT-07 |
 | Lazy Monaco; narrowed packaged files | ARCH-08 |
@@ -3299,6 +3220,11 @@ chosen deliberately, not as the default the other two inherit.
 ## 6. Layout and proportionality audit
 
 ### 6.1 Every instance of arbitrary geometry
+
+Three rows from the original 26 are gone rather than resolved onto a token:
+`#menu`'s `min-width: 150px`, its click-handler's `2`/`4` px edge clamps, and
+`.dots i`'s `12px`/`gap 8px` all named code that no longer exists (NAT-05,
+NAT-02 — done, see "Already completed").
 
 | # | Value | Where | What should determine it | Finding |
 |---|---|---|---|---|
@@ -3313,21 +3239,23 @@ chosen deliberately, not as the default the other two inherit.
 | 9 | `#props 46%` | `style.css:191` | Content height, or the design's 47.5 % as a named token | GEO-06 |
 | 10 | `repeat(4, 1fr)` palette | `style.css:170` | `repeat(auto-fill, N × --sprite)` — integer sprite scale | GEO-07 |
 | 11 | `.tab max-width: 260px` | `style.css:79` | `24ch` — a statement about filenames | GEO-08 |
-| 12 | `#menu min-width: 150px` | `style.css:227` | Moot (native menu) | NAT-05, GEO-08 |
-| 13 | `textarea height: 48px` | `style.css:208` | `calc(var(--line) * 3)` | GEO-08 |
-| 14 | `.dots i 12px`, `gap 8px` | `style.css:55-57` | Moot (real traffic lights) | NAT-02 |
-| 15 | Gaps 4/6/8/10/12/14/16/18 px | `style.css` passim | `--space-*` scale | GEO-01 |
-| 16 | Font sizes 10/11/12/13 px | `style.css` passim | `--font-size`, `--font-size-sm`; drop 10 px | GEO-08 |
-| 17 | `li padding 1px 10px 1px 18px` | `style.css:123` | `--row` height; indent from icon width | GEO-08, A11Y-04 |
-| 18 | `1600 × 950`, `960 × 620` window | `main.js:37` | Display work area; content minimums | NAT-10, GEO-12 |
-| 19 | `2 * B` fit padding | `grid.js:163` | `FITPAD = B`, named | GEO-11 |
-| 20 | `0.03` / `1` / `3` zoom clamps | `grid.js:163, 361` | `ZMIN` derived from "level fits narrowest viewport"; `ZMAX` named | GEO-11 |
-| 21 | `0.0015` wheel factor | `grid.js:361` | `Math.LN2 / ZOOM_PX_PER_DOUBLING` | GEO-11, NAT-11 |
-| 22 | `B * z >= 10` grid threshold | `grid.js:257` | `GRIDMIN`, named and commented | GEO-11 |
-| 23 | `1` px bar tolerance | `grid.js:191, 199` | `BARSLOP`, shared by both sites | GEO-11 |
-| 24 | Selection inset `1`/`2` | `grid.js:275-277` | Derived from `SELW` | GEO-11 |
-| 25 | Menu clamp `2`/`4` px | `app.js:175-176` | Moot (native menu) | NAT-05 |
-| 26 | `backgroundColor '#1c1d20'` | `main.js:38` | `--frame`, documented as a necessary duplicate | VIS-04 |
+| 12 | `textarea height: 48px` | `style.css:208` | `calc(var(--line) * 3)` | GEO-08 |
+| 13 | Gaps 4/6/8/10/12/14/16/18 px | `style.css` passim | `--space-*` scale | GEO-01 |
+| 14 | Font sizes 10/11/12/13 px | `style.css` passim | `--font-size`, `--font-size-sm`; drop 10 px | GEO-08 |
+| 15 | `li padding 1px 10px 1px 18px` | `style.css:123` | `--row` height; indent from icon width | GEO-08, A11Y-04 |
+| 16 | `1600 × 950`, `960 × 620` window | `main.js:37` | Display work area; content minimums | NAT-10, GEO-12 |
+| 17 | `2 * B` fit padding | `grid.js:163` | `FITPAD = B`, named | GEO-11 |
+| 18 | `1` (max fit zoom) | `grid.js:163` | Named, not derived — `ZMIN`, its other half, is already named and shared with the wheel (NAT-11, done) | GEO-11 |
+| 19 | `B * z >= 10` grid threshold | `grid.js:257` | `GRIDMIN`, named and commented | GEO-11 |
+| 20 | `1` px bar tolerance | `grid.js:191, 199` | `BARSLOP`, shared by both sites | GEO-11 |
+| 21 | Selection inset `1`/`2` | `grid.js:275-277` | Derived from `SELW` | GEO-11 |
+| 22 | `backgroundColor '#1c1d20'` | `main.js:38` | `--frame`, documented as a necessary duplicate | VIS-04 |
+
+`0.03`/`3` zoom clamps and the `0.0015` wheel factor, both formerly rows here,
+are done (NAT-11, see "Already completed"): `ZMIN`, `ZMAX` and
+`ZOOM_PX_PER_DOUBLING = 462` (`Math.LN2 / ZOOM_PX_PER_DOUBLING` reproduces
+`0.0015` exactly) are now named `const`s in `grid.js`, shared between
+`Grid.fit()` and `onwheel()`.
 
 ### 6.2 Design tokens that should exist
 
@@ -3414,7 +3342,7 @@ Per the brief, each surviving literal is documented rather than removed.
 |---|---|---|---|---|
 | `B = 100` | `catalog.js:12` | A cross-repo contract: `game/src/main.c` draws blocks 100 × 100 and spaces them `i * 100`. Changing it here alone desynchronises the studio from the game. | No | **No** — changing it is a three-repo change |
 | `W = 540` | `catalog.js:13` | The on-disk format: every `block_data` row holds exactly 540 entries. | No | No |
-| `H = 12` | `lvl.js:15` | Rows in a fresh level — a product decision, not a derivation. Should move to `catalog.js` (ARCH-02). | No | Yes, as a preference |
+| `H = 12` | `catalog.js` | Rows in a fresh level — a product decision, not a derivation. Moved from `lvl.js` (ARCH-02, done — see "Already completed"). | No | Yes, as a preference |
 | `999` max rows | `grid.js:134` | Bound implied by the three-digit id format's sibling conventions and by memory (999 × 540 × 2 B ≈ 1 MB grid). Name it `HMAX` and state the reason. | No | No |
 | `--sprite: 32px` | new | Every texture in the library is 32 × 32; verified. It is a fact about the asset library, not a design choice. | No | No |
 | `backgroundColor: '#1c1d20'` | `main.js:38` | Must be known before the page and its CSS load, so it cannot read `--frame`. Duplicate deliberately, with a comment naming its source and the requirement to change both together. | No | No |
@@ -3453,7 +3381,7 @@ the finding that resolves it.
 | **Loading** | None; Monaco loads eagerly so its absence is never visible; long saves block silently | Editor loading state (ARCH-08); progress for long ops (NAT-19) |
 | **Empty states** | Two blank voids in the file manager on every launch | One line + one action per list (VIS-12) |
 | **Error states** | `#ff8f8f` text, colour-only; save failures now reach a native dialog regardless of tab (BUG-07, shipped) but are still colour-only and unannounced otherwise | Icon + colour; live region (VIS-14, A11Y-05, A11Y-08) |
-| **Context menus** | DOM divs, no keyboard, no semantics, clamps instead of flipping | Native `Menu.popup()` (NAT-05) |
+| **Context menus** | Fixed — native `Menu.popup()`, real keyboard navigation and platform appearance (NAT-05, done — see "Already completed") | — |
 | **Dialogs** | The unsaved-changes prompt now has a per-platform template, `detail`, `noLink`, and string verdicts (NAT-21, BUG-10, done — see "Already completed") | — |
 | **Forms** | Borders now visible via `--control-border` (VIS-02, done); still: a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `appearance: none` on the select control only; one shared `.field` class (NAT-16, VIS-15) |
 | **Buttons** | Text-only, no border except `.act`, no pressed state, `.acts` and `.hdr button` and `#add` all differently sized | One button component with size variants (VIS-07, GEO-08) |
@@ -3479,8 +3407,8 @@ with Recent (UX-09); recent documents in the menu and the Dock/JumpList
 **Editing** — rectangle fill, flood fill, duplicate, arrow-key nudge (UX-05);
 zoom controls, an indicator, and a fit that actually fits (UX-04); a visible
 active tool (UX-06); cursor feedback for every gesture (NAT-13); Escape cancels
-and reverts a gesture (UX-12); trackpad scroll pans instead of zooming
-(NAT-11).
+and reverts a gesture (UX-12); trackpad scroll now pans instead of zooming,
+and pinch/Ctrl+wheel zooms (NAT-11, shipped, see "Already completed").
 
 **Navigating** — a vertical scrollbar (GEO-10); resizable panels that remember
 their size (GEO-04); tabs that overflow into a scroller instead of vanishing
@@ -3527,11 +3455,12 @@ are fixed (VIS-01, VIS-02, VIS-06, see "Already completed").
 | 2.3.3 Animation from Interactions | N/A today; becomes required with VIS-08 | VIS-08, A11Y-07 |
 | System high contrast | Untested; will break canvas indicators | A11Y-07, VIS-16 |
 
-The highest-leverage accessibility work remaining is not ARIA. It is, in
-order: **(1)** replace clickable `<div>`s with real controls (A11Y-01) — this
-is where the effort is, and it fixes keyboard, focus order and semantics
-together; **(2)** adopt native menus (NAT-05), which deletes an entire
-inaccessible subsystem rather than fixing it.
+Native menus (NAT-05, done — see "Already completed") already deleted one
+entire inaccessible subsystem rather than fixing it in place. The
+highest-leverage accessibility work remaining is not ARIA: it is replacing
+the palette, file rows and tabs' clickable `<div>`s with real controls
+(A11Y-01) — this is where the effort is, and it fixes keyboard, focus order
+and semantics together.
 
 ---
 
@@ -3547,11 +3476,9 @@ code; the flat global scope with its documented collision grep.
 
 | Problem | Finding |
 |---|---|
-| `W` defined twice, `H`/`B` handled three different ways | ARCH-02 |
-| No platform abstraction; no platform info in the renderer | ARCH-03 |
 | Full innerHTML rebuilds on a drag hot path; hand-rolled `esc()` | ARCH-04, PERF-01 |
 | Three IPC naming conventions, two response shapes, forgettable `cancel` (the `ask:discard` response is a named string now, BUG-10, done — see "Already completed") | ARCH-06 |
-| Renderer implementing window controls and title logic (the menu moved to main, NAT-01, shipped) | NAT-02, NAT-03, NAT-05 |
+| Renderer implementing window title logic (the menu moved to main, NAT-01, shipped; window controls and context menus also moved to main, NAT-02/NAT-05, shipped) | NAT-03 |
 | Monaco eager and shipped whole | ARCH-08 |
 | Synchronous main-process I/O | ARCH-09, NAT-19 |
 | Colour defined in four places | VIS-04 |
@@ -3608,11 +3535,11 @@ relitigated.
 | Capability | macOS | Windows | Linux | Findings |
 |---|---|---|---|---|
 | App name / identity in the menu, taskbar and Dock | ✅ shipped (NAT-01) | ✅ shipped (NAT-01) | ✅ shipped (NAT-01) | remaining: `.icns`/bundle id, NAT-07 |
-| Window controls | ⚠️ fake dots | ❌ wrong side, wrong shape | ❌ ignores user's button-layout setting | NAT-02 |
-| Green button semantics | ❌ zooms, should full-screen | n/a | n/a | NAT-02 |
+| Window controls | ✅ shipped (NAT-02) | ✅ shipped, not run on real hardware (NAT-02) | ✅ shipped, not run on real hardware (NAT-02) | — |
+| Green button semantics | ✅ shipped - real full screen, not `maximize()` (NAT-02) | n/a | n/a | — |
 | Window title | ⚠️ shows full path + `*` | ⚠️ no dirty state in OS title | ⚠️ same | NAT-03 |
 | Proxy icon / edited dot | ❌ | n/a | n/a | NAT-03 |
-| Context menus | ❌ DOM | ❌ DOM | ❌ DOM (ignores GTK theme) | NAT-05 |
+| Context menus | ✅ shipped (NAT-05) | ✅ shipped, not run on real hardware (NAT-05) | ✅ shipped, not run on real hardware (NAT-05) | — |
 | File dialogs | ✅ | ✅ | ✅ | — |
 | Save extension handling | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | — |
 | Unsaved-changes dialog | ✅ shipped (NAT-21, BUG-10) | ✅ shipped (NAT-21, BUG-10) | ✅ shipped (NAT-21, BUG-10) | — |
@@ -3624,7 +3551,7 @@ relitigated.
 | Window state persistence | ❌ | ❌ | ❌ | NAT-10 |
 | Default window size | ⚠️ too large for 13" | ⚠️ too large for 1366×768 | ⚠️ | NAT-10 |
 | Mixed-DPI / scaling | ⚠️ blurry on move | ⚠️ blurry (most common here) | ⚠️ Wayland fractional | BUG-12 |
-| Trackpad scroll vs pinch | ❌ scroll zooms | ❌ precision touchpad same | ⚠️ | NAT-11 |
+| Trackpad scroll vs pinch | ✅ shipped (NAT-11) | ✅ shipped (NAT-11) | ✅ shipped (NAT-11) | — |
 | Right-click semantics | ❌ Ctrl+click erases | ✅ | ✅ | NAT-12 |
 | Keyboard shortcuts | ⚠️ conflicts with default menu; layout-dependent | ⚠️ same | ⚠️ same | NAT-14 |
 | Scrollbars | ⚠️ hidden by overlay default | ❌ visible and unstyled | ❌ visible and unstyled | NAT-20 |
@@ -3654,12 +3581,11 @@ documented as one.
 
 | ID | Title |
 |---|---|
-| NAT-02 | Fake macOS traffic lights on every platform |
 | A11Y-01 | Most of the interface is unreachable by keyboard |
 
-BUG-01, BUG-02, BUG-07, NAT-01, VIS-01, VIS-02 and VIS-06, the other six items
-that were listed here, are done — see "Already completed" at the top of this
-document.
+BUG-01, BUG-02, BUG-07, NAT-01, NAT-02, VIS-01, VIS-02 and VIS-06, the other
+seven items that were listed here, are done — see "Already completed" at the
+top of this document.
 
 ### High — the difference between "works" and "finished"
 
@@ -3668,25 +3594,24 @@ document.
 | BUG-12 | DPI change leaves the canvas blurry |
 | NAT-03 | Title, dirty state and proxy icon ignore every convention |
 | NAT-04 | Hotbar duplicates what belongs in the menu |
-| NAT-05 | DOM context menus instead of native |
 | NAT-07 | No packaging, icons, or file association |
 | NAT-10 | Window geometry fixed and never remembered |
-| NAT-11 | Wheel always zooms; trackpad gestures misread |
 | NAT-13 | No cursor feedback |
 | NAT-20 | One of five scroll containers styled |
 | GEO-01 | No spacing, sizing or type scale |
 | GEO-03 | Fixed side panels consume 41 % of the minimum window |
 | GEO-04 | Panels cannot be resized |
 | GEO-07 | Palette produces fractional cells for 32 px sprites |
-| GEO-11 | Canvas magic numbers |
+| GEO-11 | Canvas magic numbers (partly done - the zoom constants, NAT-11) |
 | VIS-04 | Colour defined in four independent places |
 | VIS-05 | The app has never rendered in its own typeface |
 | VIS-07 | No interaction-state system |
 | UX-04 | Zoom has no controls, indicator, or working fit |
-| ARCH-02 | `W` defined twice |
-| ARCH-03 | No platform abstraction |
 | ARCH-08 | Monaco eager and shipped whole |
 | PERF-01 | Inspector rebuilt from a string on every drag cell |
+
+NAT-05, NAT-11, ARCH-02 and ARCH-03, the other four items that were listed
+here, are done — see "Already completed".
 
 ### Medium — real friction, contained fixes
 
@@ -3752,24 +3677,19 @@ completed". Nothing remains in this phase.
 `blank → write → read` round-trip + `migrate()` over `website/levels/*` —
 and `tools/probe.js` committed under `tools/`) is done — see "Already
 completed". Every step below, and every future change, is verifiable through
-it.
+it. **ARCH-03** (`chrome.js` in main, `api.platform` to the renderer,
+`<html data-platform>`) and **ARCH-02** (one definition of `W`/`H`/`B`) are
+also done — see "Already completed"; `chrome.js` already absorbed `menu.js`'s
+own `process.platform` branch and NAT-21's `discardbuttons()`, and it is
+where NAT-02 (below, also done) got the platform options it needed.
 
-1. **ARCH-03** — `chrome.js` in main, `api.platform` to the renderer,
-   `<html data-platform>`. Unblocks NAT-02, NAT-04, VIS-10. Also folds in
-   `menu.js`'s own `process.platform` branch, which NAT-01 added outside this
-   module and which is exactly the drift this step exists to stop; also folds
-   in the `discardbuttons()` platform branch NAT-21 added directly to
-   `main.js` (done — see "Already completed" — since `chrome.js` did not exist
-   yet when it shipped).
-2. **GEO-01 + VIS-04** — the token block, in one commit: spacing, rows, type,
+1. **GEO-01 + VIS-04** — the token block, in one commit: spacing, rows, type,
    radius, elevation, motion, z-index, plus the `tokens.js` reader that
    `grid.js` and `code.js` consume. The colour half of this block (VIS-01,
    VIS-02) is already shipped — see "Already completed" — so this step is
    narrower than originally scoped: everything except colour. Unblocks every
    remaining visual finding. Nothing in §7 should be attempted before this
    lands.
-3. **ARCH-02** — one definition of `W`/`H`/`B`. Trivial, do it while touching
-   `lvl.js`.
 
 ### Phase 2 — Native shell
 
@@ -3780,22 +3700,21 @@ wedge risk that a hung renderer posed under NAT-01's ⌘Q → `app.quit()` path 
 already closed. **NAT-18** (`will-navigate`, `setWindowOpenHandler`,
 `sandbox: true`) is also done, closing the drag-and-drop navigation hole
 (NAT-09) that BUG-01's own fix did not cover; NAT-09's own remaining scope -
-actually opening a dropped or double-clicked file - still needs step 9 below.
+actually opening a dropped or double-clicked file - still needs step 5 below.
 **NAT-21** (per-platform unsaved-changes dialog) and **BUG-10** (string
-verdicts on `ask:discard`) are also done, ahead of ARCH-03 - see Phase 1,
-step 1's note.
+verdicts on `ask:discard`) are also done. **NAT-02** (real window chrome per
+platform; the fake dots and `win:ctl` are deleted) and **NAT-05** (native
+context menus; `#menu` and ~55 lines of `app.js` are deleted, reusing the
+`cmd`/`ACTS` dispatcher NAT-01 already built) are also done — see "Already
+completed" for both.
 
-4. **NAT-02** real window chrome per platform; delete the fake dots and
-   `win:ctl`.
-5. **NAT-03** title, represented filename, edited dot (needs 4; document
-   identity itself is already in main, BUG-08, done).
-6. **NAT-04** hotbar per platform (needs 1; the menu itself no longer blocks
-   this).
-7. **NAT-05** native context menus; delete `#menu` and ~55 lines of `app.js`.
-   Reuse the `cmd`/`ACTS` dispatcher NAT-01 already built rather than adding a
-   second one.
-8. **NAT-10** window state persistence with display validation.
-9. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
+2. **NAT-03** title, represented filename, edited dot (NAT-02, its
+   prerequisite, is done; document identity itself is already in main,
+   BUG-08, also done).
+3. **NAT-04** hotbar per platform (ARCH-03, its prerequisite, is done; the
+   menu itself no longer blocks this either).
+4. **NAT-10** window state persistence with display validation.
+5. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
    **NAT-06** recent documents; **NAT-09** drag and drop. These four are one
    coherent piece of work and share prerequisites — all can build directly on
    the `doc` module (BUG-08, done).
@@ -3806,44 +3725,47 @@ The contrast/focus-ring step originally scheduled here (VIS-01, VIS-02,
 VIS-06) is done — see "Already completed" — so this phase starts one step
 later than originally scoped.
 
-10. **VIS-05** bundle JetBrains Mono. Everything after this is measured in the
-    real typeface, so it must precede any type-metric work.
-11. **VIS-07** the five-state contract, applied to every interactive surface.
-12. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
-    capitalisation.
-13. **NAT-20 / GEO-09** one scrollbar treatment across all five containers;
-    **VIS-18** Monaco theme generated from tokens.
-14. **GEO-07** integer palette cells; **GEO-02 / GEO-08** band heights and
+6. **VIS-05** bundle JetBrains Mono. Everything after this is measured in the
+   real typeface, so it must precede any type-metric work.
+7. **VIS-07** the five-state contract, applied to every interactive surface.
+8. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
+   capitalisation.
+9. **NAT-20 / GEO-09** one scrollbar treatment across all five containers;
+   **VIS-18** Monaco theme generated from tokens.
+10. **GEO-07** integer palette cells; **GEO-02 / GEO-08** band heights and
     one-offs onto the scale.
-15. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
+11. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
     messages, `.field`/`.cell.add` classes, canvas indicators, missing-texture
     treatment.
 
 ### Phase 4 — Layout and interaction
 
-16. **PERF-04** resize coalescing — **before** GEO-04, or splitter drags will
+12. **PERF-04** resize coalescing — **before** GEO-04, or splitter drags will
     stutter.
-17. **GEO-03 / GEO-04** proportional panels and four keyboard-operable
+13. **GEO-03 / GEO-04** proportional panels and four keyboard-operable
     splitters; **GEO-05 / GEO-06** content-driven list and inspector heights.
-18. **NAT-11** wheel semantics; **GEO-11** named canvas constants;
-    **GEO-10** vertical scrollbar; **UX-04** zoom controls and a real fit,
-    including the new View menu that also gives Toggle Full Screen a home
-    again (see §12, "Full screen").
-19. **NAT-13** cursors; **NAT-12** canvas context menu and Ctrl+click;
+14. **GEO-11** the remaining unnamed canvas constants (`FITPAD`, `GRIDMIN`,
+    `SELW`, `BARSLOP` — its zoom constants are already named, NAT-11, done);
+    **GEO-10** vertical scrollbar (NAT-11, its prerequisite, is done - the
+    wheel already scrolls); **UX-04** zoom controls and a real fit, including
+    the new View menu that also gives Toggle Full Screen a home again (see
+    §12, "Full screen").
+15. **NAT-13** cursors; **NAT-12** canvas context menu and Ctrl+click;
     **UX-12** gesture cancel.
-20. **PERF-01** `Panel.update()` split (with **ARCH-04**); **PERF-02** cached
+16. **PERF-01** `Panel.update()` split (with **ARCH-04**); **PERF-02** cached
     rect and refs.
-21. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
+17. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
     tab switching, region operations — the menu/shortcut consolidation itself
     is done, NAT-01).
 
 ### Phase 5 — Accessibility completion
 
-22. **A11Y-01** real controls with roving tabindex — palette, rows, tabs. The
-    largest single piece of work in this document.
-23. **A11Y-02** semantics and landmarks; **A11Y-05** live regions.
-24. **A11Y-04** hit targets (mostly free once GEO-01's `--row` lands).
-25. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
+18. **A11Y-01** real controls with roving tabindex — palette, rows, tabs. The
+    largest single piece of work remaining in this document, now that native
+    menus (NAT-05) have already deleted one inaccessible subsystem outright.
+19. **A11Y-02** semantics and landmarks; **A11Y-05** live regions.
+20. **A11Y-04** hit targets (mostly free once GEO-01's `--row` lands).
+21. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
     already in place); **A11Y-06** scaling; **A11Y-07** system preferences;
     **A11Y-08** non-colour cues.
 
@@ -3853,34 +3775,29 @@ later than originally scoped.
 warnings) are also done - see "Already completed"; both built directly on
 BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
 
-26. **ARCH-08** lazy Monaco; **PERF-07** show-after-ready; **PERF-05** refresh
+22. **ARCH-08** lazy Monaco; **PERF-07** show-after-ready; **PERF-05** refresh
     granularity.
-27. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
+23. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
     async I/O *if* measurement justifies it.
-28. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
+24. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
     UX-15 / UX-17** — the remaining workflow items, each independent. UX-03 is
     narrower than originally scoped: the menu items themselves already exist
     (NAT-01), only per-action labelling is left. UX-15 is also narrower: the
     contrast and MIDI-collision problems it cited are already fixed (VIS-01,
     BUG-06).
-29. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
+25. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
     NAT-17 is narrower too: the About panel already shipped (NAT-01), only the
     Dock menu and JumpList tasks are left.
 
 ### Dependency summary
 
 ```
-ARCH-03 (platform) ───┬─► NAT-02 ─► NAT-03, NAT-04
-                      ├─► VIS-10
-                      └─► absorbs menu.js's own process.platform branch (NAT-01)
-                          and NAT-21's discardbuttons() branch (also done)
 GEO-01 + VIS-04 ──────┬─► VIS-07, VIS-08, VIS-09
    (tokens; colour     ├─► GEO-02, GEO-07, GEO-08, GEO-09, NAT-20, VIS-18
-   half already done)  └─► NAT-02 (traffic-light position, overlay colours)
+   half already done)  └─► NAT-15's forced-colours/contrast work
 VIS-05 (font) ────────► anything depending on type metrics
 PERF-04 ──────────────► GEO-04 (splitters)
 A11Y-01 ──────────────► A11Y-02, A11Y-03, A11Y-04
-NAT-05 ───────────────► deletes an entire inaccessible subsystem
 
 Done and no longer on this graph: ARCH-07 (checks) unblocked everything below
 it by making every later change verifiable at all; BUG-08 (doc state)
@@ -3890,7 +3807,13 @@ VIS-01/VIS-02/VIS-06 unblocked nothing else in this graph (the rest of
 GEO-01/VIS-04 does not depend on them); NAT-18 closed NAT-09's navigation hole
 without needing any of the above; NAT-21/BUG-10 and UX-10/BUG-11 each shipped
 straight off BUG-08's `doc` module and BUG-02's atomic write, also without
-needing ARCH-03 or GEO-01/VIS-04.
+needing ARCH-03 or GEO-01/VIS-04; ARCH-03 (platform) unblocked NAT-02 (also
+done) and VIS-10 (which can now apply the OS-facing capitalisation
+convention it asks for - not yet done), and NAT-02 in turn unblocked NAT-03
+and NAT-04 (both still open); NAT-05 deleted an entire inaccessible
+subsystem rather than fixing it in place, independently of the rest of this
+graph; NAT-11 unblocked GEO-10 (the wheel now scrolls) and named two of
+GEO-11's eight constants.
 ```
 
 ---
@@ -3907,12 +3830,15 @@ demonstrably true. Each is checkable, not a matter of opinion.
       "Electron".
 - [ ] A real application menu exists on all three platforms; every command the
       app offers appears in it; no production build exposes Reload or DevTools.
-- [ ] macOS uses real traffic lights via `hiddenInset`; Windows uses
+- [x] macOS uses real traffic lights via `hiddenInset`; Windows uses
       `titleBarOverlay`; Linux uses `titleBarOverlay` or a WM-decorated frame.
-      The fake dots do not exist in the codebase.
+      The fake dots do not exist in the codebase. (NAT-02 — Windows/Linux
+      implemented against Electron's documented behaviour, not run on real
+      hardware)
 - [ ] The window title follows each platform's convention; macOS shows a proxy
       icon and an edited dot.
-- [ ] Every context menu is a native `Menu.popup()`.
+- [x] Every context menu is a native `Menu.popup()`. (NAT-05 — not run on real
+      Windows/Linux hardware)
 - [ ] Double-clicking a `.lvl` in Finder, Explorer and a Linux file manager
       opens it in a running (single) instance.
 - [ ] Recent documents appear in File → Open Recent, the macOS Dock menu, and
@@ -3923,7 +3849,7 @@ demonstrably true. Each is checkable, not a matter of opinion.
       and a saved position on a disconnected display falls back gracefully.
 - [ ] The default window fits within the primary display's work area on a
       1366 × 768 screen without being resized by the OS.
-- [ ] On a trackpad, two-finger scroll pans and pinch zooms.
+- [x] On a trackpad, two-finger scroll pans and pinch zooms. (NAT-11)
 - [ ] Packaged, signed and notarised/Authenticode-signed artefacts exist for
       all three platforms and launch on a clean machine.
 
@@ -4007,9 +3933,9 @@ demonstrably true. Each is checkable, not a matter of opinion.
       headlessly with one command. (ARCH-07)
 - [x] Document identity lives in the main process; the renderer never supplies
       a filesystem path. (BUG-08/ARCH-01)
-- [ ] Exactly two places contain platform branches: `chrome.js` in main, and
-      `[data-platform]` selectors in CSS.
-- [ ] `W`, `H` and `B` are each defined once.
+- [x] Exactly two places contain platform branches: `chrome.js` in main, and
+      `[data-platform]` selectors in CSS. (ARCH-03)
+- [x] `W`, `H` and `B` are each defined once. (ARCH-02)
 - [ ] `npm run dist` produces installable artefacts for all three platforms.
 - [ ] `CLAUDE.md` is updated to describe the new architecture — main-owned
       document state, the menu, the platform module, the token system — so the

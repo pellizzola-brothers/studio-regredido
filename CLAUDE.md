@@ -34,6 +34,9 @@ main.js       Electron main: window, dialogs, the app:// protocol, all IPC.
               The only process that touches the filesystem.
 menu.js       The application menu (main process). Rebuilt on every renderer
               state change so Undo/Redo/Close Tab are honestly enabled.
+chrome.js     The one place process.platform is read (main process): real
+              per-platform BrowserWindow chrome and the unsaved-changes
+              dialog's per-platform buttons.
 preload.js    contextBridge surface — the renderer's entire view outward.
 lvl.js        .lvl read/write plus the level.json validator (main process).
 catalog.js    Block ids, entity definitions, backgrounds, texture loading.
@@ -204,22 +207,26 @@ definition still uses is refused.
 `Pellizzola Brothers.svg` is the reference for layout and colour. Three
 additions were needed for the app to be usable:
 
-- `new / open / save / save as` in the title bar. The window is frameless, so
-  on Windows/Linux there is no visible menu bar to hang them on even though
-  `menu.js` sets a real one on every platform (its accelerators work
-  regardless of whether the bar itself is drawn). Kept on macOS too for now,
-  by choice rather than necessity, since removing it there is a deliberate
-  follow-up, not a default. Shortcuts (`Ctrl+N/O/S`, `Ctrl+Shift+S`,
-  `Ctrl+W` closes a script tab, `Ctrl+Z`/`Ctrl+Shift+Z` for the level's
-  undo/redo) are declared once, in the menu template, and dispatched through
-  `App`'s `ACTS` table over a `cmd` IPC channel — not matched by hand against
-  `keydown` in the renderer.
+- `new / open / save / save as` in the title bar. On macOS and Windows the
+  window has no visible menu bar (real traffic lights via `hiddenInset` and a
+  `titleBarOverlay` caption strip respectively, `chrome.js`) even though
+  `menu.js` sets a real menu on every platform (its accelerators work
+  regardless of whether the bar itself is drawn); Linux falls back to a
+  WM-decorated `frame: true` window, which does show one. The hotbar is kept
+  on all three for now, by choice rather than necessity, since narrowing it
+  to only where it is load-bearing is a deliberate follow-up, not a default.
+  Shortcuts (`Ctrl+N/O/S`, `Ctrl+Shift+S`, `Ctrl+W` closes a script tab,
+  `Ctrl+Z`/`Ctrl+Shift+Z` for the level's undo/redo) are declared once, in the
+  menu template, and dispatched through `App`'s `ACTS` table over a `cmd` IPC
+  channel — not matched by hand against `keydown` in the renderer.
 - A status bar showing the hovered cell and the last message or error.
 - A context menu in the file manager, opened by **left**-clicking a row (right
-  click works too). It carries open, assign, rename, delete, new script and
-  import midi; clicking the panel background offers the last two. Left-click
-  was asked for explicitly, so opening a script is now the menu's first entry
-  rather than a bare click.
+  click works too) — a native `Menu.popup()`, built in `main.js` from context
+  the renderer sends over `menu:row` and dispatched back over `rowcmd`. It
+  carries open, assign, rename, delete, new script and import midi; clicking
+  the panel background offers the last two. Left-click was asked for
+  explicitly, so opening a script is now the menu's first entry rather than a
+  bare click.
 - Inline renaming, since Electron does not implement `window.prompt`.
 - A horizontal scrollbar under the canvas.
 
