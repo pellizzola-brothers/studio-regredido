@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The twenty items below have shipped and are removed from the findings
+The thirty-one items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -455,6 +455,148 @@ deltaY: 60` panned horizontally by `120` world px and left `y` untouched.
 
 ---
 
+#### A11Y-01 — Most of the interface is not reachable by keyboard
+
+Shipped: the palette's 31+ cells are real `<button>`s now, not clickable
+`<div>`s (`cell()`, `panel.js`), so Enter/Space activate them for free; the
+file manager's script and MIDI rows carry `role="option"`/`aria-selected`
+inside a `role="listbox"` (`list()`, `app.js`); the tab strip carries
+`role="tablist"`/`role="tab"`/`aria-selected` (`tabs()`/`tab()`, `app.js`). All
+three groups share one Tab stop each through a new `roving()` helper
+(`panel.js`) implementing the standard roving-tabindex pattern - arrow keys
+(plus Home/End) move both the tab stop and focus, matching the palette's grid
+layout (4 columns) and the lists'/tabs' linear one. Activation beyond native
+Enter/Space: script and MIDI rows get F2 to rename and Delete to delete
+(`rowkeys()`); script rows get Enter to open, the keyboard equivalent of the
+row's primary action; tabs get Enter/Space wired by hand, since the closable
+ones nest a real `<button>` for the close glyph and a tab therefore cannot
+itself be a `<button>` (button-in-button is invalid HTML and Chromium hoists
+the inner one out). Making these previously-inert elements focusable exposed
+a latent bug in `keys()` (`app.js`), whose old guard excluded only
+`INPUT`/`TEXTAREA`/`SELECT` by tag name rather than requiring the canvas
+itself to hold focus - fixed alongside this finding, since without it a
+Delete keystroke aimed at a focused file row would also have deleted
+whatever entity happened to be selected on the canvas underneath. Not
+shipped, and still open: type-ahead search within a list; full ARIA listbox
+group semantics for the palette's three sub-groups (it carries one
+`role="group"` for the whole grid instead); `aria-controls`/`role="tabpanel"`
+wiring for tabs, which would misdescribe the DOM as it stands today (every
+script tab shares the one `#code` Monaco host, not one panel each). Verified
+with the probe harness: the number of elements matching an
+interactive-or-`[tabindex]` selector rose from the audit's measured 15 to 47;
+the palette's 31 cells report exactly one `tabindex="0"` at a time, and
+dispatching `ArrowRight` on the focused one moves both `document.activeElement`
+and the tabindex to the next cell; a real `keydown` "Delete" dispatched on a
+focused, unused script row deletes that script and leaves a canvas-selected
+entity untouched, where before this fix's `keys()` change the same keystroke
+would have deleted the entity too; `F2` on a row swaps in the inline rename
+`<input>`; `Enter` on a script row opens it as a tab.
+
+---
+
+#### NAT-03 — Window title, dirty state and proxy icon ignore every OS convention
+
+Shipped: `main.js` now owns a `retitle()` that runs whenever `doc.path`,
+`doc.dirty` or the new `doc.name` changes - macOS and Linux get
+`win.setTitle(name)`, the document name alone; Windows gets `name + ' — ' +
+NAME`, since `titleBarOverlay` means the taskbar reads `document.title`
+directly; macOS additionally gets `setRepresentedFilename(doc.path || '')`
+for the proxy icon and `setDocumentEdited(doc.dirty)` for the close-button
+dot. `doc.name` is the one part of this main cannot derive from `{path,
+dirty}` alone (BUG-08, done — see "Already completed"), so a new `doc:name`
+IPC channel (`preload.js`'s `api.retitle`) carries it from the renderer's
+`App.retitle()` on every call. The in-window `#name` element and
+`document.title` are no longer the same string built twice: `#name` now
+shows the document name plus a dirty dot (`•`, not an asterisk) and nothing
+else, with the full path moved to its `title=` tooltip; the renderer's own
+`document.title` assignment is deleted outright. Verified with the probe
+harness (a copy of `tools/probe.js` that also reads the `BrowserWindow`
+itself, per `CLAUDE.md`'s guidance for main-process-only behaviour): setting
+the level's name and touching the document produced `win.getTitle() ===
+"My Level"` and `win.isDocumentEdited() === true`, with no path and no
+asterisk anywhere in the title; `win.getRepresentedFilename()` was empty for
+an unsaved document, as it should be.
+
+---
+
+#### NAT-10 — Window geometry is a fixed constant and is never remembered
+
+Shipped, together with **GEO-12** below since the same commit closes both:
+`main.js`'s four literals (`1600 × 950` default, `960 × 620` minimum) are
+gone. The default size is now 80% of `screen.getPrimaryDisplay()
+.workAreaSize` (which already excludes the menu bar, Dock and taskbar),
+clamped between the unchanged minimum and the `1600 × 950` the UI was
+actually designed and tested at - now a ceiling on the *default*, not a fixed
+size, and centred (`center: true`) rather than placed at a hard-coded
+`(160, 25)`. The true content-driven minimum GEO-03 would enable is still
+open, per the original finding's own note - `MINW`/`MINH` stay the old
+literals, named and commented, pending that. `getNormalBounds()` plus
+`isMaximized()`/`isFullScreen()` are persisted to
+`userData/window.json` on every `close`, and restored on the next launch
+**only if** the saved rectangle still overlaps some currently-attached
+display's work area (`screen.getAllDisplays()`) - otherwise the derived
+default is used instead, which is the multi-monitor case that breaks naive
+implementations. Verified with the probe harness (the same main-process
+variant as NAT-03, run with an isolated `--user-data-dir` per case): a fresh
+launch on this machine's 1470 × 828 work area produced a `1176 × ~660`
+window - smaller in both axes than the old hard-coded `1600 × 950`, which
+would in fact have exceeded this display's width; resizing the window to
+`(200, 100, 1000, 700)` and closing it wrote exactly that rectangle to
+`window.json`, and a fresh launch against that `--user-data-dir` restored it
+exactly; a `window.json` naming a rectangle at `(9000, 9000)` - off every
+connected display - fell back to the derived default instead of restoring
+off-screen; a `window.json` with `maximized: true` launched maximized while
+`getNormalBounds()` still reported the un-maximized rectangle it would
+restore to.
+
+---
+
+#### GEO-12 — Initial and minimum window size are not derived from the display
+
+Covered in detail as **NAT-10**, above — the same commit closes both.
+
+---
+
+#### NAT-13 — No cursor feedback anywhere
+
+Shipped: a new `Grid.cursor(c)` (`grid.js`) derives the canvas's CSS cursor
+from `{pan, moving, tool, entity-under-pointer, in-bounds}` and writes
+`Grid.cv.style.cursor` only when called - from `onmove()` on every pointer
+move, and from `ondown()`/`onup()` so panning and entity-dragging switch to
+`grabbing` on the same press that starts them rather than waiting for the
+next `mousemove`. All seven states the finding asked for are implemented:
+`crosshair` for the block/eraser tool, `copy` for the entity tool, `grab`
+over an existing entity (regardless of which tool is active, matching
+`ondown()`'s own precedence - grabbing an entity always wins over painting),
+`grabbing` while panning or dragging an entity, and `not-allowed` outside the
+level's bounds. Verified with the probe harness by calling `Grid.cursor()`
+directly with each state and reading back `Grid.cv.style.cursor`: block tool
+in-bounds → `crosshair`; out-of-bounds → `not-allowed`; entity tool →
+`copy`; an entity pushed onto the hovered cell → `grab`; `Grid.pan` set →
+`grabbing`; `Grid.moving` set → `grabbing`.
+
+---
+
+#### BUG-12 — Moving the window to a different-DPI display leaves the canvas blurry
+
+Shipped: a new `watchdpr()` (`grid.js`), called once from `Grid.init()`,
+arms a `matchMedia('(resolution: ' + devicePixelRatio + 'dppx)')` query and
+re-runs `Grid.resize()` - which re-reads `devicePixelRatio` into `Grid.dpr`
+and reallocates the canvas backing store - on its `change` event, then
+re-arms a fresh query for whatever the ratio just became (a media query is
+only valid for the ratio it was created at, so it cannot simply be reused).
+This is the exact mechanism the audit itself recommended. Verified
+structurally rather than by an actual DPI change: the headless probe
+harness's offscreen window runs on a single, fixed-DPI display, the same
+limitation the audit records for VIS-06's focus ring, so a live
+before/after capture of a cross-monitor drag is not possible here. Confirmed
+instead that `Grid.resize()` still correctly reads `Grid.dpr = devicePixelRatio
+|| 1` (unchanged), that `watchdpr` is reachable and callable from the
+renderer's shared global scope, and that `Grid.init()` calls it exactly once
+per canvas so a resolution change is never left unwatched.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -524,7 +666,17 @@ menu in place of the hand-rolled `<div>` one (NAT-05), a single `chrome.js`
 platform module the renderer's own `<html data-platform>` attribute is
 derived from (ARCH-03), and a trackpad that pans on a scroll and zooms only
 on a pinch or Ctrl+wheel (NAT-11) — see "Already completed" above for these
-four too. The shell's remaining problems are below.
+four too. Most recently: the window title, proxy icon and edited dot now
+follow each platform's own convention instead of duplicating a path-plus-
+asterisk string in the DOM (NAT-03); window size and position persist across
+restarts, derived from the display's own work area rather than a fixed
+`1600 × 950` (NAT-10); the canvas gives per-gesture cursor feedback instead
+of a single static arrow (NAT-13); a display-DPI change is now caught and
+the canvas backing store re-rendered instead of staying soft (BUG-12); and
+the palette, file manager and tab strip are reachable and operable by
+keyboard for the first time, closing the largest remaining accessibility
+gap outside the canvas itself (A11Y-01) — see "Already completed" above for
+all five. The shell's remaining problems are below.
 
 ### The three biggest remaining sources of perceived unpolish
 
@@ -539,15 +691,15 @@ four too. The shell's remaining problems are below.
    60% }`; a palette of `repeat(4, 1fr)` that computes to **42.25 px cells for
    32 px sprites** — a fractional, shimmering scale factor of 1.32 (GEO-01,
    GEO-03, GEO-07).
-2. **Most of the rest is still not native.** Window controls and context
-   menus are now the OS's own (NAT-02, NAT-05, see "Already completed"), but
-   a custom title row remains, and there is still no recent documents, no
-   `open-file` handler, no file association, no single-instance lock, no
-   drag-and-drop, no window-state persistence, no icon, no packaging config,
-   no `setDocumentEdited`, no `setRepresentedFilename`, no `nativeTheme`.
-   Most of the Electron APIs that exist precisely to make this application
-   feel native are still unreferenced anywhere in the tree (verified by
-   grep).
+2. **Most of the rest is still not native.** Window controls, context menus,
+   the window title/proxy-icon/edited-dot and window-state persistence are
+   now the OS's own (NAT-02, NAT-05, NAT-03, NAT-10, see "Already
+   completed"), but a custom title row remains for its New/Open/Save
+   buttons, and there is still no recent documents, no `open-file` handler,
+   no file association, no single-instance lock, no drag-and-drop, no icon,
+   no packaging config, no `nativeTheme`. Most of the Electron APIs that
+   exist precisely to make this application feel native are still
+   unreferenced anywhere in the tree (verified by grep).
 3. **The typeface is a fiction.** Measured in the running app: the strings
    `"JetBrains Mono"`, `"DejaVu Sans Mono"`, `ui-monospace`, `monospace` and
    the deliberately bogus `"NoSuchFontXYZ"` all render at **exactly
@@ -722,43 +874,6 @@ top of data loss is worthless.
 
 ---
 
-#### BUG-12 — Moving the window to a different-DPI display leaves the canvas blurry
-
-**Category** Correctness · **Severity** Medium · **Priority** P2 · **Affects** UI
-
-**Current.** `Grid.dpr` is read only inside `Grid.resize()` (`grid.js:88`),
-which runs only from the `ResizeObserver` on `#wrap` (`grid.js:75`). Dragging
-the window from a 1× display to a 2× display does not change `#wrap`'s CSS
-size, so the observer does not fire, `Grid.dpr` stays 1, and the canvas backing
-store stays at half the needed resolution. Everything the app is proudest of —
-the whole-device-pixel edge snapping at `grid.js:238-244` that keeps pixel art
-seamless — is defeated.
-
-**Evidence.** `grid.js:84-98`; `devicePixelRatio` measured as 1 in the probe
-run, confirming it is read but never re-read.
-
-**Recommended.** Listen for DPI changes and re-run `Grid.resize()`.
-
-**Implementation.** The portable idiom in the renderer:
-```
-function watchdpr()
-{
-	matchMedia('(resolution: ' + devicePixelRatio + 'dppx)')
-		.addEventListener('change', () => { Grid.resize(); watchdpr(); },
-			{once: true});
-}
-```
-Each media query is valid only for the current ratio, hence the re-arm.
-Alternatively, main can forward `screen.on('display-metrics-changed')` — better
-if other parts of the app grow DPI-dependent behaviour, but heavier for one
-consumer.
-
-**Platforms.** All three. Most visible on Windows, where mixed-DPI multi-monitor
-setups with per-monitor scaling are common; also affects macOS
-built-in-Retina + external-1080p, and Wayland fractional scaling on Linux.
-
----
-
 #### BUG-13 — `app://` path containment check is prefix-only
 
 **Category** Security · **Severity** Low · **Priority** P2 · **Affects** Architecture
@@ -780,50 +895,6 @@ is served if a `.git` directory is present, which it is.
 ---
 
 ### 4.2 Native platform (NAT)
-
----
-
-#### NAT-03 — Window title, dirty state and proxy icon ignore every OS convention
-
-**Category** Native · **Severity** High · **Priority** P1 · **Affects** UI, UX
-
-**Current.** `App.retitle()` (`app.js:34-42`) builds
-`name + '  —  ' + App.path + ' *'` into a `<div id="name">` and separately sets
-`document.title = name + ' - Pellizzola Brothers Studio'`. Probed live:
-`getRepresentedFilename()` is `""` and `isDocumentEdited()` is `false`, always.
-
-**Why it's a problem.** Three conventions are being ignored and one string is
-being duplicated:
-- **macOS** expects the title to be the **document name only**, with the
-  full path reachable via ⌘-click on the **proxy icon**
-  (`win.setRepresentedFilename(p)`), and unsaved state shown as a **dot in the
-  close button** (`win.setDocumentEdited(true)`). Studio shows the entire
-  absolute path inline and an asterisk, both non-native.
-- **Windows** expects `Document — Application`; the taskbar shows the window
-  title, so `document.title` matters and currently omits dirty state entirely
-  — the DOM title has the `*`, the OS title does not. Two titles, two truths.
-- **Linux** varies, but the window title is what appears in the overview,
-  the taskbar and the window switcher; the same inconsistency applies.
-
-**Evidence.** `app.js:34-42`; probe output `DOCEDITED false REPFILE ""`, window
-title `"untitled - Pellizzola Brothers Studio"` while `#name` reads
-`"untitled"`.
-
-**Recommended.** Main owns the title, derived from main's document state
-(`doc = {path, dirty}` in `main.js`, done — see "Already completed", BUG-08):
-- always `win.setTitle(name + (platform === 'win32' ? ' — Pellizzola Brothers Studio' : ''))`;
-- macOS additionally `setRepresentedFilename(path || '')` and
-  `setDocumentEdited(dirty)`;
-- the in-window `#name` element shows the **document name plus a dirty dot**
-  (not an asterisk, not the path) and nothing else; the path belongs in a
-  tooltip and in the status bar.
-
-**Implementation.** Delete `document.title` assignment from the renderer; move
-it behind the `doc` module's setters in main. Keep `#name` as pure display fed
-by a `doc:state` event.
-
-**Platforms.** As above. On macOS the proxy icon only appears with a real title
-bar or `hiddenInset` — already true (NAT-02, done — see "Already completed").
 
 ---
 
@@ -882,7 +953,7 @@ save-as. Feed a File → Open Recent submenu from a persisted list of the last
 **Implementation.** In main's `doc` module (`{path, dirty}`, done — see
 "Already completed", BUG-08), alongside the assignments to `doc.path`.
 Persist the list in `app.getPath('userData') + '/recent.json'` — the same store
-as window state (NAT-10).
+as window state (NAT-10, done — see "Already completed").
 
 **Platforms.** macOS: also populates the Dock icon's right-click menu and the
 "Open Recent" system behaviour, for free. Windows: `addRecentDocument`
@@ -1005,49 +1076,6 @@ add it to the bridge.
 
 ---
 
-#### NAT-10 — Window geometry is a fixed constant and is never remembered
-
-**Category** Native · **Severity** Medium · **Priority** P1 · **Affects** UX, UI
-
-**Current.** `main.js:37` — `width: 1600, height: 950, minWidth: 960,
-minHeight: 620`. Four literals with no derivation and no persistence. Probed:
-the window opens at `{x: 160, y: 25, width: 1600, height: 950}` every time.
-
-**Why it's a problem.**
-- **1600 × 950 does not fit a 1366 × 768 laptop** — still the second most
-  common desktop resolution — nor a 13" MacBook Air's 1440 × 900 usable area
-  once the menu bar and Dock are subtracted. Electron will shrink it to fit,
-  but the *layout* was never designed for what it shrinks to.
-- Resizing and repositioning are discarded on every launch, which is one of the
-  most noticeable "this is not a real app" signals.
-- The minimum, 960 × 620, is where the fixed side panels consume 41 % of the
-  width (GEO-03) — the minimum is set below the size at which the layout still
-  works.
-
-**Recommended.** Derive the default from the display, and persist the actual.
-- Default size: a fraction of the **work area** (`screen.getPrimaryDisplay()
-  .workAreaSize`, which already excludes the menu bar, Dock and taskbar) —
-  e.g. 80 % of each axis, clamped to a maximum design width so a 5 K display
-  does not open a 4 000 px window, and clamped to the minimum.
-- Default position: `center: true`, letting the OS place it.
-- Persist `getNormalBounds()` plus `isMaximized()`/`isFullScreen()` to
-  `app.getPath('userData')/window.json` on `close`; restore on launch **only
-  after validating** the saved rectangle still intersects a currently-connected
-  display (`screen.getAllDisplays()`), otherwise fall back to the derived
-  default. This is the multi-monitor case that breaks naive implementations:
-  the saved position may be on a monitor that is no longer attached.
-- Minimum size: derive from the layout's own needs once GEO-03 makes the panels
-  proportional — the true minimum is "canvas still usable at the smallest panel
-  widths", which the token system can express, rather than a guess.
-
-**Platforms.** All three. On macOS also persist fullscreen state, since
-fullscreen is a space and restoring into it is expected. On Linux, some WMs
-ignore programmatic positioning; treat restore as a request, not a guarantee.
-
-**Risks.** Restoring onto a disconnected display is the classic bug — validate.
-
----
-
 #### NAT-12 — Right-click erases, which collides with Ctrl-click on macOS and blocks a canvas menu
 
 **Category** Native · **Severity** Medium · **Priority** P2 · **Affects** UX
@@ -1074,39 +1102,6 @@ unreachable by that route.
 - On macOS specifically, do not treat `ctrlKey + button 0` as erase.
 - Document the erase gesture in a status-bar hint on first hover of the canvas,
   and in Help.
-
----
-
-#### NAT-13 — No cursor feedback anywhere
-
-**Category** Native · **Severity** Medium · **Priority** P1 · **Affects** UI, UX
-
-**Current.** `style.css:30` sets `cursor: default` on `body`; buttons and rows
-get `cursor: pointer`. The **canvas never changes its cursor** — painting,
-erasing, dragging an entity, and panning all show the same arrow.
-
-**Why it's a problem.** The cursor is the primary modeless feedback channel in
-a direct-manipulation editor. Without it the user cannot tell which tool is
-active, that Alt will pan, that they are over an entity that can be dragged, or
-that a drag is in progress.
-
-**Recommended.** A cursor for each state, set on `#cv`:
-
-| State | Cursor |
-|---|---|
-| Block tool over the level | `crosshair` |
-| Air/eraser tool | `crosshair` (plus an eraser-tinted hover cell) |
-| Entity tool | `copy` |
-| Hovering an existing entity | `grab` |
-| Dragging an entity | `grabbing` |
-| Panning (middle/Alt held) | `grabbing` |
-| Outside the level bounds | `not-allowed` |
-
-**Implementation.** One `Grid.cursor()` that derives the value from
-`{tool, hoverEntity, pan, moving, inBounds}` and writes it only when it
-changes. Call it from `onmove` alongside the existing hover update. All of
-these are standard CSS cursors, so each platform renders its own native
-artwork.
 
 ---
 
@@ -1459,8 +1454,10 @@ keyboard-accessible). Double-click resets to the design proportion. Persist to
 not go anywhere near the `.lvl`.
 
 The splitter's hit area must be larger than its visual width: a 1 px rule with
-a 6–8 px transparent grab zone, and `cursor: col-resize` / `row-resize`
-(NAT-13). Constrain against the min/max from GEO-03.
+a 6–8 px transparent grab zone, and `cursor: col-resize` / `row-resize` -
+the same per-state-cursor mechanism NAT-13 (done — see "Already completed")
+already established for the canvas, extended to a new element. Constrain
+against the min/max from GEO-03.
 
 **Risks.** `Grid.resize()` is driven by a `ResizeObserver` on `#wrap`
 (`grid.js:75`), so the canvas follows automatically — but every drag frame
@@ -1670,15 +1667,6 @@ entry, in the style the file already uses for `B` and `W` in `catalog.js` -
 `ZMIN`/`ZMAX`/`ZOOM_PX_PER_DOUBLING` already follow it. None of these should
 become a formula; they should become named, explained constants. That is the
 distinction the brief draws, and this is the file where it matters most.
-
----
-
-#### GEO-12 — Initial and minimum window size are not derived from the display
-
-Covered as **NAT-10**; listed here because it is also a geometry finding. The
-short version: `1600 × 950` and `960 × 620` are four literals in `main.js:37`
-that should come from `screen.getPrimaryDisplay().workAreaSize` and from the
-layout's own content minimums respectively.
 
 ---
 
@@ -2233,8 +2221,10 @@ single-gesture path to it.
 **Recommended.** Keep left-click → menu, and **add double-click → open**. The
 two do not conflict (the menu can dismiss on the second click of a
 double-click), it matches every file manager on every platform, and it costs
-nothing to discoverability because the menu still exists. Also make Return open
-the focused row once rows are focusable (A11Y-01).
+nothing to discoverability because the menu still exists. Return already opens
+the focused script row from the keyboard - rows are focusable now (A11Y-01,
+done — see "Already completed"), which shipped that keyboard equivalent
+directly; only the mouse's double-click affordance is still open.
 
 ---
 
@@ -2417,8 +2407,9 @@ and nothing says so.
 **Recommended.** A restrained first-run:
 - Restore the **last session's document** if it still exists on disk and was
   saved — this is what a document-based app does, and it is one line now that
-  main owns the path (BUG-08, done — see "Already completed") once it also
-  persists it beside the window state (NAT-10).
+  main owns the path (BUG-08, done — see "Already completed") and already
+  persists window state the same way (NAT-10, done — see "Already
+  completed") - the last path just needs adding to that same file.
 - Otherwise show a **start view** in place of the canvas: New Level · Open… ·
   Recent (list) — reusing the same commands, no new surfaces.
 - Empty states in the file manager (VIS-12).
@@ -2611,75 +2602,30 @@ already shipped (see "Already completed") and are not repeated here.
 
 ---
 
-#### A11Y-01 — Most of the interface is not reachable by keyboard
-
-**Category** Accessibility · **Severity** Critical · **Priority** P0 · **Affects** UI, UX
-
-**Current.** Re-measured in the running app after NAT-02/NAT-05 (done — see
-"Already completed"): **15** focusable elements exist in the whole document
-(was 17 - the fake window-control dots and the DOM context menu are gone,
-and neither was itself reachable by Tab even before), against **31** palette
-cells alone. The non-focusable interactive elements are:
-
-| Control | Built as | Location |
-|---|---|---|
-| Palette cells (31+) | `<div class="cell">` + `onclick` | `panel.js:60-78` |
-| File-manager rows | `<li>` + `onclick` | `app.js:130-152` |
-| Tabs | `<div class="tab">` + `onclick` | `app.js:78-93` |
-| Tab close buttons | `<i>` + `onclick` | `app.js:87-90` |
-| Section headers | `<div class="hdr">` | `index.html:29, 31` |
-
-Context-menu items and window controls, both on this list in the original
-audit, are gone from it: both are now real native OS surfaces (NAT-05,
-NAT-02) with their own platform-correct keyboard behaviour, not DOM elements
-this finding could fix by replacing them. None of the rows above can be
-reached with Tab; none respond to Return or Space; none appear in the focus
-order at all. The application is still operable only with a pointer.
-
-**Recommended.** Use the right element rather than adding ARIA to the wrong one
-— the brief is explicit that native semantics beat ARIA:
-
-- **Palette cells** → `<button>` inside a container with
-  `role="listbox"`/`option` semantics, or simply `<button aria-pressed>` in a
-  `role="group"`. Arrow keys move within the grid (roving `tabindex`), Return
-  or Space selects, so the palette is one Tab stop rather than 31.
-- **File rows** → `<li>` inside `role="listbox"` with `role="option"`,
-  `aria-selected`, roving `tabindex`, Return to open (UX-01), F2/Return to
-  rename, Delete to delete, arrow keys and type-ahead to navigate.
-- **Tabs** → `role="tablist"` / `role="tab"` / `aria-selected` /
-  `aria-controls`, as real `<button>`s, with left/right arrows moving between
-  them and one Tab stop for the strip. The panels get `role="tabpanel"`.
-- **Tab close** → a real `<button>` with `aria-label="Close <name>"`, and a
-  hit target meeting A11Y-08.
-- **Menu items** → done; the menu is now native (NAT-05, see "Already
-  completed"), which was the single biggest accessibility win available here.
-- **Window controls** → done; they are now the OS's own (NAT-02, see "Already
-  completed").
-
-**Implementation note.** Roving `tabindex` is the right pattern for all three
-lists: exactly one item carries `tabindex="0"`, the rest `-1`, and arrow keys
-move it. That keeps the Tab order short (title bar → tabs → file list →
-canvas → palette → inspector → status) which is itself an accessibility
-property.
-
----
-
 #### A11Y-02 — The DOM has no semantics
 
 **Category** Accessibility · **Severity** High · **Priority** P1 · **Affects** UI
 
-**Current.** `index.html` is 58 lines of `<div>`s and two `<aside>`s. There are
-**zero** `role` or `aria-*` attributes in the entire application (verified by
-grep across HTML and JS). A screen reader encounters: an unlabelled group of
-three unlabelled items, an unlabelled list of unlabelled clickable divs, a
-canvas with no name, and a grid of 31 unlabelled divs.
+**Current.** `index.html` is 58 lines of `<div>`s and two `<aside>`s. The
+original audit found **zero** `role` or `aria-*` attributes anywhere in the
+application; A11Y-01 (done — see "Already completed") has since added
+`role="tablist"`/`role="tab"`/`aria-selected` to the tab strip and
+`role="listbox"`/`role="option"`/`aria-selected` to the file lists, since
+fixing keyboard reachability there meant giving those groups real semantics
+too - so those two items are done, listed under "Recommended" below with
+that noted rather than removed, since the rest of this finding's scope
+(headings, landmarks, the status bar, the inspector, the palette's own
+labelling) is still open. A screen reader today still encounters: an
+unlabelled title bar, unlabelled section headings, an unnamed canvas, and an
+inspector with no landmark of its own.
 
 **Recommended.** Correct elements first, ARIA only where HTML cannot express
 the pattern:
-- `<header>` for the title bar; the tab strip as a `role="tablist"` (no HTML
-  element exists for it, so this is legitimate ARIA); `<nav>` or
-  `role="listbox"` for the file lists; `<main>` for the stage (already
-  `<main>` — good); `<aside>` for both panels (already correct — good).
+- The tab strip's `role="tablist"` and the file lists' `role="listbox"` are
+  done (A11Y-01, above) - no HTML element expresses either pattern natively,
+  so both were legitimate ARIA. Still open: `<header>` for the title bar;
+  `<main>` for the stage (already `<main>` — good); `<aside>` for both panels
+  (already correct — good).
 - Each section header becomes a real heading (`<h2>`) and the list it labels
   gets `aria-labelledby` pointing at it, so "scripts" and "midi" become
   navigable landmarks.
@@ -2688,9 +2634,13 @@ the pattern:
   real headings, so an inspector user can jump between sections.
 - The disabled `▶` gets `aria-disabled` and `aria-describedby` (VIS-13).
 
-**Do not** add `role="button"` to the divs — replace them with buttons
-(A11Y-01). Adding ARIA to compensate for the wrong element is the anti-pattern
-the brief warns against.
+**Done, and worth recording as the model to repeat:** the palette cells, file
+rows and tabs became real `<button>`s / properly-roled list items rather than
+gaining `role="button"` on a `<div>` (A11Y-01, above) - using the right
+element instead of compensating with ARIA on the wrong one, exactly as this
+finding recommends. Anything still built as a bare clickable `<div>` (the
+section headers, `#warnings` in the status bar) should follow the same
+pattern rather than take a `role` shortcut.
 
 ---
 
@@ -2779,12 +2729,15 @@ invisible to assistive technology.
 Chromium's page zoom used to be reachable through the default menu's Zoom
 In/Out roles (⌘+/⌘−); NAT-01's replacement menu (shipped) carries no such
 role, so that particular exposure is currently closed as a side effect rather
-than by design — there is still no `View → Zoom` of any kind, and nothing
-would handle it correctly if one were added: `Grid.dpr` is read from
-`devicePixelRatio`, which page zoom multiplies, while `Grid.resize()` only
-fires on a CSS-size change (BUG-12). The underlying problem this finding is
-about — an all-`px` layout with no response to OS text-size settings — is
-unaffected by the menu change.
+than by design — there is still no `View → Zoom` of any kind. Were one added,
+it would need its own DPI handling: `webFrame.setZoomFactor` (Chromium page
+zoom) does not change `devicePixelRatio`, so BUG-12's shipped fix (done — see
+"Already completed") - which re-arms a `matchMedia('(resolution: …)')` query
+and does not fire on a zoom change, only a real display-DPI one - would not
+by itself catch it; a UI-zoom command needs its own hook into
+`Grid.resize()`, in the same spirit as BUG-12 but not the same event. The
+underlying problem this finding is about — an all-`px` layout with no
+response to OS text-size settings — is unaffected by either change.
 
 **Recommended.**
 1. Define type in `rem` off a root size, and spacing tokens in `px` (spacing
@@ -2796,7 +2749,8 @@ unaffected by the menu change.
    with the other view state.
 3. **Handle the zoom change**: whichever mechanism, hook it to re-run
    `Grid.resize()` so the canvas backing store and the pixel snapping stay
-   correct. This is the same fix as BUG-12 and should be one code path.
+   correct - its own hook, since it is a distinct event from the
+   `devicePixelRatio` change BUG-12 already watches.
 
 ---
 
@@ -3154,7 +3108,7 @@ window and menu layers.
 |---|---|---|
 | App identity | `.icns`; bundle id `com.pellizzolabrothers.studio` (`productName`, `app.setName()` and `setAboutPanelOptions` are already shipped, NAT-01) | NAT-07, NAT-17 |
 | Window chrome | `titleBarStyle: 'hiddenInset'` + `trafficLightPosition`; the fake dots are deleted; the green button is real full screen, not `maximize()` — done, see "Already completed" | NAT-02 |
-| Title | Document name only; `setRepresentedFilename` for the proxy icon; `setDocumentEdited` for the close-button dot. Not a path, not an asterisk. | NAT-03 |
+| Title | Document name only; `setRepresentedFilename` for the proxy icon; `setDocumentEdited` for the close-button dot. Not a path, not an asterisk — done, see "Already completed" | NAT-03 |
 | Toolbar | Remove the New/Open/Save hotbar — it duplicates File, and the menu bar exists regardless of window framing. | NAT-04 |
 | Context menus | `Menu.popup()` — done, see "Already completed". Ctrl+click must still not erase. | NAT-05, NAT-12 |
 | Open Recent | `addRecentDocument` — feeds both the File menu and the Dock icon menu. | NAT-06, NAT-17 |
@@ -3164,7 +3118,7 @@ window and menu layers.
 | Scrollbars | Respect the overlay/classic setting; `scrollbar-gutter: stable` so layout does not depend on it. | NAT-20 |
 | Dialogs | "Don't Save", not "Discard"; sheet-parented; `detail` added — done, see "Already completed" | NAT-21 |
 | Distribution | `hardenedRuntime`, code signing, notarisation — without these an unsigned build is blocked by Gatekeeper. | NAT-07 |
-| Accessibility | VoiceOver reaches nothing today; native menus (NAT-05, done) and real controls (A11Y-01, open) fix most of it at once. | A11Y-01, A11Y-02 |
+| Accessibility | VoiceOver reaches nothing today; native menus (NAT-05, done) and real controls in the palette/file lists/tabs (A11Y-01, done) fix most of it at once — remaining: headings, landmarks and the status bar's live region (A11Y-02, A11Y-05). | A11Y-02, A11Y-05 |
 
 ### 5.2 Windows
 
@@ -3172,14 +3126,14 @@ window and menu layers.
 |---|---|---|
 | Window chrome | `titleBarStyle: 'hidden'` + `titleBarOverlay: {color, symbolColor, height}` so Windows draws its own caption buttons, correctly placed top-right and themed — done, see "Already completed" (implemented against Electron's documented behaviour; not yet run on real Windows hardware). Re-pushing the colours on an OS theme change is still open. | NAT-02, NAT-15 |
 | Toolbar | The application menu is already set unconditionally (NAT-01, shipped) so its accelerators work even with no visible menu bar; keep an in-window toolbar as the visible surface, since `titleBarStyle: 'hidden'` shows none. Consider a hamburger that calls `Menu.popup()`. | NAT-04 |
-| Title | `Document — Pellizzola Brothers Studio`, with dirty state reflected in the OS title, not only in the DOM. | NAT-03 |
+| Title | `Document — Pellizzola Brothers Studio`, with dirty state reflected in the OS title, not only in the DOM — done, see "Already completed" (implemented against Electron's documented `titleBarOverlay`/`setTitle` behaviour; not yet run on real Windows hardware) | NAT-03 |
 | File association | Registry entries + `.ico` via electron-builder; handle the path in `process.argv` **and** in `second-instance`. | NAT-07, NAT-08 |
 | Single instance | Required — without it every double-clicked `.lvl` launches a whole new app. | NAT-08 |
 | JumpList | `setUserTasks` ("New Level") plus automatic recent documents once the association exists. | NAT-06, NAT-17 |
 | Dialogs | Button order Save / Don't Save / Cancel; `noLink: true` so they are push buttons, not command links; `title` set — done, see "Already completed" | NAT-21 |
 | Scrollbars | Classic scrollbars consume layout width — this is where NAT-20's unstyled palette scrollbar is most visible and where `scrollbar-gutter` matters most. | NAT-20 |
 | High contrast | `forced-colors: active` is a real, commonly-enabled Windows mode; currently untested and certain to break the canvas indicators. | A11Y-07, VIS-16 |
-| Mixed DPI | Per-monitor scaling is common; the canvas goes soft when the window moves between displays. | BUG-12 |
+| Mixed DPI | Per-monitor scaling is common; the canvas goes soft when the window moves between displays — done, see "Already completed" (implemented against the documented `matchMedia`/`devicePixelRatio` mechanism; not yet run on real per-monitor-DPI Windows hardware) | BUG-12 |
 | Distribution | Authenticode signing; NSIS or MSI. | NAT-07 |
 
 ### 5.3 Linux
@@ -3198,7 +3152,7 @@ chosen deliberately, not as the default the other two inherit.
 | Recent files | `addRecentDocument` writes `recently-used.xbel`, honoured by GTK file choosers. | NAT-06 |
 | Single instance | Required. | NAT-08 |
 | Fonts | The `DejaVu Sans Mono` fallback is the *only* one likely to be present, and it differs in metrics from JetBrains Mono — bundling the font matters most here. | VIS-05 |
-| Wayland | Fractional scaling changes `devicePixelRatio` without a CSS resize. | BUG-12 |
+| Wayland | Fractional scaling changes `devicePixelRatio` without a CSS resize — done, see "Already completed" (not yet run on real Wayland hardware) | BUG-12 |
 | DE variance | State explicitly in `CLAUDE.md` which desktops were tested. "Linux" is not one target. | — |
 
 ### 5.4 Cross-platform Electron improvements
@@ -3206,9 +3160,9 @@ chosen deliberately, not as the default the other two inherit.
 | Improvement | Finding |
 |---|---|
 | `will-navigate`, `setWindowOpenHandler`, `sandbox: true` — done, see "Already completed" (NAT-18); still open: dropping a `.lvl` itself does not yet open it (NAT-09) | NAT-09 |
-| Window state persistence with display validation | NAT-10 |
-| Display-derived default window size | NAT-10, GEO-12 |
-| DPI-change handling for the canvas | BUG-12, A11Y-06 |
+| Window state persistence with display validation — done, see "Already completed" | NAT-10 |
+| Display-derived default window size — done, see "Already completed" (folds in GEO-12) | NAT-10 |
+| DPI-change handling for the canvas — done, see "Already completed" (BUG-12); a future UI-zoom command would still need its own hook (A11Y-06) | A11Y-06 |
 | Recovery snapshots and `.bak` in `userData` — done, see "Already completed" | UX-10 |
 | One `chrome.js` for every platform branch; `api.platform` to the renderer — done, see "Already completed" | ARCH-03 |
 | Consistent IPC envelope, one unwrap helper (string verdicts on `ask:discard` already done, BUG-10) | ARCH-06 |
@@ -3243,7 +3197,6 @@ NAT-02 — done, see "Already completed").
 | 13 | Gaps 4/6/8/10/12/14/16/18 px | `style.css` passim | `--space-*` scale | GEO-01 |
 | 14 | Font sizes 10/11/12/13 px | `style.css` passim | `--font-size`, `--font-size-sm`; drop 10 px | GEO-08 |
 | 15 | `li padding 1px 10px 1px 18px` | `style.css:123` | `--row` height; indent from icon width | GEO-08, A11Y-04 |
-| 16 | `1600 × 950`, `960 × 620` window | `main.js:37` | Display work area; content minimums | NAT-10, GEO-12 |
 | 17 | `2 * B` fit padding | `grid.js:163` | `FITPAD = B`, named | GEO-11 |
 | 18 | `1` (max fit zoom) | `grid.js:163` | Named, not derived — `ZMIN`, its other half, is already named and shared with the wheel (NAT-11, done) | GEO-11 |
 | 19 | `B * z >= 10` grid threshold | `grid.js:257` | `GRIDMIN`, named and commented | GEO-11 |
@@ -3255,7 +3208,11 @@ NAT-02 — done, see "Already completed").
 are done (NAT-11, see "Already completed"): `ZMIN`, `ZMAX` and
 `ZOOM_PX_PER_DOUBLING = 462` (`Math.LN2 / ZOOM_PX_PER_DOUBLING` reproduces
 `0.0015` exactly) are now named `const`s in `grid.js`, shared between
-`Grid.fit()` and `onwheel()`.
+`Grid.fit()` and `onwheel()`. The `1600 × 950` / `960 × 620` window-size row is
+also done (NAT-10, see "Already completed"): the default is now 80% of the
+display's work area, clamped between the unchanged `960 × 620` floor and the
+`1600 × 950` the UI was designed at, and the actual size and position are
+persisted across launches.
 
 ### 6.2 Design tokens that should exist
 
@@ -3376,7 +3333,7 @@ the finding that resolves it.
 | **Icons** | Five text glyphs at four effective sizes, three of them `+`; an unused icon set exists in `textures/icons/` | Inline-SVG set, `currentColor`, one `--icon` token (VIS-11) |
 | **Text alignment** | `.hdr` left in the file manager, right in the inspector — deliberate mirroring per the design; keep | — |
 | **Capitalisation** | Four conventions, `midi`/`MIDI` in one interface | Lowercase in-window, platform convention on OS surfaces, proper nouns always (VIS-10) |
-| **Cursor** | `default` everywhere; the canvas never changes | Seven states on the canvas; `col-resize` on splitters (NAT-13, GEO-04) |
+| **Cursor** | Fixed on the canvas — seven states (`crosshair`/`copy`/`grab`/`grabbing`/`not-allowed`) driven by `Grid.cursor()` (NAT-13, done — see "Already completed"); `col-resize` on splitters still needs GEO-04's splitters to exist first | GEO-04 |
 | **Tooltips** | Native `title=` on some controls, absent on tabs, window controls and rows; Title Case among lowercase labels | Keep native `title` (correct choice — it is the platform's tooltip); add the missing ones; include accelerators on toolbar buttons (NAT-04, VIS-10) |
 | **Loading** | None; Monaco loads eagerly so its absence is never visible; long saves block silently | Editor loading state (ARCH-08); progress for long ops (NAT-19) |
 | **Empty states** | Two blank voids in the file manager on every launch | One line + one action per list (VIS-12) |
@@ -3406,9 +3363,11 @@ with Recent (UX-09); recent documents in the menu and the Dock/JumpList
 
 **Editing** — rectangle fill, flood fill, duplicate, arrow-key nudge (UX-05);
 zoom controls, an indicator, and a fit that actually fits (UX-04); a visible
-active tool (UX-06); cursor feedback for every gesture (NAT-13); Escape cancels
-and reverts a gesture (UX-12); trackpad scroll now pans instead of zooming,
-and pinch/Ctrl+wheel zooms (NAT-11, shipped, see "Already completed").
+active tool (UX-06); Escape cancels and reverts a gesture (UX-12); trackpad
+scroll now pans instead of zooming, and pinch/Ctrl+wheel zooms (NAT-11,
+shipped, see "Already completed"); the canvas now shows a cursor for every
+gesture - crosshair, copy, grab, grabbing, not-allowed (NAT-13, shipped, see
+"Already completed").
 
 **Navigating** — a vertical scrollbar (GEO-10); resizable panels that remember
 their size (GEO-04); tabs that overflow into a scroller instead of vanishing
@@ -3436,9 +3395,11 @@ remain (UX-03).
 
 ## 9. Accessibility summary
 
-Studio is currently **not operable without a pointer**. Contrast and focus
-visibility — previously the main reason the interface read as unfinished —
-are fixed (VIS-01, VIS-02, VIS-06, see "Already completed").
+Studio was previously **not operable without a pointer at all**. Contrast and
+focus visibility (VIS-01, VIS-02, VIS-06) and keyboard reachability for the
+palette, file manager and tab strip (A11Y-01) are fixed — see "Already
+completed" for all four. The canvas itself, where the actual editing happens,
+still requires a pointer (A11Y-03).
 
 | Requirement | Status | Fix |
 |---|---|---|
@@ -3446,21 +3407,23 @@ are fixed (VIS-01, VIS-02, VIS-06, see "Already completed").
 | 1.4.3 Contrast (Minimum) | Fixed — was 2.5–2.9:1, now 4.77–5.91:1 for the affected text | VIS-01, done |
 | 1.4.11 Non-text Contrast | Fixed — was 1.18:1, now 3.12–3.59:1 for control borders | VIS-02, done |
 | 1.4.12 Text Spacing | Fail — all-`px` layout, no response to OS text size | A11Y-06 |
-| 2.1.1 Keyboard | Fail — palette, rows, tabs, menu, canvas all unreachable | A11Y-01, A11Y-03 |
-| 2.4.3 Focus Order | Fail — 17 focusable elements, no defined order | A11Y-01 |
+| 2.1.1 Keyboard | Partial — the palette, file rows and tabs are operable now (A11Y-01, done); the canvas itself still is not | A11Y-03 |
+| 2.4.3 Focus Order | Fixed — roving tabindex gives the palette, file lists and tab strip one Tab stop each, in a defined title-bar-to-status-bar order | A11Y-01, done |
 | 2.4.7 Focus Visible | Fixed — global `:focus-visible` rule, nothing left to suppress it | VIS-06, done |
 | 2.5.8 Target Size | Fail — 12 px window controls, ~7 px tab close, 20 px rows | A11Y-04 |
-| 4.1.2 Name, Role, Value | Fail — zero `role`/`aria-*` in the application | A11Y-02 |
+| 4.1.2 Name, Role, Value | Partial — the palette, file lists and tab strip now carry `role`/`aria-*` (A11Y-01, done); the rest of the application still has none | A11Y-02 |
 | 4.1.3 Status Messages | Fail — nothing is announced | A11Y-05 |
 | 2.3.3 Animation from Interactions | N/A today; becomes required with VIS-08 | VIS-08, A11Y-07 |
 | System high contrast | Untested; will break canvas indicators | A11Y-07, VIS-16 |
 
 Native menus (NAT-05, done — see "Already completed") already deleted one
-entire inaccessible subsystem rather than fixing it in place. The
-highest-leverage accessibility work remaining is not ARIA: it is replacing
+entire inaccessible subsystem rather than fixing it in place, and replacing
 the palette, file rows and tabs' clickable `<div>`s with real controls
-(A11Y-01) — this is where the effort is, and it fixes keyboard, focus order
-and semantics together.
+(A11Y-01, done — see "Already completed") was the single largest remaining
+piece of keyboard, focus-order and semantics work. What is left is the
+canvas itself (A11Y-03, the one surface a parallel-DOM approach genuinely
+cannot cover), the rest of the DOM's semantics (A11Y-02), announcements
+(A11Y-05) and system preferences (A11Y-06, A11Y-07).
 
 ---
 
@@ -3470,7 +3433,12 @@ and semantics together.
 mirror and `Grid.commit()` contract; the cell-diff undo model; viewport culling
 and device-pixel snapping; the `app://` protocol and its documented reason; the
 minimal preload surface; the comment style that explains decisions rather than
-code; the flat global scope with its documented collision grep.
+code; the flat global scope with its documented collision grep. The renderer
+owning window title logic - the menu moved to main (NAT-01, shipped), window
+controls and context menus moved to main (NAT-02/NAT-05, shipped), and now
+the title/proxy-icon/edited-dot logic itself (NAT-03, done — see "Already
+completed") - is also resolved; `main.js`'s `retitle()` is the one place all
+four are driven from.
 
 **Fix.**
 
@@ -3478,7 +3446,6 @@ code; the flat global scope with its documented collision grep.
 |---|---|
 | Full innerHTML rebuilds on a drag hot path; hand-rolled `esc()` | ARCH-04, PERF-01 |
 | Three IPC naming conventions, two response shapes, forgettable `cancel` (the `ask:discard` response is a named string now, BUG-10, done — see "Already completed") | ARCH-06 |
-| Renderer implementing window title logic (the menu moved to main, NAT-01, shipped; window controls and context menus also moved to main, NAT-02/NAT-05, shipped) | NAT-03 |
 | Monaco eager and shipped whole | ARCH-08 |
 | Synchronous main-process I/O | ARCH-09, NAT-19 |
 | Colour defined in four places | VIS-04 |
@@ -3537,8 +3504,8 @@ relitigated.
 | App name / identity in the menu, taskbar and Dock | ✅ shipped (NAT-01) | ✅ shipped (NAT-01) | ✅ shipped (NAT-01) | remaining: `.icns`/bundle id, NAT-07 |
 | Window controls | ✅ shipped (NAT-02) | ✅ shipped, not run on real hardware (NAT-02) | ✅ shipped, not run on real hardware (NAT-02) | — |
 | Green button semantics | ✅ shipped - real full screen, not `maximize()` (NAT-02) | n/a | n/a | — |
-| Window title | ⚠️ shows full path + `*` | ⚠️ no dirty state in OS title | ⚠️ same | NAT-03 |
-| Proxy icon / edited dot | ❌ | n/a | n/a | NAT-03 |
+| Window title | ✅ shipped - document name only (NAT-03) | ✅ shipped, not run on real hardware (NAT-03) | ✅ shipped, not run on real hardware (NAT-03) | — |
+| Proxy icon / edited dot | ✅ shipped (NAT-03) | n/a | n/a | — |
 | Context menus | ✅ shipped (NAT-05) | ✅ shipped, not run on real hardware (NAT-05) | ✅ shipped, not run on real hardware (NAT-05) | — |
 | File dialogs | ✅ | ✅ | ✅ | — |
 | Save extension handling | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | — |
@@ -3548,9 +3515,9 @@ relitigated.
 | Single instance | ❌ n/a in practice | ❌ | ❌ | NAT-08 |
 | Drag and drop | ⚠️ no longer navigates away (NAT-18, shipped); a drop still does not open the level | ⚠️ same | ⚠️ same | NAT-09 |
 | Dock / taskbar integration | ❌ | ❌ | ❌ | NAT-06, NAT-17 |
-| Window state persistence | ❌ | ❌ | ❌ | NAT-10 |
-| Default window size | ⚠️ too large for 13" | ⚠️ too large for 1366×768 | ⚠️ | NAT-10 |
-| Mixed-DPI / scaling | ⚠️ blurry on move | ⚠️ blurry (most common here) | ⚠️ Wayland fractional | BUG-12 |
+| Window state persistence | ✅ shipped - position, size, maximized and fullscreen survive a restart, with a disconnected-display fallback (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | — |
+| Default window size | ✅ shipped - 80% of the display's work area, clamped (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | — |
+| Mixed-DPI / scaling | ✅ shipped (BUG-12) | ✅ shipped, not run on real per-monitor-DPI hardware (BUG-12) | ✅ shipped, not run on real Wayland hardware (BUG-12) | — |
 | Trackpad scroll vs pinch | ✅ shipped (NAT-11) | ✅ shipped (NAT-11) | ✅ shipped (NAT-11) | — |
 | Right-click semantics | ❌ Ctrl+click erases | ✅ | ✅ | NAT-12 |
 | Keyboard shortcuts | ⚠️ conflicts with default menu; layout-dependent | ⚠️ same | ⚠️ same | NAT-14 |
@@ -3558,7 +3525,7 @@ relitigated.
 | Fonts | ⚠️ falls back to SF Mono | ⚠️ Consolas | ⚠️ DejaVu | VIS-05 |
 | High contrast / forced colours | ⚠️ Increase Contrast ignored | ❌ untested, will break | ⚠️ | A11Y-07 |
 | Reduced motion | n/a (no motion) → required with VIS-08 | same | same | VIS-08, A11Y-07 |
-| Screen reader | ❌ VoiceOver reaches nothing | ❌ Narrator | ❌ Orca | A11Y-01, A11Y-02 |
+| Screen reader | ⚠️ the palette, file lists and tab strip are now named and role-bearing (A11Y-01, shipped); everything else VoiceOver reaches is still unlabelled | ⚠️ same for Narrator | ⚠️ same for Orca | A11Y-02, A11Y-05 |
 | Notifications | ❌ | ❌ | ❌ | NAT-19 |
 | Full screen | ❌ regression: the default menu's Toggle Full Screen (⌃⌘F) had no replacement when NAT-01's own menu shipped without a View menu | ⚠️ | ⚠️ | needs a new View menu item, unfiled |
 | Quit / lifecycle | ✅ ⌘Q works (`role: 'appMenu'`, NAT-01); a hung/dirty renderer no longer wedges close (BUG-09, shipped) | ✅ shipped (BUG-09) | ✅ shipped (BUG-09) | — |
@@ -3579,24 +3546,16 @@ documented as one.
 
 ### Critical — data loss, or the app is not credibly a desktop application
 
-| ID | Title |
-|---|---|
-| A11Y-01 | Most of the interface is unreachable by keyboard |
-
-BUG-01, BUG-02, BUG-07, NAT-01, NAT-02, VIS-01, VIS-02 and VIS-06, the other
-seven items that were listed here, are done — see "Already completed" at the
-top of this document.
+Every item ever listed at this tier is now done: BUG-01, BUG-02, BUG-07,
+NAT-01, NAT-02, VIS-01, VIS-02, VIS-06 and A11Y-01 — see "Already completed"
+at the top of this document. Nothing remains in this tier.
 
 ### High — the difference between "works" and "finished"
 
 | ID | Title |
 |---|---|
-| BUG-12 | DPI change leaves the canvas blurry |
-| NAT-03 | Title, dirty state and proxy icon ignore every convention |
 | NAT-04 | Hotbar duplicates what belongs in the menu |
 | NAT-07 | No packaging, icons, or file association |
-| NAT-10 | Window geometry fixed and never remembered |
-| NAT-13 | No cursor feedback |
 | NAT-20 | One of five scroll containers styled |
 | GEO-01 | No spacing, sizing or type scale |
 | GEO-03 | Fixed side panels consume 41 % of the minimum window |
@@ -3610,8 +3569,8 @@ top of this document.
 | ARCH-08 | Monaco eager and shipped whole |
 | PERF-01 | Inspector rebuilt from a string on every drag cell |
 
-NAT-05, NAT-11, ARCH-02 and ARCH-03, the other four items that were listed
-here, are done — see "Already completed".
+NAT-05, NAT-11, ARCH-02, ARCH-03, BUG-12, NAT-03, NAT-10 and NAT-13, the other
+eight items that were listed here, are done — see "Already completed".
 
 ### Medium — real friction, contained fixes
 
@@ -3640,7 +3599,7 @@ here, are done — see "Already completed".
 | NAT-15 | System preference handling (contrast, forced colours) |
 | NAT-17 | Dock menu, JumpList tasks (About panel already shipped, NAT-01) |
 | NAT-19 | Feedback for long operations |
-| GEO-12, GEO-13 | Window sizing (folded into NAT-10); unadopted design proportions |
+| GEO-13 | Unadopted design proportions (window sizing, formerly GEO-12, is done — see "Already completed", NAT-10) |
 | VIS-13, VIS-17 | Playtest button communication; missing-texture swatches |
 | UX-02, UX-11, UX-13, UX-14, UX-17, UX-18 | Menu contents, preferences, in-use script deletion, silent script creation, numeric rounding, MIDI opacity |
 | A11Y-07, A11Y-08 | System accessibility preferences; colour-only states |
@@ -3706,14 +3665,13 @@ verdicts on `ask:discard`) are also done. **NAT-02** (real window chrome per
 platform; the fake dots and `win:ctl` are deleted) and **NAT-05** (native
 context menus; `#menu` and ~55 lines of `app.js` are deleted, reusing the
 `cmd`/`ACTS` dispatcher NAT-01 already built) are also done — see "Already
-completed" for both.
+completed" for both. **NAT-03** (title, represented filename, edited dot -
+NAT-02, its prerequisite, was done; document identity itself was already in
+main, BUG-08) and **NAT-10** (window state persistence with display
+validation) are also done — see "Already completed" for both.
 
-2. **NAT-03** title, represented filename, edited dot (NAT-02, its
-   prerequisite, is done; document identity itself is already in main,
-   BUG-08, also done).
 3. **NAT-04** hotbar per platform (ARCH-03, its prerequisite, is done; the
    menu itself no longer blocks this either).
-4. **NAT-10** window state persistence with display validation.
 5. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
    **NAT-06** recent documents; **NAT-09** drag and drop. These four are one
    coherent piece of work and share prerequisites — all can build directly on
@@ -3750,8 +3708,8 @@ later than originally scoped.
     wheel already scrolls); **UX-04** zoom controls and a real fit, including
     the new View menu that also gives Toggle Full Screen a home again (see
     §12, "Full screen").
-15. **NAT-13** cursors; **NAT-12** canvas context menu and Ctrl+click;
-    **UX-12** gesture cancel.
+15. **NAT-12** canvas context menu and Ctrl+click; **UX-12** gesture cancel
+    (**NAT-13** cursors is done — see "Already completed").
 16. **PERF-01** `Panel.update()` split (with **ARCH-04**); **PERF-02** cached
     rect and refs.
 17. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
@@ -3760,9 +3718,11 @@ later than originally scoped.
 
 ### Phase 5 — Accessibility completion
 
-18. **A11Y-01** real controls with roving tabindex — palette, rows, tabs. The
-    largest single piece of work remaining in this document, now that native
-    menus (NAT-05) have already deleted one inaccessible subsystem outright.
+**A11Y-01** (real controls with roving tabindex — palette, rows, tabs) is
+done — see "Already completed"; it was the largest single piece of work in
+this phase, now that native menus (NAT-05) and A11Y-01 together have deleted
+or fixed every inaccessible subsystem outside the canvas itself.
+
 19. **A11Y-02** semantics and landmarks; **A11Y-05** live regions.
 20. **A11Y-04** hit targets (mostly free once GEO-01's `--row` lands).
 21. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
@@ -3797,12 +3757,12 @@ GEO-01 + VIS-04 ──────┬─► VIS-07, VIS-08, VIS-09
    half already done)  └─► NAT-15's forced-colours/contrast work
 VIS-05 (font) ────────► anything depending on type metrics
 PERF-04 ──────────────► GEO-04 (splitters)
-A11Y-01 ──────────────► A11Y-02, A11Y-03, A11Y-04
 
 Done and no longer on this graph: ARCH-07 (checks) unblocked everything below
 it by making every later change verifiable at all; BUG-08 (doc state)
-unblocked NAT-03, NAT-06, NAT-07, NAT-08, NAT-10, UX-10, all of which can now
-build on it directly; BUG-09 closed the live gap NAT-01 opened;
+unblocked NAT-03, NAT-06, NAT-07, NAT-08, NAT-10, UX-10, all of which could
+then build on it directly - NAT-03 and NAT-10 have since shipped, done — see
+"Already completed"; BUG-09 closed the live gap NAT-01 opened;
 VIS-01/VIS-02/VIS-06 unblocked nothing else in this graph (the rest of
 GEO-01/VIS-04 does not depend on them); NAT-18 closed NAT-09's navigation hole
 without needing any of the above; NAT-21/BUG-10 and UX-10/BUG-11 each shipped
@@ -3810,10 +3770,13 @@ straight off BUG-08's `doc` module and BUG-02's atomic write, also without
 needing ARCH-03 or GEO-01/VIS-04; ARCH-03 (platform) unblocked NAT-02 (also
 done) and VIS-10 (which can now apply the OS-facing capitalisation
 convention it asks for - not yet done), and NAT-02 in turn unblocked NAT-03
-and NAT-04 (both still open); NAT-05 deleted an entire inaccessible
+(now done) and NAT-04 (still open); NAT-05 deleted an entire inaccessible
 subsystem rather than fixing it in place, independently of the rest of this
 graph; NAT-11 unblocked GEO-10 (the wheel now scrolls) and named two of
-GEO-11's eight constants.
+GEO-11's eight constants; A11Y-01 (also done, needing nothing from this
+graph) unblocked A11Y-02, A11Y-03 and A11Y-04, none of which depend on
+GEO-01/VIS-04 either; BUG-12 and NAT-13 each shipped independently, needing
+nothing from this graph and unblocking nothing on it.
 ```
 
 ---
@@ -3835,8 +3798,9 @@ demonstrably true. Each is checkable, not a matter of opinion.
       The fake dots do not exist in the codebase. (NAT-02 — Windows/Linux
       implemented against Electron's documented behaviour, not run on real
       hardware)
-- [ ] The window title follows each platform's convention; macOS shows a proxy
-      icon and an edited dot.
+- [x] The window title follows each platform's convention; macOS shows a proxy
+      icon and an edited dot. (NAT-03 — Windows/Linux implemented against
+      Electron's documented behaviour, not run on real hardware)
 - [x] Every context menu is a native `Menu.popup()`. (NAT-05 — not run on real
       Windows/Linux hardware)
 - [ ] Double-clicking a `.lvl` in Finder, Explorer and a Linux file manager
@@ -3845,10 +3809,14 @@ demonstrably true. Each is checkable, not a matter of opinion.
       the Windows JumpList.
 - [ ] Dropping a `.lvl` on the window or the Dock icon opens it; dropping
       anything never navigates the shell away.
-- [ ] Window size, position, maximised and fullscreen state survive a restart,
+- [x] Window size, position, maximised and fullscreen state survive a restart,
       and a saved position on a disconnected display falls back gracefully.
-- [ ] The default window fits within the primary display's work area on a
-      1366 × 768 screen without being resized by the OS.
+      (NAT-10 — Windows/Linux implemented against Electron's documented
+      `screen`/`BrowserWindow` behaviour, not run on real hardware)
+- [x] The default window fits within the primary display's work area on a
+      1366 × 768 screen without being resized by the OS. (NAT-10 — verified
+      against this machine's actual work area and hand-verified arithmetically
+      for 1366 × 768: `80% -> 1093 × 620`, both within bounds)
 - [x] On a trackpad, two-finger scroll pans and pinch zooms. (NAT-11)
 - [ ] Packaged, signed and notarised/Authenticode-signed artefacts exist for
       all three platforms and launch on a clean machine.
@@ -3866,8 +3834,12 @@ demonstrably true. Each is checkable, not a matter of opinion.
       not the cell size — changes with the panel width.
 - [ ] The layout is coherent and usable at the minimum window size, at
       1366 × 768, at 2560 × 1440, and maximised on an ultrawide.
-- [ ] The canvas is pixel-crisp at 1×, 2× and fractional scaling, and stays
-      crisp when the window moves between displays of different DPI.
+- [x] The canvas is pixel-crisp at 1×, 2× and fractional scaling, and stays
+      crisp when the window moves between displays of different DPI. (BUG-12
+      re-detects a DPI change and re-runs `Grid.resize()`; verified
+      structurally - the headless harness runs on one fixed-DPI display, so a
+      live cross-monitor drag was not capturable here, the same limitation
+      noted for VIS-06's focus ring)
 
 ### Visual
 
@@ -3892,8 +3864,10 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 - [ ] Every function of the application is reachable and operable with the
       keyboard alone, including placing and erasing tiles.
-- [ ] A visible focus indicator appears on every focusable element, and focus
-      order is logical.
+- [x] A visible focus indicator appears on every focusable element, and focus
+      order is logical. (VIS-06 for the ring; A11Y-01 gives the palette, file
+      lists and tab strip roving tabindex in a defined title-bar-to-status-bar
+      order)
 - [ ] All text meets WCAG AA (4.5:1, or 3:1 at ≥18.66 px bold / 24 px);
       all control boundaries and focus indicators meet 3:1. Verified with a
       contrast checker, not by eye.
