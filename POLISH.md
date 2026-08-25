@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The fifteen items below have shipped and are removed from the findings
+The twenty items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -249,6 +249,113 @@ after the `/* exported */` comment was added.
 
 ---
 
+#### NAT-18 — Renderer hardening left on the table
+
+Shipped: `main.js` now creates the `BrowserWindow` with `sandbox: true`
+(`preload.js` requires nothing beyond `electron`'s `contextBridge`/
+`ipcRenderer`, so the sandboxed preload is unaffected); a
+`setWindowOpenHandler(() => ({action: 'deny'}))` refuses every window-open
+request; and a `will-navigate` guard blocks navigation to anywhere outside the
+app's own `app://studio/` origin. The recommended blanket
+`e.preventDefault()` on every `will-navigate` turned out to be wrong: Electron
+fires that event for `location.reload()` too, which would have silently
+broken the Develop menu's guarded Reload item (NAT-01) the moment sandboxing
+landed - confirmed empirically before shipping. The guard therefore checks the
+target URL's origin instead, which still closes the data-loss hole (a dropped
+file or a stray `location` assignment can no longer replace the app with a
+view of that file, the same class of failure as BUG-01) without breaking the
+one legitimate same-origin navigation the app performs. Verified with the
+probe harness: `window.open()` now returns `null`; `location.href =
+"https://example.com"` no longer navigates the window away; the guarded
+Reload command (`ACTS.reload()`) still reloads and clears in-page state as
+before, both when the document is clean and after a dirty document is
+discarded or cancelled through the unsaved-changes dialog; `api.blank()`
+still round-trips correctly under `sandbox: true`.
+
+---
+
+#### BUG-10 — The discard dialog's result is a magic integer coupled to button order
+
+Shipped, alongside NAT-21 below since both touch the same dialog: `ask:discard`
+now returns a named string (`'save' | 'discard' | 'cancel'`) rather than a
+response index, mapped from the button array inside `main.js`'s new
+`discardbuttons()` so the two can never drift; `App`'s `guard()` (`app.js`)
+compares against the strings instead of magic integers `2`/`1`. Verified with
+the probe harness: cancelling, discarding and saving through the guarded
+Reload command each produce the correct behaviour under the new string
+verdicts (mark-survives-cancel, mark-cleared-on-discard).
+
+---
+
+#### NAT-21 — The unsaved-changes dialog is not written to any platform's convention
+
+Shipped: a new `discardbuttons()` in `main.js` returns the button words, order,
+`defaultId` and `cancelId` for the running platform - macOS
+`Cancel/Don't Save/Save`, Windows `Save/Don't Save/Cancel`, GNOME
+`Discard/Cancel/Save` - and the dialog itself now carries `detail`,
+`noLink: true` and a `title`. `discardbuttons()` lives directly in `main.js`
+next to the file's other `process.platform` checks rather than in a
+`chrome.js` module, since ARCH-03 (which would introduce that module) is not
+yet done; consolidating it there is still ARCH-03's job. Verified with the
+probe harness on macOS (`darwin`): the dialog's button/verdict mapping was
+exercised through all three outcomes (see BUG-10, above).
+
+---
+
+#### BUG-11 — Nothing checks that a level is playable
+
+Shipped: `lvl.js` gained `review(doc)`, a second, non-blocking tier alongside
+`validate()` - it warns on zero or multiple start/end blocks (tile ids `001`/
+`004`), a definition pointing at a `scripts/…` path missing from the archive,
+entities outside the level's bounds, definitions no entity uses, and scripts
+no definition uses. `validate()` is untouched and still gates every write, per
+`CLAUDE.md`'s single-source-of-truth rule for validation - `review()` never
+blocks a save, only informs. `main.js` computes it alongside the document on
+`lvl:new`, `lvl:open`, `lvl:save` and `lvl:saveas` and returns it in the same
+response; `App.setwarnings()` (`app.js`) renders the count in the status bar
+(clickable, switching the inspector to the level view) and the full list in a
+new "warnings" section at the top of `levelview()` (`panel.js`). Recomputed on
+every file operation rather than live on every edit, to avoid a second copy of
+`review()`'s logic in the renderer (`CLAUDE.md`: validation-shaped logic lives
+in `lvl.js` alone). Verified with the probe harness: a fresh blank level now
+reports `["no start block placed (tile 1 is required)", "no end block placed
+(tile 4 is required)"]` (previously zero warnings, and a silent, successful
+save); painting a start and an end block clears both warnings and the level
+still saves the same as before either way, confirming warnings never block a
+save.
+
+---
+
+#### UX-10 — No autosave, no crash recovery, no backup
+
+Shipped: while the document is dirty, `app.js` pushes a snapshot of it to main
+roughly every 30s, gated on `!Grid.pan && Grid.paint < 0 && !Grid.moving` and
+run through `Grid.commit()` first, per `CLAUDE.md`'s rule that every save path
+must call it; `main.js` writes the snapshot through the same validated, atomic
+`lvl.write()` used by a real save, to
+`userData/recovery/<sha1-of-path>.lvl` (`'untitled'` for a level with no path
+yet), alongside a small `index.json` recording which path and display name
+each key belongs to. The snapshot is deleted on a successful save (`lvl:save`/
+`lvl:saveas`) and on `forceclose` (an explicit discard, or a close that was
+never dirty to begin with). Once the window first shows, `main.js` checks for
+a leftover snapshot from an earlier crash and offers a native "Recover"/
+"Discard" choice; recovering sends the document to the renderer, which loads
+it, marks the level dirty, and pins `Undo.clean = -1` so undoing back to the
+freshly-loaded depth 0 cannot misreport as clean - depth 0 here has no match
+on disk, unlike a normally opened file. Studio edits one document at a time,
+so only the newest snapshot is ever offered; older ones are cleared rather
+than accumulating. Additionally, both `lvl:save` and `lvl:saveas` now copy the
+file they are about to overwrite to `<name>.lvl.bak` first. Verified with the
+probe harness, each in an isolated `--user-data-dir`: a snapshot is written
+and its `index.json` entry matches; choosing Recover loads the seeded
+document (`dirty: true`, `Undo.clean: -1`, warnings recomputed) and leaves the
+snapshot in place; choosing Discard removes both the `.lvl` and its index
+entry; a normal save clears any snapshot for the path just saved; overwriting
+an existing file produces a `.bak` holding the pre-save content while the
+live file holds the new content.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -304,7 +411,17 @@ a dead or wedged renderer can no longer leave the window permanently
 unclosable (BUG-09); and the resting text, accent text and control-boundary
 colours all now clear WCAG AA/1.4.11 contrast (VIS-01, VIS-02), with a real
 focus ring restored everywhere (VIS-06) — see "Already completed" above for
-all of these. The shell's remaining problems are below.
+all of these. Data safety has since been carried further still: the renderer
+runs sandboxed and can no longer be navigated away from the app, losing the
+open document, by a dropped file or a stray link (NAT-18); a crash or power
+loss can be recovered from on the next launch, and an overwrite-save keeps a
+`.bak` (UX-10); the unsaved-changes dialog now speaks each platform's own
+words, order and button style, with a named verdict rather than a magic
+response index (NAT-21, BUG-10); and the editor now warns, without ever
+blocking a save, when a level is missing the start/end blocks or script
+references the game actually needs to run it (BUG-11) — see "Already
+completed" above for these five too. The shell's remaining problems are
+below.
 
 ### The three biggest remaining sources of perceived unpolish
 
@@ -489,61 +606,6 @@ anything else ships, P3 = nice to have).
 
 These are ordinary bugs found while auditing. They come first because polish on
 top of data loss is worthless.
-
----
-
-#### BUG-10 — The discard dialog's result is a magic integer coupled to button order
-
-**Category** Code quality · **Severity** Low · **Priority** P2 · **Affects** Architecture
-
-**Current.** `main.js:135-142` returns `r.response` — 0/1/2 — and `app.js:401`
-decodes it positionally (`if (r === 2) … if (r === 1) …`), with the meaning
-documented only in a comment in the *other* file. Reordering the buttons for a
-platform convention (Windows conventionally orders affirmative-first,
-GNOME orders destructive-left) silently inverts save and discard.
-
-**Recommended.** Return a string: `'save' | 'discard' | 'cancel'`. Map from the
-index inside `main.js`, next to the array that defines the order, so the two
-can never drift.
-
-**Related.** The dialog itself needs work (NAT-21).
-
----
-
-#### BUG-11 — Nothing checks that a level is playable
-
-**Category** Correctness · **Severity** Medium · **Priority** P2 · **Affects** UX
-
-**Current.** `lvl.js validate()` checks the *schema* — types, row widths, id
-formats, definition references, background presets. It does not check level
-*semantics*. Studio will happily save a level with no start block, no end
-block, four start blocks, or entities referencing a script file that is not in
-the archive.
-
-**Why it's a problem.** `textures/README.md` states the contract explicitly:
-tile 1 is "**Unique** spawn point per level", tile 4 is "**Unique** goal per
-level". A level with neither is one the game cannot run, and the author finds
-out from the game, not the editor.
-
-**Evidence.** `lvl.js:22-88` (no tile-semantic checks); `textures/README.md`
-blocks table; `catalog.js:16,19` (ids 1 and 4).
-
-**Recommended.** A second tier: `validate()` stays as-is and gates writes;
-`review()` returns *warnings* that are shown but never block a save. Warn on:
-zero or multiple tile-1 blocks; zero or multiple tile-4; a definition whose
-`script` is a `scripts/…` path not present in `doc.scripts`; entities outside
-`W × h`; unreferenced scripts; unreferenced entity definitions.
-
-**Implementation.** `lvl.js` (so it stays the single source of truth per
-`CLAUDE.md`), returned alongside the document on read and on save. Surface in
-the inspector as a "level" section and as a count in the status bar
-("2 warnings"), clickable to expand.
-
-**Platforms.** None.
-
-**Risks.** Do not let warnings block saving — an author mid-build legitimately
-has no end block yet. Warnings that block get disabled; warnings that inform
-get read.
 
 ---
 
@@ -1211,38 +1273,6 @@ icon exists yet (NAT-07). None of `app.dock.setMenu`, `app.setUserTasks`,
 
 ---
 
-#### NAT-18 — Renderer hardening left on the table
-
-**Category** Security · **Severity** Low · **Priority** P2 · **Affects** Architecture
-
-**Current.** `webPreferences` is `{preload, contextIsolation: true,
-sandbox: false}`. Missing: `setWindowOpenHandler`, `will-navigate` guard.
-
-**Assessment.** `contextIsolation: true` and default-off `nodeIntegration` are
-right, the preload surface is minimal and well-shaped, the CSP in
-`index.html:2` is tight and correctly scoped (the `'unsafe-inline'` is confined
-to `style-src`, which Monaco genuinely requires). Three cheap improvements:
-
-1. **`sandbox: true`.** `sandbox: false` is present with no recorded reason.
-   `preload.js` requires only `electron` and uses only `contextBridge` and
-   `ipcRenderer` — all available in a sandboxed preload. Turn it on and verify:
-   the app:// pages, the Monaco worker blob, and the preload should all be
-   unaffected. If something does break, record *why* in a comment rather than
-   silently leaving it off.
-2. **`webContents.setWindowOpenHandler(() => ({action: 'deny'}))`** — nothing
-   in Studio opens a window; deny by default so a stray `target=_blank`
-   (Monaco's link handling can produce one) cannot spawn an uncontrolled
-   BrowserWindow.
-3. **`webContents.on('will-navigate', e => e.preventDefault())`** — closes the
-   drag-and-drop navigation hole (NAT-09) and any accidental `location`
-   assignment. BUG-01's own reload path is already guarded a different way
-   (the menu's Reload item routes through the renderer's unsaved-changes
-   check before calling `location.reload()`), but this hook is still the
-   right backstop for navigation triggered by anything other than that one
-   menu item.
-
----
-
 #### NAT-19 — No feedback for long or background operations
 
 **Category** Native · **Severity** Low · **Priority** P3 · **Affects** UX
@@ -1310,48 +1340,6 @@ and by an accessibility setting.
 **Platforms.** macOS overlay scrollbars hide the problem for most Mac users and
 expose it for anyone who has changed the setting; Windows and Linux see it
 always.
-
----
-
-#### NAT-21 — The unsaved-changes dialog is not written to any platform's convention
-
-**Category** Native · **Severity** Medium · **Priority** P1 · **Affects** UX
-
-**Current.** `main.js:135-142`:
-```
-dialog.showMessageBox(win, {
-        type: 'warning', buttons: ['Save', 'Discard', 'Cancel'],
-        defaultId: 0, cancelId: 2,
-        message: '"' + name + '" has unsaved changes.'
-});
-```
-
-**Problems.**
-- **No `detail`.** Every platform's convention is a short bold `message` plus
-  an explanatory `detail`; a one-line dialog with three buttons and no
-  explanation of consequences is under-specified.
-- **"Discard" is not the platform word.** macOS and Windows both use
-  **"Don't Save"**. GNOME uses "Discard". Getting this right per platform costs
-  one ternary.
-- **Button order is hard-coded.** macOS wants the affirmative rightmost
-  (Cancel, Don't Save, Save reading left→right, with Save default); Windows
-  wants Save, Don't Save, Cancel; GNOME wants the destructive action leftmost.
-  Electron reorders macOS buttons by `defaultId`/`cancelId` only partially —
-  supply the order explicitly per platform.
-- **No `noLink: true`**, so on Windows the buttons may render as command links
-  rather than push buttons, which is not what a three-way save prompt should
-  look like.
-- The **document name** is quoted into `message` with no fallback beyond
-  `'untitled'` from the caller (`app.js:401`), and no path context.
-
-**Recommended.** Build the button array per platform, add a `detail`
-("Your changes will be lost if you don't save them."), add `noLink: true`, set
-`title` (used on Windows/Linux; ignored on macOS where it is a sheet), and
-return a **string** verdict rather than an index (BUG-10).
-
-**Platforms.** All three, differently — this is a textbook case for a single
-`platformbuttons()` helper in main next to the other platform branching
-(NAT-02), not a scattered `process.platform` check.
 
 ---
 
@@ -2214,7 +2202,9 @@ purple tile and a maroon tile, not an error.
   `catalog.js:69`, and already uses for unknown defs at `grid.js:273` — so the
   `#803050` path is nearly dead code) plus a status-bar/inspector warning
   naming the unknown definition, which is a real authoring error worth
-  surfacing (BUG-11).
+  surfacing. `lvl.js` already gained a warnings tier for save-time issues
+  (done — see "Already completed", BUG-11); route this one through the same
+  `review()`/`App.warnings` plumbing rather than inventing a second channel.
 
 Name both colours as tokens if they survive.
 
@@ -2466,39 +2456,6 @@ Do not build a tour, a modal, or a settings wizard. One screen, three commands.
 
 ---
 
-#### UX-10 — No autosave, no crash recovery, no backup
-
-**Category** UX / Data safety · **Severity** High · **Priority** P1 · **Affects** UX, Architecture
-
-**Current.** The document lives only in renderer memory until an explicit save.
-A crash, a power loss, or a `render-process-gone` event still loses everything
-since the last save — BUG-09 (shipped, see "Already completed") stops such an
-event from also wedging the window shut, but does nothing to recover the
-document itself, which is what this finding is about (⌘R no longer risks this
-either — BUG-01 is shipped). There is no `.bak`, no journal, no recovery prompt.
-
-**Recommended.** A recovery snapshot, not a full autosave (autosaving over the
-user's file is a different and more opinionated decision):
-- Every N seconds while dirty (N ≈ 30, idle-triggered so it never runs mid-drag),
-  main writes the current document to
-  `app.getPath('userData')/recovery/<hash-of-path>.lvl` — the same
-  `lvl.write()` path, which is already validated and atomic (BUG-02, shipped).
-- Delete the snapshot on a successful save and on a clean quit.
-- On launch, if a snapshot exists, offer: "Studio closed unexpectedly. Recover
-  unsaved changes to <name>?" — native dialog, Recover / Discard.
-- Additionally, on overwrite-save, keep one `<name>.lvl.bak` beside the file
-  (the previous contents), which costs one `copyFile` and covers "I saved over
-  something good".
-
-**Depends on.** BUG-08 (main owns the document) and BUG-02's atomic write are
-both already in place, so a recovery snapshot only needs to reuse them.
-
-**Risks.** The snapshot must not run while the renderer is mid-gesture; gate it
-on `!Grid.pan && Grid.paint < 0 && !Grid.moving`, and on `Grid.commit()` having
-run (`CLAUDE.md`: **every save path must call `Grid.commit()` first**).
-
----
-
 #### UX-11 — There are no preferences
 
 **Category** UX · **Severity** Low · **Priority** P3 · **Affects** UX
@@ -2509,7 +2466,8 @@ widths, not the last directory, not zoom, not grid visibility.
 **Recommended.** Keep it small and justified. A preferences surface is worth
 adding only once there are ≥4 real settings; the credible list is:
 grid overlay on/off, palette cell size 1×/2× (GEO-07), editor font size,
-autosave interval (UX-10), and confirm-on-destructive-height-change (UX-08).
+the recovery-snapshot interval (fixed at 30s today - done, see "Already
+completed", UX-10), and confirm-on-destructive-height-change (UX-08).
 
 Store in `app.getPath('userData')/settings.json`, owned by main, exposed
 read/write through the preload. On macOS the item is
@@ -2951,9 +2909,13 @@ another unless they consolidate here.
 **Recommended.** Two places, and only two:
 1. **`chrome.js` in main** — the single home for every platform branch that
    affects the window: `BrowserWindow` options, `titleBarStyle`/
-   `titleBarOverlay`/`trafficLightPosition`, dialog button order and labels
-   (NAT-21), `menu.js`'s macOS/rest split, and the "Settings" vs "Preferences"
-   word (UX-11).
+   `titleBarOverlay`/`trafficLightPosition`, `menu.js`'s macOS/rest split, and
+   the "Settings" vs "Preferences" word (UX-11). The unsaved-changes dialog's
+   per-platform button order and labels are done (NAT-21, see "Already
+   completed") but still live as a `discardbuttons()` function inline in
+   `main.js`, next to the existing `process.platform` checks - exactly the
+   kind of branch this module exists to consolidate; move it here once
+   `chrome.js` exists rather than leaving it as a third scattered site.
 2. **`api.platform`** exposed through the preload, stamped onto the root as
    `<html data-platform="darwin|win32|linux">` at boot, so CSS can key off it
    declaratively (`[data-platform="darwin"] .acts { display: none }`) with no
@@ -3024,13 +2986,16 @@ already automated in `npm run check` (`tools/check.js`, ARCH-07, done — see
 **Category** Code quality · **Severity** Low · **Priority** P2 · **Affects** Maintainability
 
 **Current.** Three naming conventions coexist: namespaced
-(`lvl:new`, `lvl:open`, `win:ctl`, `midi:import`, `ask:discard`, `req:close`)
-and bare (`dirty`, `forceclose`). Two response shapes coexist: the `guard()`
-envelope `{ok, …}` / `{ok: false, err}` (`main.js:72-81`) for most handlers,
-and a raw integer from `ask:discard` (BUG-10). Cancellation is signalled by an
-extra `{cancel: true}` field that every caller must remember to check
-(`app.js:428`, `:451`, `app.js:341`) and that is easy to forget — a missed
-check treats a cancelled dialog as a success.
+(`lvl:new`, `lvl:open`, `win:ctl`, `midi:import`, `ask:discard`, `req:close`,
+`lvl:snapshot`, `recover:load`) and bare (`dirty`, `forceclose`). `ask:discard`
+now returns a named string verdict rather than a response index (done — see
+"Already completed", BUG-10), but the shapes still do not agree with each
+other: the `guard()` envelope `{ok, …}` / `{ok: false, err}`
+(`main.js:72-81`) for most handlers, versus `ask:discard`'s bare
+`'save'|'discard'|'cancel'` string with no envelope at all. Cancellation is
+signalled by an extra `{cancel: true}` field that every caller must remember
+to check (`app.js:428`, `:451`, `app.js:341`) and that is easy to forget — a
+missed check treats a cancelled dialog as a success.
 
 **Recommended.** One convention: `domain:verb` for every channel; every
 `invoke` handler returns
@@ -3276,7 +3241,7 @@ window and menu layers.
 | Trackpad | Two-finger scroll pans; pinch (`wheel` + `ctrlKey`) zooms. This is the single biggest day-to-day usability defect on a Mac. | NAT-11 |
 | Shortcuts | `CmdOrCtrl` accelerators from the menu; drop the hand-rolled `Ctrl+Y`. Settings is **⌘,** and is called "Settings". | NAT-14, UX-11 |
 | Scrollbars | Respect the overlay/classic setting; `scrollbar-gutter: stable` so layout does not depend on it. | NAT-20 |
-| Dialogs | "Don't Save", not "Discard"; sheet-parented (already correct); add `detail`. | NAT-21 |
+| Dialogs | "Don't Save", not "Discard"; sheet-parented; `detail` added — done, see "Already completed" | NAT-21 |
 | Distribution | `hardenedRuntime`, code signing, notarisation — without these an unsigned build is blocked by Gatekeeper. | NAT-07 |
 | Accessibility | VoiceOver reaches nothing today; native menus (NAT-05) and real controls (A11Y-01) fix most of it at once. | A11Y-01, A11Y-02 |
 
@@ -3290,7 +3255,7 @@ window and menu layers.
 | File association | Registry entries + `.ico` via electron-builder; handle the path in `process.argv` **and** in `second-instance`. | NAT-07, NAT-08 |
 | Single instance | Required — without it every double-clicked `.lvl` launches a whole new app. | NAT-08 |
 | JumpList | `setUserTasks` ("New Level") plus automatic recent documents once the association exists. | NAT-06, NAT-17 |
-| Dialogs | Button order Save / Don't Save / Cancel; `noLink: true` so they are push buttons, not command links; set `title`. | NAT-21 |
+| Dialogs | Button order Save / Don't Save / Cancel; `noLink: true` so they are push buttons, not command links; `title` set — done, see "Already completed" | NAT-21 |
 | Scrollbars | Classic scrollbars consume layout width — this is where NAT-20's unstyled palette scrollbar is most visible and where `scrollbar-gutter` matters most. | NAT-20 |
 | High contrast | `forced-colors: active` is a real, commonly-enabled Windows mode; currently untested and certain to break the canvas indicators. | A11Y-07, VIS-16 |
 | Mixed DPI | Per-monitor scaling is common; the canvas goes soft when the window moves between displays. | BUG-12 |
@@ -3307,7 +3272,7 @@ chosen deliberately, not as the default the other two inherit.
 | Button layout | On GNOME, control placement and order are a user setting (`org.gnome.desktop.wm.preferences.button-layout`). A custom title bar that hard-codes a layout overrides the user's explicit configuration. This is the strongest argument for `frame: true` on Linux. | NAT-02 |
 | Toolbar | The application menu is already set (NAT-01, shipped) and GNOME may surface parts of it in the shell; keep the in-window toolbar as on Windows. | NAT-04 |
 | Context menus | Native menus inherit the GTK theme — the fastest single change to stop looking foreign. | NAT-05 |
-| Dialogs | GNOME convention: destructive action leftmost, "Discard" is the right word here (unlike macOS/Windows). Sentence case, not Title Case. | NAT-21, VIS-10 |
+| Dialogs | GNOME convention: destructive action leftmost, "Discard" is the right word here (unlike macOS/Windows) — done, see "Already completed", NAT-21. Sentence case elsewhere is not yet applied. | VIS-10 |
 | File association | `.desktop` file + MIME XML (`application/x-pellizzola-level`) + hicolor icons via electron-builder; handle `process.argv`. | NAT-07 |
 | Recent files | `addRecentDocument` writes `recently-used.xbel`, honoured by GTK file choosers. | NAT-06 |
 | Single instance | Required. | NAT-08 |
@@ -3319,14 +3284,13 @@ chosen deliberately, not as the default the other two inherit.
 
 | Improvement | Finding |
 |---|---|
-| `will-navigate` + `setWindowOpenHandler` (BUG-01's own reload path is already guarded a different way, see "Already completed") | NAT-09, NAT-18 |
-| `sandbox: true` (verify, or document why not) | NAT-18 |
+| `will-navigate`, `setWindowOpenHandler`, `sandbox: true` — done, see "Already completed" (NAT-18); still open: dropping a `.lvl` itself does not yet open it (NAT-09) | NAT-09 |
 | Window state persistence with display validation | NAT-10 |
 | Display-derived default window size | NAT-10, GEO-12 |
 | DPI-change handling for the canvas | BUG-12, A11Y-06 |
-| Recovery snapshots in `userData` | UX-10 |
+| Recovery snapshots and `.bak` in `userData` — done, see "Already completed" | UX-10 |
 | One `chrome.js` for every platform branch; `api.platform` to the renderer | ARCH-03 |
-| Consistent IPC envelope, string verdicts, one unwrap helper | ARCH-06, BUG-10 |
+| Consistent IPC envelope, one unwrap helper (string verdicts on `ask:discard` already done, BUG-10) | ARCH-06 |
 | electron-builder config, icons, associations, signing | NAT-07 |
 | Lazy Monaco; narrowed packaged files | ARCH-08 |
 
@@ -3490,7 +3454,7 @@ the finding that resolves it.
 | **Empty states** | Two blank voids in the file manager on every launch | One line + one action per list (VIS-12) |
 | **Error states** | `#ff8f8f` text, colour-only; save failures now reach a native dialog regardless of tab (BUG-07, shipped) but are still colour-only and unannounced otherwise | Icon + colour; live region (VIS-14, A11Y-05, A11Y-08) |
 | **Context menus** | DOM divs, no keyboard, no semantics, clamps instead of flipping | Native `Menu.popup()` (NAT-05) |
-| **Dialogs** | One message box, no `detail`, non-platform wording and button order | Per-platform template (NAT-21) |
+| **Dialogs** | The unsaved-changes prompt now has a per-platform template, `detail`, `noLink`, and string verdicts (NAT-21, BUG-10, done — see "Already completed") | — |
 | **Forms** | Borders now visible via `--control-border` (VIS-02, done); still: a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `appearance: none` on the select control only; one shared `.field` class (NAT-16, VIS-15) |
 | **Buttons** | Text-only, no border except `.act`, no pressed state, `.acts` and `.hdr button` and `#add` all differently sized | One button component with size variants (VIS-07, GEO-08) |
 | **Resizers / splitters** | Do not exist | Four splitters, keyboard-operable (GEO-04) |
@@ -3528,10 +3492,10 @@ throw away your text (UX-15 — MIDI renaming no longer mangles the name,
 BUG-06, shipped, see "Already completed"); delete-in-use offering reassignment
 instead of refusal (UX-13); MIDI export and metadata (UX-18).
 
-**Trust and recovery** — atomic saves, an honest dirty flag, and save failures
-that are impossible to miss are shipped (BUG-02, BUG-03, BUG-07 — see "Already
-completed"). Still open: a `.bak` on overwrite and crash-recovery snapshots
-(UX-10); playability warnings before the game rejects the level (BUG-11);
+**Trust and recovery** — atomic saves, an honest dirty flag, save failures that
+are impossible to miss, a `.bak` on overwrite, crash-recovery snapshots, and
+playability warnings before the game rejects the level are all shipped
+(BUG-02, BUG-03, BUG-07, UX-10, BUG-11 — see "Already completed"). Still open:
 destructive actions that report what they did (UX-08).
 
 **Feedback** — status messages that expire, errors that do not, plus persistent
@@ -3586,8 +3550,7 @@ code; the flat global scope with its documented collision grep.
 | `W` defined twice, `H`/`B` handled three different ways | ARCH-02 |
 | No platform abstraction; no platform info in the renderer | ARCH-03 |
 | Full innerHTML rebuilds on a drag hot path; hand-rolled `esc()` | ARCH-04, PERF-01 |
-| Three IPC naming conventions, two response shapes, forgettable `cancel` | ARCH-06 |
-| Magic integers crossing the IPC boundary | BUG-10 |
+| Three IPC naming conventions, two response shapes, forgettable `cancel` (the `ask:discard` response is a named string now, BUG-10, done — see "Already completed") | ARCH-06 |
 | Renderer implementing window controls and title logic (the menu moved to main, NAT-01, shipped) | NAT-02, NAT-03, NAT-05 |
 | Monaco eager and shipped whole | ARCH-08 |
 | Synchronous main-process I/O | ARCH-09, NAT-19 |
@@ -3595,7 +3558,6 @@ code; the flat global scope with its documented collision grep.
 | Two components styling themselves with inline `cssText` | VIS-15 |
 | `App.open_`'s trailing underscore | ARCH-06 |
 | Prefix-only path containment in the protocol handler | BUG-13 |
-| No `will-navigate` / `setWindowOpenHandler` / `sandbox: true` | NAT-18 |
 
 **Explicitly do not do.** Do not introduce a framework, a bundler, TypeScript
 or ES modules. Do not convert the flat global scope. Do not add a state
@@ -3653,11 +3615,11 @@ relitigated.
 | Context menus | ❌ DOM | ❌ DOM | ❌ DOM (ignores GTK theme) | NAT-05 |
 | File dialogs | ✅ | ✅ | ✅ | — |
 | Save extension handling | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | — |
-| Unsaved-changes dialog | ⚠️ wrong wording | ⚠️ wrong order, may render as links | ⚠️ wrong case | NAT-21 |
+| Unsaved-changes dialog | ✅ shipped (NAT-21, BUG-10) | ✅ shipped (NAT-21, BUG-10) | ✅ shipped (NAT-21, BUG-10) | — |
 | Recent documents | ❌ | ❌ | ❌ | NAT-06 |
 | File association / launch by file | ❌ | ❌ | ❌ | NAT-07 |
 | Single instance | ❌ n/a in practice | ❌ | ❌ | NAT-08 |
-| Drag and drop | ❌ navigates away, losing work | ❌ | ❌ | NAT-09 |
+| Drag and drop | ⚠️ no longer navigates away (NAT-18, shipped); a drop still does not open the level | ⚠️ same | ⚠️ same | NAT-09 |
 | Dock / taskbar integration | ❌ | ❌ | ❌ | NAT-06, NAT-17 |
 | Window state persistence | ❌ | ❌ | ❌ | NAT-10 |
 | Default window size | ⚠️ too large for 13" | ⚠️ too large for 1366×768 | ⚠️ | NAT-10 |
@@ -3712,7 +3674,6 @@ document.
 | NAT-11 | Wheel always zooms; trackpad gestures misread |
 | NAT-13 | No cursor feedback |
 | NAT-20 | One of five scroll containers styled |
-| NAT-21 | Unsaved-changes dialog written to no platform's convention |
 | GEO-01 | No spacing, sizing or type scale |
 | GEO-03 | Fixed side panels consume 41 % of the minimum window |
 | GEO-04 | Panels cannot be resized |
@@ -3722,7 +3683,6 @@ document.
 | VIS-05 | The app has never rendered in its own typeface |
 | VIS-07 | No interaction-state system |
 | UX-04 | Zoom has no controls, indicator, or working fit |
-| UX-10 | No autosave, crash recovery, or backup |
 | ARCH-02 | `W` defined twice |
 | ARCH-03 | No platform abstraction |
 | ARCH-08 | Monaco eager and shipped whole |
@@ -3732,16 +3692,13 @@ document.
 
 | ID | Title |
 |---|---|
-| BUG-10 | Magic integers across IPC |
-| BUG-11 | Nothing checks that a level is playable |
 | BUG-13 | Prefix-only path containment |
 | NAT-06 | No recent documents |
 | NAT-08 | No single-instance lock |
-| NAT-09 | No drag and drop (and drop currently navigates away) |
+| NAT-09 | No drag and drop (the navigation-loses-work hole itself is shipped, NAT-18) |
 | NAT-12 | Right-click erases; Ctrl+click collision on macOS |
 | NAT-14 | Command set is thin: zoom, tab switching, region operations |
 | NAT-16 | Native `<select>` among custom fields |
-| NAT-18 | `sandbox`, `will-navigate`, `setWindowOpenHandler` |
 | GEO-02, GEO-05, GEO-06, GEO-08, GEO-09 | Band heights, list splits, one-offs |
 | GEO-10 | No vertical scrollbar |
 | VIS-03, VIS-08, VIS-09, VIS-10, VIS-11 | Design divergence, motion, radius/elevation, capitalisation, icons |
@@ -3798,9 +3755,12 @@ completed". Every step below, and every future change, is verifiable through
 it.
 
 1. **ARCH-03** — `chrome.js` in main, `api.platform` to the renderer,
-   `<html data-platform>`. Unblocks NAT-02, NAT-04, NAT-21, VIS-10. Also
-   folds in `menu.js`'s own `process.platform` branch, which NAT-01 added
-   outside this module and which is exactly the drift this step exists to stop.
+   `<html data-platform>`. Unblocks NAT-02, NAT-04, VIS-10. Also folds in
+   `menu.js`'s own `process.platform` branch, which NAT-01 added outside this
+   module and which is exactly the drift this step exists to stop; also folds
+   in the `discardbuttons()` platform branch NAT-21 added directly to
+   `main.js` (done — see "Already completed" — since `chrome.js` did not exist
+   yet when it shipped).
 2. **GEO-01 + VIS-04** — the token block, in one commit: spacing, rows, type,
    radius, elevation, motion, z-index, plus the `tokens.js` reader that
    `grid.js` and `code.js` consume. The colour half of this block (VIS-01,
@@ -3817,26 +3777,28 @@ it.
 DevTools behind `!app.isPackaged`) is done and **closed BUG-01** — see
 "Already completed". **BUG-09** (renderer-death handling) is also done, so the
 wedge risk that a hung renderer posed under NAT-01's ⌘Q → `app.quit()` path is
-already closed.
+already closed. **NAT-18** (`will-navigate`, `setWindowOpenHandler`,
+`sandbox: true`) is also done, closing the drag-and-drop navigation hole
+(NAT-09) that BUG-01's own fix did not cover; NAT-09's own remaining scope -
+actually opening a dropped or double-clicked file - still needs step 9 below.
+**NAT-21** (per-platform unsaved-changes dialog) and **BUG-10** (string
+verdicts on `ask:discard`) are also done, ahead of ARCH-03 - see Phase 1,
+step 1's note.
 
-4. **NAT-18** `will-navigate`, `setWindowOpenHandler`, `sandbox: true` — closes
-   the drag-and-drop navigation hole (NAT-09) that BUG-01's own fix did not
-   cover.
-5. **NAT-02** real window chrome per platform; delete the fake dots and
+4. **NAT-02** real window chrome per platform; delete the fake dots and
    `win:ctl`.
-6. **NAT-03** title, represented filename, edited dot (needs 5; document
+5. **NAT-03** title, represented filename, edited dot (needs 4; document
    identity itself is already in main, BUG-08, done).
-7. **NAT-04** hotbar per platform (needs 1; the menu itself no longer blocks
+6. **NAT-04** hotbar per platform (needs 1; the menu itself no longer blocks
    this).
-8. **NAT-05** native context menus; delete `#menu` and ~55 lines of `app.js`.
+7. **NAT-05** native context menus; delete `#menu` and ~55 lines of `app.js`.
    Reuse the `cmd`/`ACTS` dispatcher NAT-01 already built rather than adding a
    second one.
-9. **NAT-21** dialog per platform; **BUG-10** string verdicts.
-10. **NAT-10** window state persistence with display validation.
-11. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
-    **NAT-06** recent documents; **NAT-09** drag and drop. These four are one
-    coherent piece of work and share prerequisites — all can build directly on
-    the `doc` module (BUG-08, done).
+8. **NAT-10** window state persistence with display validation.
+9. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
+   **NAT-06** recent documents; **NAT-09** drag and drop. These four are one
+   coherent piece of work and share prerequisites — all can build directly on
+   the `doc` module (BUG-08, done).
 
 ### Phase 3 — Design system made real
 
@@ -3844,63 +3806,64 @@ The contrast/focus-ring step originally scheduled here (VIS-01, VIS-02,
 VIS-06) is done — see "Already completed" — so this phase starts one step
 later than originally scoped.
 
-12. **VIS-05** bundle JetBrains Mono. Everything after this is measured in the
+10. **VIS-05** bundle JetBrains Mono. Everything after this is measured in the
     real typeface, so it must precede any type-metric work.
-13. **VIS-07** the five-state contract, applied to every interactive surface.
-14. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
+11. **VIS-07** the five-state contract, applied to every interactive surface.
+12. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
     capitalisation.
-15. **NAT-20 / GEO-09** one scrollbar treatment across all five containers;
+13. **NAT-20 / GEO-09** one scrollbar treatment across all five containers;
     **VIS-18** Monaco theme generated from tokens.
-16. **GEO-07** integer palette cells; **GEO-02 / GEO-08** band heights and
+14. **GEO-07** integer palette cells; **GEO-02 / GEO-08** band heights and
     one-offs onto the scale.
-17. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
+15. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
     messages, `.field`/`.cell.add` classes, canvas indicators, missing-texture
     treatment.
 
 ### Phase 4 — Layout and interaction
 
-18. **PERF-04** resize coalescing — **before** GEO-04, or splitter drags will
+16. **PERF-04** resize coalescing — **before** GEO-04, or splitter drags will
     stutter.
-19. **GEO-03 / GEO-04** proportional panels and four keyboard-operable
+17. **GEO-03 / GEO-04** proportional panels and four keyboard-operable
     splitters; **GEO-05 / GEO-06** content-driven list and inspector heights.
-20. **NAT-11** wheel semantics; **GEO-11** named canvas constants;
+18. **NAT-11** wheel semantics; **GEO-11** named canvas constants;
     **GEO-10** vertical scrollbar; **UX-04** zoom controls and a real fit,
     including the new View menu that also gives Toggle Full Screen a home
     again (see §12, "Full screen").
-21. **NAT-13** cursors; **NAT-12** canvas context menu and Ctrl+click;
+19. **NAT-13** cursors; **NAT-12** canvas context menu and Ctrl+click;
     **UX-12** gesture cancel.
-22. **PERF-01** `Panel.update()` split (with **ARCH-04**); **PERF-02** cached
+20. **PERF-01** `Panel.update()` split (with **ARCH-04**); **PERF-02** cached
     rect and refs.
-23. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
+21. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
     tab switching, region operations — the menu/shortcut consolidation itself
     is done, NAT-01).
 
 ### Phase 5 — Accessibility completion
 
-24. **A11Y-01** real controls with roving tabindex — palette, rows, tabs. The
+22. **A11Y-01** real controls with roving tabindex — palette, rows, tabs. The
     largest single piece of work in this document.
-25. **A11Y-02** semantics and landmarks; **A11Y-05** live regions.
-26. **A11Y-04** hit targets (mostly free once GEO-01's `--row` lands).
-27. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
+23. **A11Y-02** semantics and landmarks; **A11Y-05** live regions.
+24. **A11Y-04** hit targets (mostly free once GEO-01's `--row` lands).
+25. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
     already in place); **A11Y-06** scaling; **A11Y-07** system preferences;
     **A11Y-08** non-colour cues.
 
 ### Phase 6 — Reliability and remaining QOL
 
-28. **UX-10** recovery snapshots and `.bak` (its dependencies, BUG-02's atomic
-    write and BUG-08's `doc` module, are already in place); **BUG-11**
-    playability warnings.
-29. **ARCH-08** lazy Monaco; **PERF-07** show-after-ready; **PERF-05** refresh
+**UX-10** (recovery snapshots and `.bak`) and **BUG-11** (playability
+warnings) are also done - see "Already completed"; both built directly on
+BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
+
+26. **ARCH-08** lazy Monaco; **PERF-07** show-after-ready; **PERF-05** refresh
     granularity.
-30. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
+27. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
     async I/O *if* measurement justifies it.
-31. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
+28. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
     UX-15 / UX-17** — the remaining workflow items, each independent. UX-03 is
     narrower than originally scoped: the menu items themselves already exist
     (NAT-01), only per-action labelling is left. UX-15 is also narrower: the
     contrast and MIDI-collision problems it cited are already fixed (VIS-01,
     BUG-06).
-32. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
+29. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
     NAT-17 is narrower too: the About panel already shipped (NAT-01), only the
     Dock menu and JumpList tasks are left.
 
@@ -3908,8 +3871,9 @@ later than originally scoped.
 
 ```
 ARCH-03 (platform) ───┬─► NAT-02 ─► NAT-03, NAT-04
-                      ├─► NAT-21, VIS-10
+                      ├─► VIS-10
                       └─► absorbs menu.js's own process.platform branch (NAT-01)
+                          and NAT-21's discardbuttons() branch (also done)
 GEO-01 + VIS-04 ──────┬─► VIS-07, VIS-08, VIS-09
    (tokens; colour     ├─► GEO-02, GEO-07, GEO-08, GEO-09, NAT-20, VIS-18
    half already done)  └─► NAT-02 (traffic-light position, overlay colours)
@@ -3923,7 +3887,10 @@ it by making every later change verifiable at all; BUG-08 (doc state)
 unblocked NAT-03, NAT-06, NAT-07, NAT-08, NAT-10, UX-10, all of which can now
 build on it directly; BUG-09 closed the live gap NAT-01 opened;
 VIS-01/VIS-02/VIS-06 unblocked nothing else in this graph (the rest of
-GEO-01/VIS-04 does not depend on them).
+GEO-01/VIS-04 does not depend on them); NAT-18 closed NAT-09's navigation hole
+without needing any of the above; NAT-21/BUG-10 and UX-10/BUG-11 each shipped
+straight off BUG-08's `doc` module and BUG-02's atomic write, also without
+needing ARCH-03 or GEO-01/VIS-04.
 ```
 
 ---
@@ -4014,17 +3981,19 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 ### Correctness and reliability
 
-- [ ] It is not possible to lose unsaved work through reload, navigation,
-      drag-drop, quit, window close, or a renderer crash.
-- [ ] Saves are atomic; a previous good file is never replaced by a partial
-      one; an overwrite leaves a `.bak`.
+- [x] It is not possible to lose unsaved work through reload, navigation,
+      drag-drop, quit, window close, or a renderer crash. (BUG-01, BUG-09,
+      NAT-18 — dropping a file can no longer navigate the shell away; NAT-09's
+      own remaining scope is making a drop *open* the file, not losing work)
+- [x] Saves are atomic; a previous good file is never replaced by a partial
+      one; an overwrite leaves a `.bak`. (BUG-02, UX-10)
 - [x] A save failure is impossible to miss from any tab. (BUG-07)
 - [x] The dirty indicator is true: undoing to the opened state clears it,
       redoing past it restores it. (BUG-03)
-- [ ] Recovery snapshots exist and a crash offers to restore them.
-- [ ] The editor warns — without blocking — about levels the game cannot run
+- [x] Recovery snapshots exist and a crash offers to restore them. (UX-10)
+- [x] The editor warns — without blocking — about levels the game cannot run
       (missing or duplicate start/end, dangling script references,
-      out-of-bounds entities).
+      out-of-bounds entities). (BUG-11)
 - [ ] Every mutation of the level document is wrapped in `Undo.act()` or a
       `begin`/`end` pair, per `CLAUDE.md`. Verified by review of every writer.
 - [ ] Every save path calls `Grid.commit()` first, per `CLAUDE.md`.
