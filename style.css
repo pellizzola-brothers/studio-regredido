@@ -97,8 +97,8 @@ html[data-platform="win32"] #title { padding-right: 138px; }	/* titleBarOverlay 
 .tab:hover { color: var(--fg); }
 .tab.on { background: var(--tab); color: var(--acc-text); }
 .tab b { overflow: hidden; font-weight: normal; text-overflow: ellipsis; }
-.tab i { font-style: normal; opacity: .6; }
-.tab i:hover { opacity: 1; }
+.tab .tabclose { font-style: normal; opacity: .6; }
+.tab .tabclose:hover { opacity: 1; }
 #add { padding: 0 12px; }
 .run { padding: 0 16px; color: var(--acc-text); font-size: 13px; }
 
@@ -187,8 +187,13 @@ body.text #right { display: none; }
 	font-size: 10px;
 	grid-column: 1 / -1;
 }
+/* A11Y-01: .cell is a <button> now, not a <div> - display/width undo the
+   browser's inline-block, shrink-to-content button default so it still
+   fills its grid cell exactly as the div did. */
 .cell {
 	position: relative;
+	display: block;
+	width: 100%;
 	border: 1px solid transparent;
 	aspect-ratio: 1;
 	background: #17102a center/contain no-repeat;
@@ -198,6 +203,7 @@ body.text #right { display: none; }
 .cell:hover { border-color: var(--dim); }
 .cell.on { border-color: var(--acc); background-color: #251a3a; }
 .cell.air { background: repeating-conic-gradient(#1d1530 0 25%, #120d1f 0 50%) 0/12px 12px; }
+.cell.add { display: grid; place-items: center; color: var(--dim); }
 
 /* inspector */
 #props { overflow: auto; flex: 0 1 46%; padding: 10px; }

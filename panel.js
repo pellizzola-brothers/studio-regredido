@@ -14,39 +14,87 @@ function esc(s)
 		({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 }
 
+/* A11Y-01: roving tabindex for a list of focusable items sharing one Tab
+ * stop - exactly one carries tabindex 0 (the current item, if any, else the
+ * first), the rest -1, and the arrow keys move both the tab stop and focus.
+ * `cols` is the row length for a 2D grid (the palette); 1 for a plain list
+ * or a horizontal strip, where up/down and left/right end up equivalent,
+ * which is harmless. Shared by the palette (panel.js), and the file lists
+ * and tab strip (app.js). */
+function roving(container, items, cols)
+{
+	for (const el of items)
+		el.tabIndex = -1;
+	const cur = items.find(el => el.classList.contains('on')) || items[0];
+	if (cur)
+		cur.tabIndex = 0;
+
+	container.onkeydown = e => {
+		const i = items.indexOf(document.activeElement);
+		if (i < 0)
+			return;
+		let j;
+		if (e.key === 'ArrowRight') j = i + 1;
+		else if (e.key === 'ArrowLeft') j = i - 1;
+		else if (e.key === 'ArrowDown') j = i + cols;
+		else if (e.key === 'ArrowUp') j = i - cols;
+		else if (e.key === 'Home') j = 0;
+		else if (e.key === 'End') j = items.length - 1;
+		else return;
+		e.preventDefault();
+		if (j < 0 || j >= items.length)
+			return;
+		items[i].tabIndex = -1;
+		items[j].tabIndex = 0;
+		items[j].focus();
+	};
+}
+
 /* Definitions the level carries that the catalog does not know about. */
 function customdefs()
 {
 	return App.doc.json.level.entity_definitions.filter(d => !entdefs.has(d.id));
 }
 
+/* PALCOLS must match style.css's grid-template-columns: repeat(4, 1fr) - the
+ * roving tabindex helper needs the row length to move focus up/down a grid
+ * that CSS alone lays out. */
+const PALCOLS = 4;
+
 Panel.palette = function ()
 {
 	const el = $('palette');
 	el.innerHTML = '';
+	el.setAttribute('role', 'group');
+	el.setAttribute('aria-label', 'palette');
+	const items = [];
 
 	group(el, 'blocks');
-	cell(el, 'block', 0, 'air (eraser)', null);
+	items.push(cell(el, 'block', 0, 'air (eraser)', null));
 	for (const t of BLOCKS)
-		cell(el, 'block', t.id, t.name, t.file);
+		items.push(cell(el, 'block', t.id, t.name, t.file));
 
 	group(el, 'items');
 	for (const t of ITEMS)
-		cell(el, 'entity', t.id, t.id, t.file);
+		items.push(cell(el, 'entity', t.id, t.id, t.file));
 
 	group(el, 'entities');
 	for (const e of ENTS)
-		cell(el, 'entity', e.id, e.id, e.file);
+		items.push(cell(el, 'entity', e.id, e.id, e.file));
 	for (const d of customdefs())
-		cell(el, 'entity', d.id, d.id + ' (custom)', PLACEHOLDER);
+		items.push(cell(el, 'entity', d.id, d.id + ' (custom)', PLACEHOLDER));
 
-	const add = document.createElement('div');
-	add.className = 'cell';
+	const add = document.createElement('button');
+	add.type = 'button';
+	add.className = 'cell add';
 	add.textContent = '+';
 	add.title = 'New custom entity definition';
-	add.style.cssText = 'display:grid;place-items:center;color:var(--dim)';
+	add.setAttribute('aria-label', 'New custom entity definition');
 	add.onclick = newdef;
 	el.appendChild(add);
+	items.push(add);
+
+	roving(el, items, PALCOLS);
 };
 
 function group(parent, name)
@@ -57,24 +105,31 @@ function group(parent, name)
 	parent.appendChild(g);
 }
 
+/* A11Y-01: a real <button> rather than a clickable <div> - Enter/Space
+ * activate it for free, and it is reachable through the roving-tabindex
+ * group roving() sets up over Panel.palette()'s full return value. */
 function cell(parent, kind, id, name, file)
 {
-	const c = document.createElement('div');
+	const c = document.createElement('button');
+	const on = Grid.tool.kind === kind && Grid.tool.id === id;
 
-	c.className = 'cell' + (file ? '' : ' air');
+	c.type = 'button';
+	c.className = 'cell' + (file ? '' : ' air') + (on ? ' on' : '');
 	c.title = name;
+	c.setAttribute('aria-label', name);
+	c.setAttribute('aria-pressed', on ? 'true' : 'false');
 	if (file)
 		c.style.backgroundImage = 'url("' + texurl(file) + '")';
-	if (Grid.tool.kind === kind && Grid.tool.id === id)
-		c.classList.add('on');
 	c.onclick = () => {
 		Grid.tool = {kind: kind, id: id};
 		Grid.sel = -1;
 		Panel.palette();
 		Panel.inspect();
 		Grid.redraw();
+		Grid.cursor(Grid.hov);
 	};
 	parent.appendChild(c);
+	return c;
 }
 
 /* A custom definition needs a script to point at, so make one if the level has

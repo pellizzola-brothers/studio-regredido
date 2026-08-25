@@ -124,27 +124,48 @@ function tabs()
 {
 	const el = $('tablist');
 	el.innerHTML = '';
-	tab('level', 'Level Editor', false);
+	el.setAttribute('role', 'tablist');
+	el.setAttribute('aria-label', 'open tabs');
+	const items = [tab('level', 'Level Editor', false)];
 	for (const p of App.open)
-		tab(p, p, true);
+		items.push(tab(p, p, true));
+	roving(el, items, 1);
 	document.body.classList.toggle('text', App.tab !== 'level');
 }
 
+/* A11Y-01: role="tab" rather than a real <button>, because the closable ones
+ * nest a real <button> for the close glyph - button-in-button is invalid
+ * HTML and Chromium hoists the inner one out, breaking the layout. Enter and
+ * Space are therefore wired by hand; roving() (panel.js) still gives the
+ * strip one Tab stop and handles the arrow keys. */
 function tab(id, label, closable)
 {
 	const t = document.createElement('div');
 
 	t.className = 'tab' + (App.tab === id ? ' on' : '');
+	t.setAttribute('role', 'tab');
+	t.setAttribute('aria-selected', App.tab === id ? 'true' : 'false');
 	t.innerHTML = '<b></b>';
 	t.firstChild.textContent = label;
 	t.onclick = () => App.select(id);
+	t.onkeydown = e => {
+		if (e.key === 'Enter' || e.key === ' ') {
+			e.preventDefault();
+			App.select(id);
+		}
+	};
 	if (closable) {
-		const x = document.createElement('i');
+		const x = document.createElement('button');
+		x.type = 'button';
+		x.className = 'tabclose';
+		x.tabIndex = -1;			/* reachable by mouse; Ctrl+W covers keyboard */
 		x.textContent = '×';
+		x.setAttribute('aria-label', 'Close ' + label);
 		x.onclick = e => { e.stopPropagation(); App.closetab(id); };
 		t.appendChild(x);
 	}
 	$('tablist').appendChild(t);
+	return t;
 }
 
 App.select = function (id)
@@ -186,6 +207,9 @@ function sidebar()
 function list(ul, keys, isscript)
 {
 	ul.innerHTML = '';
+	ul.setAttribute('role', 'listbox');
+	ul.setAttribute('aria-label', isscript ? 'scripts' : 'midi files');
+	const items = [];
 	for (const k of keys) {
 		const li = document.createElement('li');
 		const b = document.createElement('b');
@@ -193,10 +217,33 @@ function list(ul, keys, isscript)
 		b.textContent = k.replace(/^[^/]+\//, '');
 		li.className = App.tab === k ? 'on' : '';
 		li.title = k;
+		li.setAttribute('role', 'option');
+		li.setAttribute('aria-selected', App.tab === k ? 'true' : 'false');
 		li.appendChild(b);
 		li.onclick = ev => rowmenu(ev, k, isscript);
 		li.oncontextmenu = ev => rowmenu(ev, k, isscript);
+		li.onkeydown = ev => rowkeys(ev, li, k, isscript);
 		ul.appendChild(li);
+		items.push(li);
+	}
+	roving(ul, items, 1);
+}
+
+/* A11Y-01: the keyboard equivalents a mouse gets for free from left-click
+ * (which opens the row's menu, CLAUDE.md) - a script's most common action,
+ * "open", gets its own key rather than forcing every keyboard user through
+ * the menu; rename and delete are the menu's other two mutating entries. */
+function rowkeys(ev, li, k, isscript)
+{
+	if (ev.key === 'Enter' && isscript) {
+		ev.preventDefault();
+		App.opentab(k);
+	} else if (ev.key === 'F2') {
+		ev.preventDefault();
+		edit(li, li.querySelector('b'), k, isscript);
+	} else if (ev.key === 'Delete' || ev.key === 'Backspace') {
+		ev.preventDefault();
+		(isscript ? delscript : delmidi)(k);
 	}
 }
 
@@ -543,10 +590,14 @@ const ACTS = {
 };
 
 /* Canvas-local keys only: Escape and Delete apply to the selection, not to
- * any command the menu already owns. */
+ * any command the menu already owns.  Gated on the canvas itself holding
+ * focus (Grid.cv.focus() in ondown()), not on excluding text-input tag names
+ * - A11Y-01 made the palette, file rows and tabs focusable too, and without
+ * this a Delete pressed while renaming a script would also delete whatever
+ * Grid.sel happened to be selected on the canvas underneath. */
 function keys(e)
 {
-	if (App.tab !== 'level' || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))
+	if (App.tab !== 'level' || e.target !== Grid.cv)
 		return;
 	if (e.key === 'Escape') {
 		Grid.sel = -1;
