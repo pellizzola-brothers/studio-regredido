@@ -19,6 +19,10 @@ const Grid = {
 	need: false, fitted: false, dpr: 1
 };
 
+/* Zoom bounds, shared by Grid.fit() and the wheel handler so the two can
+ * never drift apart (NAT-11, GEO-11). */
+const ZMIN = 0.03, ZMAX = 3;
+
 function elist() { return App.doc.json.level.entities; }
 
 /* Which entity, if any, owns cell (cx, cy).  Levels hold tens of entities, so
@@ -160,7 +164,9 @@ Grid.fit = function ()
 	if (!r.height)			/* not laid out yet; the resize does it */
 		return;
 
-	Grid.cam.z = Math.max(0.03, Math.min(1, r.height / (Grid.h * B + 2 * B)));
+	/* Never fit *above* 100% - a small level should not be blown up past its
+	 * native pixel size just because the window is large. */
+	Grid.cam.z = Math.max(ZMIN, Math.min(1, r.height / (Grid.h * B + 2 * B)));
 	Grid.cam.x = 0;
 	Grid.cam.y = -B / 2;
 	Grid.redraw();
@@ -349,18 +355,47 @@ function at(ev)
 	return {x: Math.floor(wx / B), y: Math.floor(wy / B), wx: wx, wy: wy};
 }
 
+/* c.z *= 2 every this many px of wheel travel - Math.LN2 / 462 reproduces
+ * the feel of the original, unexplained 0.0015 factor exactly, but as a
+ * statement ("zoom doubles per N pixels") a reader can actually check. */
+const ZOOM_PX_PER_DOUBLING = 462;
+
+/* macOS - and Windows/Linux precision touchpads - report a two-finger swipe
+ * as a wheel event and synthesise a pinch as a wheel event with ctrlKey
+ * true.  Treating every wheel event as zoom (the old behaviour) has this
+ * exactly backwards: scrolling zoomed, with inertia, and pinch was
+ * indistinguishable from it.  ctrlKey is what tells the two apart, and it
+ * also keeps the conventional Ctrl+wheel zoom for anyone on a plain mouse. */
 function onwheel(ev)
 {
 	ev.preventDefault();
 
 	const r = Grid.cv.getBoundingClientRect();
-	const mx = ev.clientX - r.left, my = ev.clientY - r.top;
 	const c = Grid.cam;
-	const wx = c.x + mx / c.z, wy = c.y + my / c.z;
 
-	c.z = Math.max(0.03, Math.min(3, c.z * Math.exp(-ev.deltaY * 0.0015)));
-	c.x = wx - mx / c.z;
-	c.y = wy - my / c.z;
+	/* Some Windows/Linux mice report whole lines or pages instead of pixels;
+	 * normalise so the same physical notch feels the same on every device.
+	 * 18 is --line in style.css - a line is the natural "one notch" unit for
+	 * a text-driven UI; a page is the viewport itself. */
+	const scale = ev.deltaMode === 1 ? 18 : ev.deltaMode === 2 ? r.height : 1;
+	const dx = ev.deltaX * scale, dy = ev.deltaY * scale;
+
+	if (ev.ctrlKey) {
+		const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+		const wx = c.x + mx / c.z, wy = c.y + my / c.z;
+
+		c.z = Math.max(ZMIN, Math.min(ZMAX,
+			c.z * Math.exp(-dy * Math.LN2 / ZOOM_PX_PER_DOUBLING)));
+		c.x = wx - mx / c.z;
+		c.y = wy - my / c.z;
+	} else {
+		/* Shift+wheel is the classic convention for turning a vertical-only
+		 * wheel into horizontal motion; a trackpad already reports its own
+		 * deltaX, so this only fires when there is none to lose. */
+		const hx = ev.shiftKey && !dx ? dy : dx, hy = ev.shiftKey && !dx ? 0 : dy;
+		c.x += hx / c.z;
+		c.y += hy / c.z;
+	}
 	Grid.redraw();
 }
 
