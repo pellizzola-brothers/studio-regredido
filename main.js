@@ -8,11 +8,14 @@
 const {app, protocol, net, ipcMain, dialog, BrowserWindow} = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const {pathToFileURL} = require('url');
 const lvl = require('./lvl');
 const menu = require('./menu');
 
 const ROOT = __dirname;
+const mac = process.platform === 'darwin';
+const win32 = process.platform === 'win32';
 /* Bare .json is a deliberately supported *read* format (lvl.js migrate()
  * opens it directly) but write() always emits a ZIP, so offering it on save
  * would produce a .json file that is secretly a ZIP - hence two filters. */
@@ -84,11 +87,25 @@ function createwin()
 		webPreferences: {
 			preload: path.join(ROOT, 'preload.js'),
 			contextIsolation: true,
-			sandbox: false
+			sandbox: true
 		}
 	});
 	win.loadURL('app://studio/index.html');
-	win.once('ready-to-show', () => win.show());
+	win.once('ready-to-show', () => { win.show(); maybeRecover(); });
+	/* Nothing in Studio ever opens a second window; deny by default so a stray
+	 * target=_blank (Monaco's link handling can produce one) cannot spawn an
+	 * uncontrolled BrowserWindow. */
+	win.webContents.setWindowOpenHandler(() => ({action: 'deny'}));
+	/* Dropping a file onto the window, or any other stray navigation, would
+	 * otherwise replace the app with a view of that file - losing the open
+	 * document exactly like BUG-01's unguarded Reload did.  A reload of the
+	 * app's own page (the Develop menu's guarded Reload item) is a
+	 * will-navigate to the same app://studio/ origin and must still work, so
+	 * only navigation to somewhere else is blocked. */
+	win.webContents.on('will-navigate', (e, url) => {
+		if (!url.startsWith('app://studio/'))
+			e.preventDefault();
+	});
 	win.on('close', e => {
 		if (!doc.dirty)
 			return;
@@ -154,7 +171,8 @@ ipcMain.on('win:ctl', (e, a) => {
 
 ipcMain.handle('lvl:new', guard(async () => {
 	doc.path = null;
-	return {doc: lvl.blank()};
+	const d = lvl.blank();
+	return {doc: d, warnings: lvl.review(d)};
 }));
 
 ipcMain.handle('lvl:open', guard(async () => {
@@ -165,7 +183,7 @@ ipcMain.handle('lvl:open', guard(async () => {
 		return {cancel: true};
 	const d = lvl.read(r.filePaths[0]);
 	doc.path = r.filePaths[0];
-	return {path: doc.path, doc: d};
+	return {path: doc.path, doc: d, warnings: lvl.review(d)};
 }));
 
 /* A save failure is otherwise easy to miss entirely: the Text Editor tab
@@ -182,16 +200,126 @@ function saveerr(err)
 	});
 }
 
+/* Overwriting a good file with a bad save is a different failure than BUG-02's
+ * (a crash mid-write); this is "the write succeeded and it was the wrong
+ * content".  One copy of the previous bytes costs one copyFile. */
+function backup(p)
+{
+	try {
+		if (fs.existsSync(p))
+			fs.copyFileSync(p, p + '.bak');
+	} catch (e) { /* best-effort: a failed backup must not block the save */ }
+}
+
+/* ---- crash recovery ----
+ *
+ * The document lives only in renderer memory until an explicit save, so a
+ * crash or power loss loses everything since the last one.  While dirty, the
+ * renderer periodically pushes a snapshot here (still through lvl.write(),
+ * so it is validated and atomic like any other save) keyed by a hash of the
+ * path being edited - 'untitled' for a level that has never been saved, since
+ * there is at most one such document open at a time.  A tiny index.json next
+ * to the snapshots remembers which path and display name each key belongs to,
+ * since the .lvl bytes alone do not say where they came from. */
+function recoverydir() { return path.join(app.getPath('userData'), 'recovery'); }
+function snapkey(p) { return p ? crypto.createHash('sha1').update(p).digest('hex') : 'untitled'; }
+function snappath(key) { return path.join(recoverydir(), key + '.lvl'); }
+function indexpath() { return path.join(recoverydir(), 'index.json'); }
+
+function readindex()
+{
+	try {
+		return JSON.parse(fs.readFileSync(indexpath(), 'utf8'));
+	} catch (e) {
+		return {};
+	}
+}
+
+function writeindex(idx)
+{
+	fs.mkdirSync(recoverydir(), {recursive: true});
+	fs.writeFileSync(indexpath(), JSON.stringify(idx));
+}
+
+function clearsnapshot(p)
+{
+	const key = snapkey(p);
+	try { fs.unlinkSync(snappath(key)); } catch (e) { /* nothing to remove */ }
+	const idx = readindex();
+	if (idx[key]) {
+		delete idx[key];
+		writeindex(idx);
+	}
+}
+
+ipcMain.on('lvl:snapshot', (e, d) => {
+	try {
+		fs.mkdirSync(recoverydir(), {recursive: true});
+		const key = snapkey(doc.path);
+		lvl.write(snappath(key), d);
+		const idx = readindex();
+		idx[key] = {
+			path: doc.path,
+			name: d.json.level.information.name || 'untitled',
+			time: Date.now()
+		};
+		writeindex(idx);
+	} catch (e) { /* a failed recovery snapshot must stay invisible to the user */ }
+});
+
+/* Asked once after the window first shows.  Studio edits one document at a
+ * time, so only the most recent snapshot can ever be offered; any others are
+ * from an even older crash and are cleared rather than accumulated forever. */
+function maybeRecover()
+{
+	const idx = readindex();
+	const keys = Object.keys(idx);
+	if (!keys.length)
+		return;
+	keys.sort((a, b) => idx[b].time - idx[a].time);
+	const [best, ...stale] = keys;
+	for (const k of stale)
+		try { fs.unlinkSync(snappath(k)); } catch (e) { /* nothing to remove */ }
+	if (stale.length) {
+		const kept = {[best]: idx[best]};
+		writeindex(kept);
+	}
+
+	const entry = idx[best];
+	dialog.showMessageBox(win, {
+		type: 'warning', buttons: ['Recover', 'Discard'], defaultId: 0,
+		cancelId: 1, noLink: true, title: 'Recover Level',
+		message: 'Studio closed unexpectedly.',
+		detail: 'Recover unsaved changes to "' + (entry.name || 'untitled') + '"?'
+	}).then(r => {
+		if (r.response !== 0) {
+			clearsnapshot(entry.path);
+			return;
+		}
+		try {
+			const d = lvl.read(snappath(best));
+			doc.path = entry.path || null;
+			doc.dirty = true;
+			win.webContents.send('recover:load', {doc: d, path: doc.path,
+				warnings: lvl.review(d)});
+		} catch (err) {
+			clearsnapshot(entry.path);	/* corrupted snapshot: nothing to offer again */
+		}
+	});
+}
+
 ipcMain.handle('lvl:save', guard(async (e, d) => {
 	if (!doc.path)
 		throw new Error('no file to save to');
 	try {
+		backup(doc.path);
 		lvl.write(doc.path, d);
 	} catch (err) {
 		saveerr(err);
 		throw err;
 	}
-	return {path: doc.path};
+	clearsnapshot(doc.path);
+	return {path: doc.path, warnings: lvl.review(d)};
 }));
 
 /* GTK's save dialog does not append a filter's extension the way macOS's and
@@ -212,13 +340,15 @@ ipcMain.handle('lvl:saveas', guard(async (e, d, name) => {
 		return {cancel: true};
 	const p = forcelvl(r.filePath);
 	try {
+		backup(p);
 		lvl.write(p, d);
 	} catch (err) {
 		saveerr(err);
 		throw err;
 	}
+	clearsnapshot(doc.path);	/* the old path's recovery slot, before it moves */
 	doc.path = p;
-	return {path: p};
+	return {path: p, warnings: lvl.review(d)};
 }));
 
 ipcMain.handle('midi:import', guard(async () => {
@@ -234,14 +364,35 @@ ipcMain.handle('midi:import', guard(async () => {
 	}))};
 }));
 
-/* Asked before closing a dirty document.  0 save, 1 discard, 2 cancel. */
+/* Button words and order follow each platform's own convention rather than
+ * one hard-coded array: macOS wants the affirmative rightmost and says
+ * "Don't Save"; Windows wants Save/Don't Save/Cancel, also "Don't Save"; GNOME
+ * orders the destructive action leftmost and says "Discard".  `map` says which
+ * verdict each button index means, so the two can never drift apart the way a
+ * bare response index (BUG-10) invited them to. */
+function discardbuttons()
+{
+	if (mac)
+		return {buttons: ['Cancel', 'Don\'t Save', 'Save'],
+			map: ['cancel', 'discard', 'save'], defaultId: 2, cancelId: 0};
+	if (win32)
+		return {buttons: ['Save', 'Don\'t Save', 'Cancel'],
+			map: ['save', 'discard', 'cancel'], defaultId: 0, cancelId: 2};
+	return {buttons: ['Discard', 'Cancel', 'Save'],
+		map: ['discard', 'cancel', 'save'], defaultId: 2, cancelId: 1};
+}
+
+/* Asked before closing a dirty document.  Returns 'save' | 'discard' | 'cancel'
+ * rather than the response index, so no caller has to remember button order. */
 ipcMain.handle('ask:discard', async (e, name) => {
+	const b = discardbuttons();
 	const r = await dialog.showMessageBox(win, {
-		type: 'warning', buttons: ['Save', 'Discard', 'Cancel'],
-		defaultId: 0, cancelId: 2,
-		message: '"' + name + '" has unsaved changes.'
+		type: 'warning', buttons: b.buttons, defaultId: b.defaultId,
+		cancelId: b.cancelId, noLink: true, title: 'Unsaved Changes',
+		message: '"' + name + '" has unsaved changes.',
+		detail: 'Your changes will be lost if you don\'t save them.'
 	});
-	return r.response;
+	return b.map[r.response];
 });
 
 ipcMain.on('dirty', (e, v) => { doc.dirty = v; });
@@ -255,6 +406,7 @@ ipcMain.on('menu:state', (e, state) => {
 ipcMain.on('forceclose', () => {
 	clearTimeout(closetimer);
 	doc.dirty = false;
+	clearsnapshot(doc.path);	/* explicit discard, or already saved: either way, done */
 	if (win)
 		win.close();
 });

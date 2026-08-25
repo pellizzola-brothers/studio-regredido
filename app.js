@@ -8,7 +8,8 @@
 /* `textdirty` covers edits Undo never sees: Monaco keeps its own history for
  * scripts (CLAUDE.md), so a script edit cannot be read off Undo.depth() the
  * way a level edit can. */
-const App = {doc: null, path: null, dirty: false, textdirty: false, tab: 'level', open: []};
+const App = {doc: null, path: null, dirty: false, textdirty: false, tab: 'level', open: [],
+	warnings: []};
 
 App.touch = function ()
 {
@@ -56,6 +57,18 @@ App.status = function (cx, cy)
 {
 	$('cursor').textContent = cx >= 0 && cx < W && cy >= 0 && cy < Grid.h
 		? cx + ', ' + cy : '';
+};
+
+/* Semantic warnings (BUG-11) never block a save - lvl.js's review() only
+ * says what the game would trip on: missing start/end, dangling script
+ * references, out-of-bounds entities.  Recomputed by main on every
+ * new/open/save, alongside the level itself. */
+App.setwarnings = function (list)
+{
+	App.warnings = list || [];
+	const n = App.warnings.length;
+	$('warnings').textContent = n ? n + ' warning' + (n > 1 ? 's' : '') : '';
+	Panel.inspect();
 };
 
 App.inspect = function () { Panel.inspect(); };
@@ -455,9 +468,9 @@ async function guard()
 		return true;
 
 	const r = await api.discard(App.doc.json.level.information.name || 'untitled');
-	if (r === 2)
+	if (r === 'cancel')
 		return false;
-	if (r === 1)
+	if (r === 'discard')
 		return true;
 	await App.save();
 	return !App.dirty;
@@ -471,6 +484,7 @@ App.new = async function ()
 	if (!r.ok)
 		return App.fail(r.err);
 	App.setdoc(r.doc, null);
+	App.setwarnings(r.warnings);
 	App.say('new level');
 };
 
@@ -484,6 +498,7 @@ App.open_ = async function ()
 	if (r.cancel)
 		return;
 	App.setdoc(r.doc, r.path);
+	App.setwarnings(r.warnings);
 	App.say('opened ' + r.path);
 };
 
@@ -496,7 +511,7 @@ App.save = async function ()
 	const r = await api.save(App.doc);
 	if (!r.ok)
 		return App.fail(r.err);
-	saved(r.path);
+	saved(r.path, r.warnings);
 };
 
 App.saveas = async function ()
@@ -507,10 +522,10 @@ App.saveas = async function ()
 		return App.fail(r.err);
 	if (r.cancel)
 		return;
-	saved(r.path);
+	saved(r.path, r.warnings);
 };
 
-function saved(p)
+function saved(p, warnings)
 {
 	App.path = p;
 	App.dirty = false;
@@ -518,6 +533,7 @@ function saved(p)
 	Undo.clean = Undo.depth();		/* this depth now matches disk */
 	api.dirty(false);
 	App.retitle();
+	App.setwarnings(warnings);
 	App.say('saved ' + p);
 }
 
@@ -590,6 +606,28 @@ addEventListener('DOMContentLoaded', () => {
 	addEventListener('keydown', keys, true);
 	api.onclose(tryclose);
 	api.oncmd(name => { if (ACTS[name]) ACTS[name](); });
+	/* Clicking the warning count shows the level's own inspector view, where
+	 * the list lives - clear any entity/definition selection standing in the
+	 * way of it. */
+	$('warnings').onclick = () => {
+		Grid.sel = -1;
+		if (Grid.tool.kind === 'entity' && !entdefs.has(Grid.tool.id))
+			Grid.tool = {kind: 'block', id: 0};
+		Panel.palette();
+		Panel.inspect();
+	};
+	/* A recovered document (UX-10) replaces whatever api.blank() loaded below,
+	 * whenever main decides there is a crash snapshot to offer - which can
+	 * land well after 'ready', since it waits on a native dialog. */
+	api.onrecover(r => {
+		App.setdoc(r.doc, r.path);
+		Undo.clean = -1;		/* no depth here matches what is on disk */
+		App.dirty = true;
+		api.dirty(true);
+		App.retitle();
+		App.setwarnings(r.warnings);
+		App.say('recovered unsaved changes - save to keep them', true);
+	});
 
 	Code.init(() => {
 		if (App.tab !== 'level')
@@ -598,6 +636,18 @@ addEventListener('DOMContentLoaded', () => {
 
 	api.blank().then(r => {
 		App.setdoc(r.doc, null);
+		App.setwarnings(r.warnings);
 		App.say('ready');
 	});
+
+	/* Snapshot the document for crash recovery (UX-10) roughly every 30s while
+	 * dirty.  Idle-triggered - never mid-gesture - so it can never observe a
+	 * torn edit, and Grid.commit() runs first per CLAUDE.md's rule that every
+	 * save path must call it before touching level.block_data. */
+	setInterval(() => {
+		if (!App.dirty || Grid.pan || Grid.paint >= 0 || Grid.moving)
+			return;
+		Grid.commit();
+		api.snapshot(App.doc);
+	}, 30000);
 });

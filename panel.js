@@ -117,15 +117,18 @@ function levelview(p)
 {
 	const l = App.doc.json.level;
 	const i = l.information;
+	const warn = (App.warnings || []).length ?
+		'<h4>warnings</h4><ul class="warn">' +
+		App.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '';
 
-	p.innerHTML =
+	p.innerHTML = warn +
 		'<h4>level</h4>' +
 		'<label>name<input id="p_name" value="' + esc(i.name) + '"></label>' +
 		'<label>description<textarea id="p_desc">' + esc(i.description) + '</textarea></label>' +
 		'<label>author<input id="p_auth" value="' + esc(i.author) + '"></label>' +
 		'<h4>background</h4>' +
-		'<select id="p_bg">' + BGS.map(b =>
-			'<option' + (l.backgrounds[0] === b.id ? ' selected' : '') + '>' +
+		'<select id="p_bg">' + BGS.map(b => '<option' +
+			(l.backgrounds[0] === b.id ? ' selected' : '') + '>' +
 			esc(b.id) + '</option>').join('') + '</select>' +
 		'<h4>size</h4>' +
 		'<div class="row">' +

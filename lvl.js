@@ -87,6 +87,58 @@ function validate(j)
 	return e.slice(0, MAXERR);
 }
 
+/* Semantic checks beyond validate(): things textures/README.md's contract
+ * requires for the *game* to run the level, but that are not malformed data,
+ * so a level failing them must still be allowed to save - an author mid-build
+ * legitimately has no end block yet.  Returns warning strings; empty means
+ * clean.  Takes the whole document, not just json, because "a definition's
+ * script is missing" and "a script is unused" both need doc.scripts. */
+function review(doc)
+{
+	const l = doc.json.level;
+	const w = [];
+	let starts = 0, ends = 0;
+
+	for (const row of l.block_data)
+		for (const id of row) {
+			if (id === '001') starts++;
+			else if (id === '004') ends++;
+		}
+	if (starts === 0)
+		w.push('no start block placed (tile 1 is required)');
+	else if (starts > 1)
+		w.push(starts + ' start blocks placed; tile 1 must be unique');
+	if (ends === 0)
+		w.push('no end block placed (tile 4 is required)');
+	else if (ends > 1)
+		w.push(ends + ' end blocks placed; tile 4 must be unique');
+
+	for (const d of l.entity_definitions)
+		if (d.script.startsWith('scripts/') && doc.scripts[d.script] === undefined)
+			w.push('definition "' + d.id + '" points at missing script ' + d.script);
+
+	const h = l.block_data.length;
+	const used = new Set();
+	l.entities.forEach((s, n) => {
+		used.add(s.def);
+		if (!Array.isArray(s.pos) || s.pos.length !== 2)
+			return;			/* validate() already reports this shape error */
+		const [x, y] = s.pos;
+		if (x < 0 || y < 0 || x >= cat.W * cat.B || y >= h * cat.B)
+			w.push('entities[' + n + '] ("' + s.def + '") is outside the level bounds');
+	});
+	for (const d of l.entity_definitions)
+		if (!used.has(d.id))
+			w.push('definition "' + d.id + '" is not used by any entity');
+
+	const usedscripts = new Set(l.entity_definitions.map(d => d.script));
+	for (const p of Object.keys(doc.scripts))
+		if (!usedscripts.has(p))
+			w.push('script ' + p + ' is not referenced by any definition');
+
+	return w;
+}
+
 /* Old levels stored one flat "data" array instead of rows, and predate the
  * entity and background fields.  Reshape in place so they still open. */
 function migrate(j)
@@ -234,4 +286,4 @@ function write(p, doc)
 	}
 }
 
-module.exports = {W, H, BG, blank, read, write, validate, migrate};
+module.exports = {W, H, BG, blank, read, write, validate, migrate, review};

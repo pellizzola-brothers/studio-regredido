@@ -231,6 +231,8 @@ body.text #right { display: none; }
 }
 #props .act:hover { border-color: var(--acc); color: var(--fg); }
 #props .err { color: #ff8f8f; white-space: pre-wrap; }
+#props .warn { margin: 0 0 8px 16px; padding: 0; color: #ff8f8f; font-size: 11px; }
+#props .warn li { margin-bottom: 2px; }
 #props .hint { margin-top: 4px; color: var(--dim); font-size: 10px; }
 
 /* context menu */
@@ -264,3 +266,5 @@ body.text #right { display: none; }
 }
 #msg { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #msg.bad { color: #ff8f8f; }
+#warnings:empty { display: none; }
+#warnings { color: #ff8f8f; cursor: pointer; }
