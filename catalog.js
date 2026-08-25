@@ -15,6 +15,7 @@
 
 const B = 100;		/* world pixels per block; game/src/main.c draws 100x100 */
 const W = 540;		/* entries per block_data row */
+const H = 12;		/* rows in a fresh level - a product decision, not a format one */
 
 const BLOCKS = [
 	{id:  1, name: 'start',        file: 'blocks/start_level.png'},
@@ -106,4 +107,4 @@ function ready(im) { return im && im.complete && im.naturalWidth > 0; }
 /* lvl.js pulls the tables in from the main process; the renderer loads this as
  * a plain script and picks the same names up as globals. */
 if (typeof module !== 'undefined' && module.exports)
-	module.exports = {B, W, BLOCKS, ITEMS, ENTS, BGS, ITEMTILE};
+	module.exports = {B, W, H, BLOCKS, ITEMS, ENTS, BGS, ITEMTILE};

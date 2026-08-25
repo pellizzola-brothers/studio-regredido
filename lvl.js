@@ -11,8 +11,9 @@ const fs = require('fs');
 const {zipSync, unzipSync, strToU8, strFromU8} = require('fflate');
 const cat = require('./catalog');
 
-const W = 540;				/* every block_data row is exactly this wide */
-const H = 12;				/* rows in a fresh level */
+/* W, H and B are catalog.js's alone (ARCH-02) - this file used to redefine
+ * W itself, which meant the cross-repo row-width contract CLAUDE.md documents
+ * lived in two places, one of which required('./catalog') and ignored it. */
 const BG = ['foo', 'bar', 'baz'];	/* the only accepted background presets */
 const MAXERR = 12;			/* errors reported before we stop counting */
 
@@ -40,11 +41,11 @@ function validate(j)
 		e.push('block_data must be a non-empty array of rows');
 	else for (let y = 0; y < l.block_data.length && e.length < MAXERR; y++) {
 		const row = l.block_data[y];
-		if (!Array.isArray(row) || row.length !== W) {
-			e.push('block_data row ' + y + ' must hold exactly ' + W + ' entries');
+		if (!Array.isArray(row) || row.length !== cat.W) {
+			e.push('block_data row ' + y + ' must hold exactly ' + cat.W + ' entries');
 			continue;
 		}
-		for (let x = 0; x < W; x++)
+		for (let x = 0; x < cat.W; x++)
 			if (!isstr(row[x]) || !/^\d{3}$/.test(row[x])) {
 				e.push('block_data[' + y + '][' + x + '] must be a 3-digit id string');
 				break;
@@ -149,9 +150,9 @@ function migrate(j)
 
 	if (!Array.isArray(l.block_data) && Array.isArray(l.data)) {
 		const rows = [];
-		for (let n = 0; n < l.data.length; n += W) {
-			const r = l.data.slice(n, n + W);
-			while (r.length < W)
+		for (let n = 0; n < l.data.length; n += cat.W) {
+			const r = l.data.slice(n, n + cat.W);
+			while (r.length < cat.W)
 				r.push('000');
 			rows.push(r);
 		}
@@ -159,7 +160,7 @@ function migrate(j)
 		delete l.data;
 	}
 	if (!Array.isArray(l.block_data) || !l.block_data.length)
-		l.block_data = blockrows(H);
+		l.block_data = blockrows(cat.H);
 	if (!l.information)
 		l.information = {name: '', description: '', author: ''};
 	if (!Array.isArray(l.entity_definitions))
@@ -180,7 +181,7 @@ function items(l)
 
 	for (let y = 0; y < l.block_data.length; y++) {
 		const row = l.block_data[y];
-		for (let x = 0; x < W; x++) {
+		for (let x = 0; x < cat.W; x++) {
 			const id = cat.ITEMTILE[+row[x]];
 			if (!id)
 				continue;
@@ -201,7 +202,7 @@ function blockrows(h)
 {
 	const rows = [];
 	for (let y = 0; y < h; y++)
-		rows.push(new Array(W).fill('000'));
+		rows.push(new Array(cat.W).fill('000'));
 	return rows;
 }
 
@@ -215,7 +216,7 @@ function blank()
 		json: {
 			level: {
 				information: {name: 'untitled', description: '', author: ''},
-				block_data: blockrows(H),
+				block_data: blockrows(cat.H),
 				entity_definitions: [],
 				entities: [],
 				backgrounds: [BG[0]]
@@ -286,4 +287,4 @@ function write(p, doc)
 	}
 }
 
-module.exports = {W, H, BG, blank, read, write, validate, migrate, review};
+module.exports = {W: cat.W, H: cat.H, BG, blank, read, write, validate, migrate, review};
