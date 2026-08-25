@@ -5,17 +5,16 @@
  * web workers get a real, same-origin base URL to import from. */
 'use strict';
 
-const {app, protocol, net, ipcMain, dialog, BrowserWindow} = require('electron');
+const {app, protocol, net, ipcMain, dialog, BrowserWindow, Menu} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const {pathToFileURL} = require('url');
 const lvl = require('./lvl');
 const menu = require('./menu');
+const chrome = require('./chrome');
 
 const ROOT = __dirname;
-const mac = process.platform === 'darwin';
-const win32 = process.platform === 'win32';
 /* Bare .json is a deliberately supported *read* format (lvl.js migrate()
  * opens it directly) but write() always emits a ZIP, so offering it on save
  * would produce a .json file that is secretly a ZIP - hence two filters. */
@@ -83,7 +82,8 @@ function createwin()
 {
 	win = new BrowserWindow({
 		width: 1600, height: 950, minWidth: 960, minHeight: 620,
-		frame: false, backgroundColor: '#1c1d20', show: false,
+		backgroundColor: '#1c1d20', show: false,
+		...chrome.windowoptions(),
 		webPreferences: {
 			preload: path.join(ROOT, 'preload.js'),
 			contextIsolation: true,
@@ -141,7 +141,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-	if (process.platform !== 'darwin')
+	if (!chrome.mac)
 		app.quit();
 });
 
@@ -158,15 +158,38 @@ function guard(fn)
 	};
 }
 
-ipcMain.on('win:ctl', (e, a) => {
+/* NAT-05: the file manager's context menus, native instead of the hand-rolled
+ * <div> menu that used to live in app.js - no keyboard navigation, no
+ * platform appearance, and it clamped near a window edge instead of flipping
+ * the way every real menu does.  `ctx` (kind, key, entityDef) is whatever the
+ * renderer had selected at the moment of the click; popup() is asynchronous,
+ * so building the item labels from it now, rather than asking the renderer
+ * again later, is what keeps a stale selection from leaking into the choice
+ * (grid.js's Grid.sel can change before the user picks an item). */
+ipcMain.on('menu:row', (e, ctx) => {
 	if (!win)
 		return;
-	if (a === 'min')
-		win.minimize();
-	else if (a === 'max')
-		win.isMaximized() ? win.unmaximize() : win.maximize();
-	else if (a === 'close')
-		win.close();
+	const send = action => () =>
+		win.webContents.send('rowcmd', Object.assign({action}, ctx));
+	const items = [];
+
+	if (ctx.kind === 'script') {
+		items.push({label: 'open', click: send('open')});
+		items.push({
+			label: ctx.entityDef ? 'assign to ' + ctx.entityDef : 'assign to entity',
+			enabled: !!ctx.entityDef, click: send('assign')
+		});
+	}
+	if (ctx.kind === 'script' || ctx.kind === 'midi') {
+		items.push({label: 'rename', click: send('rename')});
+		items.push({label: 'delete', click: send('delete')});
+		items.push({type: 'separator'});
+	}
+	items.push({label: 'new script', click: send('newscript')});
+	items.push({label: 'import midi', click: send('importmidi')});
+	/* No x/y: popup() defaults to the current cursor position, which is
+	 * exactly where the click that triggered this happened. */
+	Menu.buildFromTemplate(items).popup({window: win});
 });
 
 ipcMain.handle('lvl:new', guard(async () => {
@@ -364,28 +387,10 @@ ipcMain.handle('midi:import', guard(async () => {
 	}))};
 }));
 
-/* Button words and order follow each platform's own convention rather than
- * one hard-coded array: macOS wants the affirmative rightmost and says
- * "Don't Save"; Windows wants Save/Don't Save/Cancel, also "Don't Save"; GNOME
- * orders the destructive action leftmost and says "Discard".  `map` says which
- * verdict each button index means, so the two can never drift apart the way a
- * bare response index (BUG-10) invited them to. */
-function discardbuttons()
-{
-	if (mac)
-		return {buttons: ['Cancel', 'Don\'t Save', 'Save'],
-			map: ['cancel', 'discard', 'save'], defaultId: 2, cancelId: 0};
-	if (win32)
-		return {buttons: ['Save', 'Don\'t Save', 'Cancel'],
-			map: ['save', 'discard', 'cancel'], defaultId: 0, cancelId: 2};
-	return {buttons: ['Discard', 'Cancel', 'Save'],
-		map: ['discard', 'cancel', 'save'], defaultId: 2, cancelId: 1};
-}
-
 /* Asked before closing a dirty document.  Returns 'save' | 'discard' | 'cancel'
  * rather than the response index, so no caller has to remember button order. */
 ipcMain.handle('ask:discard', async (e, name) => {
-	const b = discardbuttons();
+	const b = chrome.discardbuttons();
 	const r = await dialog.showMessageBox(win, {
 		type: 'warning', buttons: b.buttons, defaultId: b.defaultId,
 		cancelId: b.cancelId, noLink: true, title: 'Unsaved Changes',

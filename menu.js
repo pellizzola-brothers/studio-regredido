@@ -11,8 +11,9 @@
 'use strict';
 
 const {app, Menu} = require('electron');
+const chrome = require('./chrome');
 
-const mac = process.platform === 'darwin';
+const mac = chrome.mac;
 
 /* state: {tab, canUndo, canRedo} - mirrors what the renderer can currently do. */
 function template(win, state)

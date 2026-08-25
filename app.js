@@ -11,6 +11,11 @@
 const App = {doc: null, path: null, dirty: false, textdirty: false, tab: 'level', open: [],
 	warnings: []};
 
+/* ARCH-03: the one platform fact the renderer has, driving [data-platform]
+ * CSS selectors (macOS traffic-light padding, NAT-02's #title inset) - set
+ * as early as possible, before the platform-dependent chrome first paints. */
+document.documentElement.dataset.platform = api.platform;
+
 App.touch = function ()
 {
 	if (!App.dirty) {
@@ -181,74 +186,45 @@ function list(ul, keys, isscript)
 		li.className = App.tab === k ? 'on' : '';
 		li.title = k;
 		li.appendChild(b);
-		li.onclick = ev => {
-			ev.stopPropagation();
-			rowmenu(ev, li, b, k, isscript);
-		};
-		li.oncontextmenu = ev => {
-			ev.preventDefault();
-			ev.stopPropagation();
-			rowmenu(ev, li, b, k, isscript);
-		};
+		li.onclick = ev => rowmenu(ev, k, isscript);
+		li.oncontextmenu = ev => rowmenu(ev, k, isscript);
 		ul.appendChild(li);
 	}
 }
 
-/* ---- menus ---- */
+/* ---- menus ----
+ *
+ * NAT-05: native Menu.popup() (main.js's 'menu:row' handler) replaced the
+ * hand-rolled <div id="menu"> that used to live here - no keyboard
+ * navigation, no platform appearance, and it clamped near a window edge
+ * instead of flipping the way a real menu does.  Only the context is sent;
+ * `e.entityDef` is read now, at the moment of the click, rather than left for
+ * main to ask again later, since Grid.sel can change before the async popup
+ * resolves and the user picks an item. */
 
-/* Items are {label, fn} or null for a separator; `off` greys one out. */
-function menu(x, y, items)
+function rowmenu(ev, k, isscript)
 {
-	const m = $('menu');
-
-	m.innerHTML = '';
-	for (const it of items) {
-		if (!it) {
-			m.appendChild(document.createElement('hr'));
-			continue;
-		}
-		const b = document.createElement('div');
-		b.className = 'mi' + (it.off ? ' off' : '');
-		b.textContent = it.label;
-		if (!it.off)
-			b.onclick = () => { closemenu(); it.fn(); };
-		m.appendChild(b);
-	}
-	m.style.display = 'block';
-	m.style.left = Math.max(2, Math.min(x, innerWidth - m.offsetWidth - 4)) + 'px';
-	m.style.top = Math.max(2, Math.min(y, innerHeight - m.offsetHeight - 4)) + 'px';
-}
-
-function closemenu() { $('menu').style.display = 'none'; }
-
-function rowmenu(ev, li, b, k, isscript)
-{
+	ev.preventDefault();
+	ev.stopPropagation();
 	const e = App.doc.json.level.entities[Grid.sel];
-	const items = [];
-
-	if (isscript) {
-		items.push({label: 'open', fn: () => App.opentab(k)});
-		items.push({
-			label: e ? 'assign to ' + e.def : 'assign to entity',
-			off: !e,
-			fn: () => Panel.assign(e.def, k)
-		});
-	}
-	items.push({label: 'rename', fn: () => edit(li, b, k, isscript)});
-	items.push({label: 'delete', fn: () => (isscript ? delscript : delmidi)(k)});
-	items.push(null);
-	items.push({label: 'new script', fn: addscript});
-	items.push({label: 'import midi', fn: addmidi});
-	menu(ev.clientX, ev.clientY, items);
+	api.rowmenu({kind: isscript ? 'script' : 'midi', key: k, entityDef: e ? e.def : null});
 }
 
 function panelmenu(ev)
 {
 	ev.preventDefault();
-	menu(ev.clientX, ev.clientY, [
-		{label: 'new script', fn: addscript},
-		{label: 'import midi', fn: addmidi}
-	]);
+	api.rowmenu({kind: 'panel'});
+}
+
+/* The row a menu action named by key belongs to, re-found rather than kept
+ * from click time - popup() is asynchronous and the list could in principle
+ * have rebuilt in between, though in practice nothing else does. */
+function rowbykey(k, isscript)
+{
+	for (const li of $(isscript ? 'scripts' : 'midis').children)
+		if (li.title === k)
+			return li;
+	return null;
 }
 
 /* Electron has no window.prompt, so names are typed in place.  `isscript` is
@@ -565,7 +541,6 @@ function keys(e)
 	if (App.tab !== 'level' || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))
 		return;
 	if (e.key === 'Escape') {
-		closemenu();
 		Grid.sel = -1;
 		Panel.inspect();
 		Grid.redraw();
@@ -591,21 +566,31 @@ addEventListener('DOMContentLoaded', () => {
 
 	for (const b of document.querySelectorAll('.acts button'))
 		b.onclick = () => ACTS[b.dataset.act]();
-	$('wclose').onclick = tryclose;
-	$('wmin').onclick = () => api.ctl('min');
-	$('wmax').onclick = () => api.ctl('max');
 	$('add').onclick = addscript;
 	$('addmidi').onclick = ev => { ev.stopPropagation(); addmidi(); };
 	$('side').onclick = panelmenu;
 	$('side').oncontextmenu = panelmenu;
-	addEventListener('mousedown', ev => {		/* a press anywhere else */
-		const t = ev.target;
-		if (!(t instanceof Element) || !t.closest('#menu'))
-			closemenu();
-	}, true);
 	addEventListener('keydown', keys, true);
 	api.onclose(tryclose);
 	api.oncmd(name => { if (ACTS[name]) ACTS[name](); });
+	/* NAT-05: the item main.js's native popup sent back, dispatched by the
+	 * action name main built it with. */
+	api.onrowcmd(a => {
+		if (a.action === 'open')
+			App.opentab(a.key);
+		else if (a.action === 'assign' && a.entityDef)
+			Panel.assign(a.entityDef, a.key);
+		else if (a.action === 'rename') {
+			const li = rowbykey(a.key, a.kind === 'script');
+			if (li)
+				edit(li, li.querySelector('b'), a.key, a.kind === 'script');
+		} else if (a.action === 'delete')
+			(a.kind === 'script' ? delscript : delmidi)(a.key);
+		else if (a.action === 'newscript')
+			addscript();
+		else if (a.action === 'importmidi')
+			addmidi();
+	});
 	/* Clicking the warning count shows the level's own inspector view, where
 	 * the list lives - clear any entity/definition selection standing in the
 	 * way of it. */

@@ -67,17 +67,14 @@ button:disabled { opacity: .35; cursor: default; }
 	padding: 0 12px;
 	background: var(--frame);
 }
-.dots { display: flex; gap: 8px; }
-.dots i {
-	width: 12px; height: 12px;
-	border-radius: 50%;
-	cursor: pointer;
-}
-#wclose { background: #ff736a; }
-#wmin { background: #ffbe2f; }
-#wmax { background: #2bc840; }
 #name { flex: 1; color: var(--dim); overflow: hidden; white-space: nowrap; }
 .acts { display: flex; gap: 14px; }
+
+/* NAT-02: real per-platform window controls replace the old hand-drawn
+   traffic-light dots, so #title needs room to not sit underneath them - the
+   OS draws them, not this stylesheet, so the only thing owed here is space. */
+html[data-platform="darwin"] #title { padding-left: 78px; }	/* hiddenInset traffic lights */
+html[data-platform="win32"] #title { padding-right: 138px; }	/* titleBarOverlay caption buttons */
 
 /* tab strip */
 #tabs {
@@ -234,23 +231,6 @@ body.text #right { display: none; }
 #props .warn { margin: 0 0 8px 16px; padding: 0; color: #ff8f8f; font-size: 11px; }
 #props .warn li { margin-bottom: 2px; }
 #props .hint { margin-top: 4px; color: var(--dim); font-size: 10px; }
-
-/* context menu */
-#menu {
-	position: fixed;
-	z-index: 10;
-	display: none;
-	min-width: 150px;
-	padding: 4px 0;
-	border: 1px solid var(--line);
-	background: #17102a;
-	box-shadow: 0 6px 20px rgba(0, 0, 0, .55);
-}
-#menu hr { margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
-.mi { padding: 4px 14px; color: var(--fg); cursor: pointer; white-space: nowrap; }
-.mi:hover { background: var(--tab); color: var(--acc-text); }
-.mi.off { color: var(--dim); opacity: .45; cursor: default; }
-.mi.off:hover { background: none; color: var(--dim); }
 
 /* status */
 #status {
