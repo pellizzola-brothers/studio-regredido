@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('api', {
 	 * nothing in the renderer's own JS branches on process.platform. */
 	platform:	process.platform,
 	dirty:		v => ipcRenderer.send('dirty', v),
+	/* NAT-03: the level's display name, the one part of the window title main
+	 * cannot derive from {path, dirty} alone. */
+	retitle:	name => ipcRenderer.send('doc:name', name),
 	forceclose:	() => ipcRenderer.send('forceclose'),
 	blank:		() => ipcRenderer.invoke('lvl:new'),
 	open:		() => ipcRenderer.invoke('lvl:open'),

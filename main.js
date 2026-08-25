@@ -5,7 +5,7 @@
  * web workers get a real, same-origin base URL to import from. */
 'use strict';
 
-const {app, protocol, net, ipcMain, dialog, BrowserWindow, Menu} = require('electron');
+const {app, protocol, net, ipcMain, dialog, BrowserWindow, Menu, screen} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -22,6 +22,14 @@ const OPENFILTERS = [{name: 'Level', extensions: ['lvl', 'json']}];
 const SAVEFILTERS = [{name: 'Level', extensions: ['lvl']}];
 const NAME = 'Pellizzola Brothers Studio';
 
+/* NAT-10: MINW/MINH are the layout's declared floor, unchanged pending
+ * GEO-03 making the side panels proportional (that is the point at which a
+ * true content-driven minimum becomes derivable rather than a guess).
+ * MAXW/MAXH cap the *default* size at what the UI was actually designed and
+ * tested at, so a big display does not open a window nobody has looked at -
+ * a user who wants more can still resize past it. */
+const MINW = 960, MINH = 620, MAXW = 1600, MAXH = 950;
+
 /* `productName` in package.json is only honoured once the app is packaged,
  * and `npm start` never is - so the app is called "Electron" everywhere
  * (menu bar, About panel, Dock) until this runs, and it must run before
@@ -36,7 +44,82 @@ let menustate = {tab: 'level', canUndo: false, canRedo: false};
  * save (which is what let it write to any path it named) or hung off the
  * BrowserWindow as an ad-hoc `win.dirty` property (which vanished with the
  * window, and was never really a window property to begin with). */
-const doc = {path: null, dirty: false};
+const doc = {path: null, dirty: false, name: null};
+
+/* NAT-03: title, proxy icon and edited-dot conventions, all driven from doc
+ * rather than from anything the renderer passes at the moment it happens -
+ * every site that changes doc.path/dirty/name calls this afterwards.  macOS
+ * wants the document name alone, with the full path behind the proxy icon
+ * and unsaved state as a dot in the close button; Windows wants
+ * "name — app" in the OS-drawn title, since titleBarOverlay means
+ * document.title is what the taskbar actually shows; Linux gets the bare
+ * name, matching macOS's convention in the absence of a single Linux one. */
+function retitle()
+{
+	if (!win)
+		return;
+	const name = doc.name || 'untitled';
+
+	win.setTitle(name + (chrome.win32 ? ' — ' + NAME : ''));
+	if (chrome.mac) {
+		win.setRepresentedFilename(doc.path || '');
+		win.setDocumentEdited(doc.dirty);
+	}
+}
+
+/* NAT-10 / GEO-12: window geometry is a fixed constant today (1600x950,
+ * every launch) - four literals in main.js that fit neither a 1366x768
+ * laptop nor a user's own resize, since nothing is ever persisted. */
+function windowstatepath() { return path.join(app.getPath('userData'), 'window.json'); }
+
+function loadwindowstate()
+{
+	try {
+		return JSON.parse(fs.readFileSync(windowstatepath(), 'utf8'));
+	} catch (e) {
+		return null;
+	}
+}
+
+function savewindowstate()
+{
+	if (!win)
+		return;
+	try {
+		fs.writeFileSync(windowstatepath(), JSON.stringify({
+			bounds: win.getNormalBounds(),
+			maximized: win.isMaximized(),
+			fullscreen: win.isFullScreen()
+		}));
+	} catch (e) { /* best-effort: a failed write must not block closing */ }
+}
+
+/* A saved rectangle may belong to a monitor that is no longer connected -
+ * the classic bug in this area - so it is only trusted if it still overlaps
+ * some currently-attached display's work area. */
+function fitsdisplay(b)
+{
+	return b && screen.getAllDisplays().some(d => {
+		const w = d.workArea;
+		return b.x + b.width > w.x && b.x < w.x + w.width &&
+			b.y + b.height > w.y && b.y < w.y + w.height;
+	});
+}
+
+/* 80% of the *work area* (screen.getPrimaryDisplay().workAreaSize already
+ * excludes the menu bar, Dock and taskbar), clamped to the layout's own
+ * floor and to the size it was designed at - never below what the UI needs,
+ * never above what anyone has actually seen it laid out at. */
+function defaultbounds()
+{
+	const wa = screen.getPrimaryDisplay().workAreaSize;
+
+	return {
+		width: Math.min(MAXW, Math.max(MINW, Math.round(wa.width * 0.8))),
+		height: Math.min(MAXH, Math.max(MINH, Math.round(wa.height * 0.8))),
+		center: true
+	};
+}
 
 protocol.registerSchemesAsPrivileged([{
 	scheme: 'app',
@@ -80,8 +163,12 @@ function deadrenderer(detail)
 
 function createwin()
 {
+	const state = loadwindowstate();
+	const restore = state && fitsdisplay(state.bounds);
+	const geometry = restore ? state.bounds : defaultbounds();
+
 	win = new BrowserWindow({
-		width: 1600, height: 950, minWidth: 960, minHeight: 620,
+		...geometry, minWidth: MINW, minHeight: MINH,
 		backgroundColor: '#1c1d20', show: false,
 		...chrome.windowoptions(),
 		webPreferences: {
@@ -90,6 +177,13 @@ function createwin()
 			sandbox: true
 		}
 	});
+	if (restore) {
+		if (state.maximized)
+			win.maximize();
+		if (state.fullscreen)
+			win.setFullScreen(true);
+	}
+	retitle();
 	win.loadURL('app://studio/index.html');
 	win.once('ready-to-show', () => { win.show(); maybeRecover(); });
 	/* Nothing in Studio ever opens a second window; deny by default so a stray
@@ -107,6 +201,7 @@ function createwin()
 			e.preventDefault();
 	});
 	win.on('close', e => {
+		savewindowstate();
 		if (!doc.dirty)
 			return;
 		e.preventDefault();			/* let the renderer ask first */
@@ -194,6 +289,8 @@ ipcMain.on('menu:row', (e, ctx) => {
 
 ipcMain.handle('lvl:new', guard(async () => {
 	doc.path = null;
+	doc.name = null;
+	retitle();
 	const d = lvl.blank();
 	return {doc: d, warnings: lvl.review(d)};
 }));
@@ -206,6 +303,8 @@ ipcMain.handle('lvl:open', guard(async () => {
 		return {cancel: true};
 	const d = lvl.read(r.filePaths[0]);
 	doc.path = r.filePaths[0];
+	doc.name = d.json.level.information.name || null;
+	retitle();
 	return {path: doc.path, doc: d, warnings: lvl.review(d)};
 }));
 
@@ -323,6 +422,8 @@ function maybeRecover()
 			const d = lvl.read(snappath(best));
 			doc.path = entry.path || null;
 			doc.dirty = true;
+			doc.name = d.json.level.information.name || null;
+			retitle();
 			win.webContents.send('recover:load', {doc: d, path: doc.path,
 				warnings: lvl.review(d)});
 		} catch (err) {
@@ -371,6 +472,8 @@ ipcMain.handle('lvl:saveas', guard(async (e, d, name) => {
 	}
 	clearsnapshot(doc.path);	/* the old path's recovery slot, before it moves */
 	doc.path = p;
+	doc.name = d.json.level.information.name || null;
+	retitle();
 	return {path: p, warnings: lvl.review(d)};
 }));
 
@@ -400,7 +503,8 @@ ipcMain.handle('ask:discard', async (e, name) => {
 	return b.map[r.response];
 });
 
-ipcMain.on('dirty', (e, v) => { doc.dirty = v; });
+ipcMain.on('dirty', (e, v) => { doc.dirty = v; retitle(); });
+ipcMain.on('doc:name', (e, name) => { doc.name = name || null; retitle(); });
 
 ipcMain.on('menu:state', (e, state) => {
 	menustate = state;

@@ -78,13 +78,21 @@ App.setwarnings = function (list)
 
 App.inspect = function () { Panel.inspect(); };
 
+/* NAT-03: the in-window name is now the document name plus a dirty dot only
+ * - not the full path, not an asterisk - with the path moved to a tooltip.
+ * The OS window title itself (macOS/Linux: name alone; Windows: "name —
+ * app", since titleBarOverlay means the taskbar reads document.title) is
+ * main's to set, from the same {path, dirty} it already owns (BUG-08); main
+ * has no way to know the level's own display name, though, so that much
+ * still comes from here on every call. */
 App.retitle = function ()
 {
 	const n = App.doc.json.level.information.name || 'untitled';
+	const el = $('name');
 
-	$('name').textContent = n + (App.path ? '  —  ' + App.path : '') +
-		(App.dirty ? ' *' : '');
-	document.title = n + ' - Pellizzola Brothers Studio';
+	el.textContent = n + (App.dirty ? ' •' : '');
+	el.title = App.path || '';
+	api.retitle(n);
 	tabs();
 };
 
