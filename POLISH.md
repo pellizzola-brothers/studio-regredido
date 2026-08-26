@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The forty-three items below have shipped and are removed from the findings
+The forty-eight items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -608,7 +608,9 @@ through `--space-7` (a 2/4/6/8/12/16/24 progression), `--font-size`/
 (`--row-sm`/`--row`/`--row-lg`, replacing `--bar`, `--tabs`, `.hdr`'s 24px,
 `#status`'s 22px and `li`'s `1px 10px 1px 18px` padding with three named,
 derived rows) - plus radius, elevation, motion and z-index tokens, defined but
-not yet consumed (VIS-07/VIS-08/VIS-09 will). The line-box token is named
+not yet consumed (VIS-08/VIS-09 will; VIS-07 has since consumed the colour
+tokens this same commit added, `--surface-hover`/`--surface-active`/
+`--fg-disabled`, done — see "Already completed"). The line-box token is named
 `--line-box`, not `--line` as the audit's own draft proposed, because `--line`
 already names the separator-colour token shipped with VIS-01 and the two would
 otherwise silently overwrite each other in `:root`. GEO-02 (band heights) and
@@ -803,8 +805,8 @@ constraint - so it is derived instead from a legible file name in `ch` units
 ceiling wide enough for the palette's default four-across layout or the
 inspector's widest field without ballooning into empty space on an ultrawide
 display. User-resizing that overrides this default, per the finding's own
-closing note ("the proportion is the default, not a cage"), is GEO-04 and
-remains open. Verified with the probe harness: at this machine's measured
+closing note ("the proportion is the default, not a cage"), is GEO-04, done -
+see "Already completed" below. Verified with the probe harness: at this machine's measured
 1536px window width, `#right` computed to `199.672px` (`clamp(132px, 13% =
 199.68px, 320px)`, matching by hand) and `#side` to `161.266px` (10.5% of
 1536, above its own floor); the palette rendered 4 whole 32px columns in that
@@ -832,6 +834,120 @@ holding the new script's content; opening a second script tab immediately
 after reused the same editor instance with no second load, showing the
 second script's own content; a screenshot confirms the editor renders
 correctly end-to-end after the lazy load.
+
+---
+
+#### VIS-05 — The application has never been rendered in its own typeface
+
+Shipped: `fonts/JetBrainsMono-Regular.woff2` (OFL-licensed, licence included
+as `fonts/JetBrainsMono-LICENSE.txt`) is now bundled and loaded via a
+`font-display: block` `@font-face` in `style.css`, so the whole chrome does
+not reflow after first paint. The two `<b>` elements that existed purely for
+layout - `tab()`'s label and `list()`'s row name, both in `app.js` - are now
+`<span>`s, and the `font-weight: normal` overrides that used to fight them
+are gone, since only the 400 weight ships. `code.js`'s Monaco theme already
+pointed at the same family; it now actually resolves it instead of falling
+back by accident. Verified with the probe harness's own canvas metrics
+probe: `"JetBrains Mono"` now measures 93.6px for `"mmmmmmmmmmlli"` at 12px,
+distinct from the fallback stack's unchanged 103.34px - previously all five
+families in the audit's own test, including a deliberately nonexistent one,
+measured identically; a screenshot of the running app shows the real
+typeface's glyph shapes throughout.
+
+---
+
+#### NAT-04 — The custom hotbar duplicates what belongs in the menu
+
+Shipped, per-platform as the finding's own "Recommended" section asked:
+macOS hides the hotbar entirely (`html[data-platform="darwin"] .acts {
+display: none }`, `style.css`) since the menu bar already carries New/Open/
+Save/Save As with the same accelerators regardless of window framing;
+Windows/Linux keep it, now a real toolbar - `role="toolbar"`, per-button
+tooltips carrying the platform's own accelerator glyphs (`⌘N`/`Ctrl+N`, read
+from `api.platform`), and one Tab stop with arrow-key roving via the same
+`roving()` helper A11Y-01 gave the palette, file lists and tab strip.
+Verified with the probe harness on macOS: `.acts` computes `display: none`;
+forcing it visible (simulating Windows/Linux, not run on real hardware)
+confirms `ArrowRight` moves both focus and the roving tabindex from "new" to
+"open", and tooltips read `"new (⌘N)"` / `"save as (⌘⇧S)"`.
+
+---
+
+#### UX-04 — Zoom has no controls, no indicator, and no fit-width
+
+Shipped: `Grid.fit()` (`grid.js`) now takes the smaller of the width-fit and
+height-fit scales instead of height alone - `Grid.fitH()`/`Grid.fitW()` keep
+the single-axis behaviour available as explicit commands, per the finding's
+own "keep fit-height as an explicit command" note. `Grid.zoomto()`/
+`Grid.zoomby()` zoom about the canvas's own centre, driving a new View menu
+(`menu.js`: Zoom In/Out, Actual Size, Fit Height/Width/All, and Toggle Full
+Screen - which had no home since NAT-01's menu shipped without a View menu,
+closing the §12 "Full screen" regression too) and a new `#zoom` status-bar
+button showing the live percentage, opening a native 25/50/100/200%/Fit
+quick-menu (`main.js`'s `menu:zoom`, mirroring NAT-05's row-menu pattern) on
+click. Verified with the probe harness: `Grid.fitH()` on this window
+reproduced the audit's own finding almost exactly (z = 0.469, ~4.6% of the
+level's width visible, against the audit's measured 3.7%); `Grid.fit()` now
+clamps to `ZMIN` and shows ~72.5% of the width at full height instead;
+`zoomby(ZOOM_STEP)`/`zoomto(1)`/`fitW()` all move the camera as expected; a
+patched `Menu.buildFromTemplate` confirms the View menu template carries all
+seven items with Zoom In enabled on the level tab and a `togglefullscreen`
+role.
+
+---
+
+#### VIS-07 — There is no interaction-state system
+
+Shipped: new `--surface-hover`/`--surface-active` tints apply through one
+generic `button` rule to every button in the app; `li`/`.tab` get the same
+tints plus a shared "selected" contract - accent text, `--surface-selected`,
+and a `--border-strong` accent marker on the edge each reads naturally from
+(`li.on`'s left edge, a vertical list; `.tab.on`'s bottom edge, where it
+meets the content it opens) - closing the finding's own complaint that
+`li.on`/`.tab.on`/`.cell.on` were three unrelated mechanisms for one
+semantic. A new `--fg-disabled` (3.48-4.56:1 against every surface it sits
+on, computed the same way VIS-01 tuned `--dim`/`--acc-text`) replaces
+`opacity: .35` for every disabled control, including `#props`'s read-only
+fields, which had no disabled styling of their own before this. The
+`.mi.off` case the finding's own "Current" section cited is moot - NAT-05
+deleted the DOM context menu `.mi` belonged to. Verified with the probe
+harness: the disabled playtest button's computed colour now reads `#786a9c`
+(was ≈1.5:1, effectively invisible, under `opacity: .35` on `--acc-text`);
+opening a script tab shows `.tab.on::after` and its row's `li.on::before`
+both computing to a 2px `rgb(123, 86, 186)` (`--acc`) marker, with the row's
+own background at `--surface-selected`; a screenshot confirms both markers
+render and the palette's sprites are unaffected by the new hover/active
+tints.
+
+---
+
+#### GEO-04 — Panels cannot be resized
+
+Shipped: `#body` (`style.css`) is now a CSS grid - `var(--side) var(--split)
+minmax(0,1fr) var(--split) var(--right)` - with four keyboard-operable
+splitters (`layout.js`, new): `#side | #stage` and `#stage | #right` drag an
+absolute length clamped to GEO-03's own `--side-min`/`--side-max`/
+`--right-min`/`--right-max` tokens (read live via a hidden probe element,
+since a `calc()`-based custom property's own computed value does not resolve
+to a px number the way a real layout box's does); `#scripts | #midis` and
+`#palette | #props` (new `--scripts-h`/`--props-h` tokens) drag a plain
+percentage within a 15-85% floor and ceiling, since neither split has a
+content-driven min/max of its own yet (GEO-05/GEO-06, still open). Each
+splitter is `role="separator"`, drags via Pointer Events with the OS cursor
+locked to the whole document for the gesture's duration, and double-click or
+Enter removes the override so the panel goes back to tracking the window
+through the stylesheet's own default. Persisted to `localStorage` - view
+state, never the `.lvl` (`CLAUDE.md`). `Grid.resize()`'s existing
+`ResizeObserver` on `#wrap` (PERF-04, done) picks up the canvas's new size
+with no additional wiring. Verified with the probe harness: a synthetic drag
+on the side splitter moves `#side` from its clamp()-derived 161px to exactly
+250px and persists `{"side":250}`; double-click removes the override and
+`#side` returns to exactly its pre-drag width; `ArrowRight` moves it a
+further 16px with `aria-valuenow` tracking; the same sequence for the
+scripts/midis split moves `--scripts-h` from 60% to 30% and back. A full
+regression pass through the real gesture path confirmed paint, undo/redo,
+entity placement, script create/rename/delete, MIDI import and a save-as/
+open round trip all still work with the new grid layout in place.
 
 ---
 
@@ -932,51 +1048,53 @@ named (GEO-11); a window resize no longer reallocates the canvas backing
 store on every observed frame (PERF-04); and Monaco - several megabytes of
 JavaScript the Level Editor tab never touches - now loads on the first script
 tab a session opens instead of unconditionally at boot (ARCH-08) — see
+"Already completed" above for all five. Most recently of all: the app is
+finally rendered in its own bundled typeface instead of a silent per-platform
+fallback (VIS-05); the New/Open/Save/Save As hotbar is gone on macOS, where
+the menu bar already carried it, and is a real per-platform toolbar on
+Windows/Linux (NAT-04); every button, row and tab now shares one hover/
+active/selected/disabled treatment instead of three unrelated mechanisms for
+"selected" and an effectively-invisible disabled state (VIS-07); zoom has a
+status-bar indicator, a quick-menu, a View menu, and a `Grid.fit()` that fits
+the level instead of one axis of it (UX-04); and the side panels, the
+scripts/MIDI split and the palette/inspector split are all user-resizable
+with keyboard-operable splitters that persist across sessions (GEO-04) — see
 "Already completed" above for all five. The shell's remaining problems are
 below.
 
 ### The three biggest remaining sources of perceived unpolish
 
-1. **Geometry is mostly real now; resizing is what's left.** GEO-01 gave the
-   stylesheet its one spacing/row/type scale (done); the side panels are now
-   proportional and clamped to a content-driven minimum instead of frozen at
-   184 px/212 px, and the palette's cells are an integer 32 px instead of a
-   fractional 42.25 px stretch (GEO-03/GEO-07, both done — see "Already
-   completed"). What the panels still cannot do is be dragged wider or
-   narrower by the user - the proportion is a *default*, not yet an
-   overridable one (GEO-04) - and `#props { flex: 0 1 46% }` / `#scripts
-   { flex: 1 1 60% }` are still unexplained fractions of their own (GEO-05,
-   GEO-06).
-2. **Most of the rest is still not native.** Window controls, context menus,
-   the window title/proxy-icon/edited-dot and window-state persistence are
-   now the OS's own (NAT-02, NAT-05, NAT-03, NAT-10, see "Already
-   completed"), but a custom title row remains for its New/Open/Save
-   buttons, and there is still no recent documents, no `open-file` handler,
-   no file association, no single-instance lock, no drag-and-drop, no icon,
-   no packaging config, no `nativeTheme`. Most of the Electron APIs that
-   exist precisely to make this application feel native are still
-   unreferenced anywhere in the tree (verified by grep).
-3. **The typeface is a fiction.** Measured in the running app: the strings
-   `"JetBrains Mono"`, `"DejaVu Sans Mono"`, `ui-monospace`, `monospace` and
-   the deliberately bogus `"NoSuchFontXYZ"` all render at **exactly
-   103.341796875 px** for the same test string. Every entry falls through to
-   the platform default. Studio has never been seen in the font it was designed
-   for, and it looks materially different on macOS (SF Mono), Windows
-   (Consolas) and Linux (DejaVu Sans Mono) (VIS-05).
+1. **Packaging is the largest remaining native gap.** Window controls,
+   context menus, the hotbar, the window title/proxy-icon/edited-dot and
+   window-state persistence are all native or OS-driven now (NAT-02, NAT-04,
+   NAT-05, NAT-03, NAT-10, see "Already completed"), but there is still no
+   recent documents, no `open-file` handler, no file association, no
+   single-instance lock, no drag-and-drop, no icon, no packaging config, no
+   `nativeTheme` (NAT-06 through NAT-09, NAT-15, NAT-17). Most of the
+   Electron APIs that exist precisely to make this application feel native
+   are still unreferenced anywhere in the tree (verified by grep).
+2. **There is still no motion, radius or elevation system.** The tokens
+   exist (`--dur-*`/`--ease`, `--radius-*`, `--elev-*`, GEO-01, done) but
+   nothing consumes them yet: every state change is an instantaneous swap,
+   every surface is a hard rectangle, and the app has exactly one shadow, on
+   a context menu that no longer even exists (VIS-08, VIS-09).
+3. **Geometry's remaining loose ends are small but still arbitrary.** The
+   spacing/row/type scale, proportional and clamped side panels, integer
+   palette cells and user-resizable splitters are all real now (GEO-01,
+   GEO-03, GEO-07, GEO-04, all done — see "Already completed"). What is left
+   is smaller: `#props { flex: 0 0 var(--props-h) }` / `#scripts { flex: 0 0
+   var(--scripts-h) }` still *default* to the same unexplained 46%/60%
+   fractions as before a splitter existed to drag them from (GEO-05, GEO-06).
 
 ### The highest-impact improvements
 
-In order of user-visible payoff per unit of work. Three of the original four
-are done — `titleBarStyle`/`titleBarOverlay` in place of the fake dots
-(NAT-02), native `Menu.popup()` context menus (NAT-05), and the spacing/row/
-type token scale plus proportional panels (GEO-01/VIS-04, GEO-03), all see
-"Already completed" — and are not repeated below. The fourth is narrower than
-originally scoped: the panels are proportional now, so what remains is making
-them user-resizable with splitters (GEO-04).
-
-| # | Change | Why |
-|---|--------|-----|
-| 1 | Bundle JetBrains Mono as a woff2 | The app finally looks like its own design, identically on all three platforms |
+All four of the original items — `titleBarStyle`/`titleBarOverlay` in place
+of the fake dots (NAT-02), native `Menu.popup()` context menus (NAT-05), the
+spacing/row/type token scale plus proportional, user-resizable panels
+(GEO-01/VIS-04, GEO-03/GEO-04), and bundling JetBrains Mono as a woff2
+(VIS-05) — are now done, see "Already completed" above. Nothing remains in
+this list; §13's roadmap is the next place to look, where NAT-07 (packaging)
+is the only item left in its "High" tier.
 
 ---
 
@@ -1100,10 +1218,10 @@ relationship to the surrounding chrome is VIS-18, not this). `main.js`'s
 `backgroundColor` and `chrome.js`'s `BAR` remain the two documented, necessary
 duplicates (each must be known before any CSS has loaded). Not every token has
 a consumer yet: radius, elevation, motion and z-index are defined but unused,
-waiting on VIS-08/VIS-09. Panel widths are proportional and clamped, and the
-palette's cells are an integer multiple of the sprite (GEO-03/GEO-07, done -
-see "Already completed"); user-resizing that overrides the proportional
-default is GEO-04, still open. There is still exactly **one** shadow
+waiting on VIS-08/VIS-09. Panel widths are proportional and clamped, the
+palette's cells are an integer multiple of the sprite, and the panels are
+user-resizable with keyboard-operable splitters (GEO-03/GEO-07/GEO-04, all
+done - see "Already completed"). There is still exactly **one** shadow
 (`0 6px 20px rgba(0,0,0,.55)`), **one** non-circular
 radius in use (the scrollbar thumb's, now a token relationship rather than a
 coincidence - NAT-20, done), and **zero** transitions or animations applied
@@ -1166,43 +1284,6 @@ is served if a `.git` directory is present, which it is.
 ---
 
 ### 4.2 Native platform (NAT)
-
----
-
-#### NAT-04 — The custom hotbar duplicates what belongs in the menu
-
-**Category** Native · **Severity** Medium · **Priority** P1 · **Affects** UI, UX
-
-**Current.** `index.html:11-16` renders four text buttons — `new`, `open`,
-`save`, `save as` — in the title bar, wired at `app.js:521-522`. `CLAUDE.md`
-records the reasoning: "The window is frameless, so there is no native menu bar
-to hang them on."
-
-**Why it's a problem.** The premise is only true on Windows and Linux. On macOS
-the menu bar is at the top of the *screen*, entirely independent of window
-framing, so a frameless window is no reason to duplicate File commands inside
-the content area. Meanwhile on all three platforms the commands are *only*
-reachable there — they are not in any menu — so the app has one command surface
-where it should have two complementary ones.
-
-**Recommended.** The menu (shipped, see "Already completed") is the canonical
-command surface on every platform. The hotbar's fate is per-platform:
-- **macOS** — remove the four text buttons. Everything they do is in File, with
-  the same shortcuts. The title bar becomes: real traffic lights, document
-  name, dirty dot. This is what a Mac app looks like.
-- **Windows / Linux** — keep an in-window command surface, because with
-  `titleBarStyle: 'hidden'` there is no visible menu bar. But make it a proper
-  toolbar: icon buttons with tooltips carrying the accelerator
-  ("Save (Ctrl+S)"), a `role="toolbar"` with arrow-key roving tabindex, and the
-  same `ACTS` dispatch as the menu. Optionally offer a "hamburger" menu button
-  that calls `Menu.popup()` with the full application menu — the pattern VS
-  Code and Windows Terminal both use.
-
-**Implementation.** `body[data-platform]` gates hotbar visibility in CSS; the
-buttons keep working through the shared command table.
-
-**Risks.** Discoverability on macOS: users who learned the buttons lose them.
-Acceptable — they move to the place users look first.
 
 ---
 
@@ -1526,78 +1607,37 @@ tokens that come out of it are collected in §6.
 
 ---
 
-#### GEO-04 — Panels cannot be resized
-
-**Category** Layout / UX · **Severity** High · **Priority** P1 · **Affects** UI, UX
-
-**Current.** No splitters exist. The panels are proportional and clamped now,
-not fixed pixels (GEO-03, done — see "Already completed"), but still not
-user-resizable: the file manager, canvas and inspector widths are set by CSS
-alone; the scripts/MIDI split and the palette/inspector split are fixed
-percentages (GEO-05, GEO-06).
-
-**Why it's a problem.** This is the single most requested affordance in any
-editor with side panels, and its absence is felt constantly: a level author
-working on scripts wants a wide file list; one placing tiles wants the panels
-out of the way. Every comparable tool — VS Code, Aseprite, Tiled, Blender —
-has draggable splitters.
-
-**Recommended.** Four splitters: `#side | #stage`, `#stage | #right`,
-`#scripts | #midis`, `#palette | #props`.
-
-**Implementation.** Convert `#body` to CSS Grid with named columns
-(`grid-template-columns: var(--side) var(--split) 1fr var(--split)
-var(--right)`), and the two `aside`s to grid rows likewise - `--side`/`--right`
-already resolve to a clamped value (GEO-03, done), so a splitter drag need
-only overwrite that custom property within its own `--side-min`/`--side-max`/
-`--right-min`/`--right-max` bounds, already defined in `style.css` `:root`.
-A splitter is a `<div role="separator" tabindex="0" aria-orientation="vertical"
-aria-valuenow=…>`; pointer-drag updates the custom property; **arrow keys move
-it too** (that is what makes `role="separator"` honest and the layout
-keyboard-accessible). Double-click resets to the design proportion (removing
-the drag override, not just re-deriving the same number, so the panel goes
-back to tracking the window again). Persist to `localStorage` — this is
-per-user view state, not document state, so it must not go anywhere near the
-`.lvl`.
-
-The splitter's hit area must be larger than its visual width: a 1 px rule with
-a 6–8 px transparent grab zone, and `cursor: col-resize` / `row-resize` -
-the same per-state-cursor mechanism NAT-13 (done — see "Already completed")
-already established for the canvas, extended to a new element.
-
-**Risks.** `Grid.resize()` is driven by a `ResizeObserver` on `#wrap`
-(`grid.js:75`), so the canvas follows automatically, and the reallocation a
-splitter drag would otherwise trigger on every observed frame is now
-coalesced through `requestAnimationFrame` and skipped when the target pixel
-dimensions haven't changed (PERF-04, done — see "Already completed") - the
-stutter risk this finding's own text originally warned about is closed.
-
----
-
 #### GEO-05 — `#scripts` 60 % / `#midis` 40 % is arbitrary and ergonomically backwards
 
 **Category** Layout · **Severity** Medium · **Priority** P2 · **Affects** UI, UX
 
-**Current.** `style.css:116-117` — `#scripts { flex: 1 1 60% }`,
-`#midis { flex: 1 1 40% }`.
+**Current.** `style.css` — `#scripts { flex: 0 0 var(--scripts-h) }`,
+`#midis { flex: 1 1 auto }`, `--scripts-h: 60%`. The split is user-draggable
+now (GEO-04, done - see "Already completed"), but the *default* - what a
+fresh document, or a double-click reset, shows - is still the same
+unexplained 60/40 the audit originally measured, now a token instead of a
+literal but no more principled a number for it.
 
-**Why it's a problem.** Both fractions are unexplained, and the split ignores
-content entirely. A level typically has a handful of scripts and zero or one
-MIDI files; the screenshot shows the consequence — the `midi` header sits at
-the vertical centre of the panel with two large empty regions above and below
-it, in a brand-new document with nothing in either list. Forty per cent of the
-file manager is permanently reserved for a list that is usually empty.
+**Why it's a problem.** Both fractions are unexplained, and the default split
+ignores content entirely. A level typically has a handful of scripts and zero
+or one MIDI files; the screenshot shows the consequence — the `midi` header
+sits at the vertical centre of the panel with two large empty regions above
+and below it, in a brand-new document with nothing in either list. Forty per
+cent of the file manager is permanently reserved by default for a list that
+is usually empty.
 
-**Recommended.** Content-driven with a floor and a ceiling:
+**Recommended.** Content-driven with a floor and a ceiling, replacing
+`--scripts-h`'s default value rather than the mechanism GEO-04 already built
+around it:
 ```
 #scripts, #midis { flex: 0 1 auto; min-height: calc(var(--row) * 3); }
 #scripts { max-height: 70%; }
 ```
-so each section is as tall as its contents, both stay scrollable, neither can
-collapse to nothing, and the free space goes to whichever list is longer.
-Combined with the `#scripts | #midis` splitter (GEO-04) and collapsible section
-headers (a disclosure triangle on `.hdr`), which also gives the empty MIDI
-section somewhere to go.
+so each section is as tall as its contents by default, both stay scrollable,
+neither can collapse to nothing, and the free space goes to whichever list is
+longer - a user's own drag still overrides it, exactly as it overrides the
+current 60/40 default today. Collapsible section headers (a disclosure
+triangle on `.hdr`) also give the empty MIDI section somewhere to go.
 
 **Depends on.** VIS-12 (empty states) — an empty list should say so, not be a
 void.
@@ -1608,20 +1648,23 @@ void.
 
 **Category** Layout · **Severity** Low · **Priority** P2 · **Affects** UI
 
-**Current.** `style.css:191`. The inspector takes 46 % of the right column;
-the palette takes the rest.
+**Current.** `style.css` — `#props { flex: 0 0 var(--props-h) }`,
+`--props-h: 46%`. User-draggable now (GEO-04, done - see "Already
+completed"), but the default is the same unreconciled 46 % as before, now a
+token instead of a literal.
 
 **Evidence of intent.** The design splits the right panel at y = 486 within a
 body running 122 → 815: items 364 px (52.5 %), properties 329 px (47.5 %).
 So 46 % is an approximation of a design value that was never written down.
 
-**Recommended.** Either state the design ratio as a named token
-(`--right-split: 47.5%`, with a comment pointing at the SVG), or — better —
+**Recommended.** Either state the design ratio as `--props-h`'s new default
+value directly (`47.5%`, with a comment pointing at the SVG), or — better —
 make it content-driven like GEO-05: the inspector is as tall as its fields,
-the palette takes the remainder, with a splitter and a minimum. The inspector's
-height genuinely varies (the level view has seven controls, the entity view
-has six, the definition view three), so a fixed fraction is wrong for at least
-two of the three states.
+the palette takes the remainder, with a minimum - the splitter itself no
+longer needs building, GEO-04 already did that part. The inspector's height
+genuinely varies (the level view has seven controls, the entity view has six,
+the definition view three), so a fixed fraction is wrong for at least two of
+the three states.
 
 ---
 
@@ -1745,94 +1788,6 @@ the build is worse than no design file.
 
 ---
 
-#### VIS-05 — The application has never been rendered in its own typeface
-
-**Category** Visual · **Severity** High · **Priority** P1 · **Affects** UI
-
-**Current.** `style.css:28` — `font: 12px/1.5 'JetBrains Mono',
-'DejaVu Sans Mono', ui-monospace, monospace`. `code.js:48` repeats a variant of
-the same stack for Monaco. Neither font is bundled; there is no `@font-face`
-anywhere and no font file in the tree.
-
-**Evidence.** Measured in the running app with a canvas metrics probe on the
-string `mmmmmmmmmmlli` at 12 px:
-
-```
-"JetBrains Mono"     103.341796875
-"DejaVu Sans Mono"   103.341796875
-"ui-monospace"       103.341796875
-"monospace"          103.341796875
-"NoSuchFontXYZ"      103.341796875
-```
-
-Identical to the last decimal, including for a deliberately non-existent
-family. Every entry falls through to the platform default.
-
-**Why it's a problem.** The design is specified in JetBrains Mono; the app has
-never been seen in it. Worse, the fallback differs by platform — macOS resolves
-`monospace` to Menlo/SF Mono, Windows to Consolas, Linux to whatever
-fontconfig picks — so the app's metrics, weight and character width differ on
-every platform, which cascades into every `ch`-based or text-width-dependent
-layout decision made afterwards.
-
-**Recommended.** Bundle the font. JetBrains Mono is OFL-licensed, so
-redistribution is permitted with the licence file included.
-
-**Implementation.**
-1. Add `fonts/JetBrainsMono-Regular.woff2` (and `-Bold` if any weight above 400
-   is ever used — currently `font-weight: normal` is forced in two places,
-   `style.css:87` and `:129`, which is itself a smell: `<b>` is being used for
-   layout and then de-bolded. Use a `<span>` and delete the override).
-2. `@font-face { font-family: 'JetBrains Mono'; src: url(fonts/…) format('woff2');
-   font-display: block; }` — `block` rather than `swap`, because a reflow of
-   the entire chrome after first paint is worse than a few milliseconds of
-   invisible text in a local app with a local font.
-3. The CSP already permits it: `font-src 'self' app: data:` (`index.html:2`).
-4. Keep the fallback stack for safety, but it should now never be reached.
-5. Point Monaco at the same family (`code.js:48` already does) so the editor
-   and the chrome match — today they both fall back, so they match by accident.
-6. Include the OFL licence in the repo and in the packaged app (NAT-07).
-
-**Risks.** ~90 KB per weight. Subset to Latin + the few glyphs the UI uses
-(`×`, `▶`, `+`) if size matters; measure first.
-
----
-
-#### VIS-07 — There is no interaction-state system
-
-**Category** Visual · **Severity** Medium · **Priority** P1 · **Affects** UI
-
-**Current.** The only interaction state in the entire application is `:hover`,
-and it is always the same mechanism: swap the text colour from `--dim` to
-`--fg`. There is:
-
-- no `:active` / pressed state on any control;
-- no distinct **selected** state — `li.on`, `.tab.on` and `.cell.on` each use
-  a different mechanism (colour only; colour + background; border + background)
-  for the same semantic;
-- a **disabled** state that is only `opacity: .35` (`style.css:41`), applied
-  to a colour that already fails contrast — the disabled `▶` button computes
-  to roughly **1.5:1**, effectively invisible (A11Y-08);
-- `.mi.off` compounding it further: `color: var(--dim)` *and* `opacity: .45`,
-  landing near **1.3:1**.
-
-**Recommended.** A five-state contract, applied identically to every
-interactive surface (rows, tabs, palette cells, buttons, menu items):
-
-| State | Treatment |
-|---|---|
-| rest | `--fg` text on the surface colour |
-| hover | surface tint (`--surface-hover`), text unchanged |
-| active/pressed | deeper tint, no transform |
-| selected | `--acc-text` text + `--surface-selected` + a 2 px accent marker on the leading edge |
-| focus-visible | the ring already shipped (VIS-06, see "Already completed"), composable with any of the above |
-| disabled | `--fg-disabled` at ≥3:1, **plus** `cursor: default`, **plus** `aria-disabled`; never opacity alone |
-
-Selected-and-focused must be distinguishable from selected-alone — that is what
-the composable ring buys.
-
----
-
 #### VIS-08 — There is no motion at all
 
 **Category** Visual · **Severity** Low · **Priority** P2 · **Affects** UI
@@ -1953,14 +1908,17 @@ different effective sizes and alignments. Meanwhile the project **has an icon
 set**: `textures/icons/` contains `gear.png`, `hammer.png`, `plus_sign.png`,
 `minus_sign.png`, `three_dee.png`, `placeholder.png`.
 
-**Why it's a problem.** Text glyphs inherit the text font, so they change shape
-with the fallback (VIS-05), do not align optically with adjacent labels, cannot
-be sized independently of the text, and centre inconsistently — visible in the
-screenshot, where the palette's `+` sits low in its cell.
+**Why it's a problem.** Text glyphs inherit the text font - no longer a moving
+target across platforms now that the font itself is bundled (VIS-05, done —
+see "Already completed"), but still not an icon: they do not align optically
+with adjacent labels, cannot be sized independently of the text, and centre
+inconsistently — visible in the screenshot, where the palette's `+` sits low
+in its cell.
 
 **Recommended.** A small inline-SVG icon set with one size token
 (`--icon: 16px`) and `currentColor` fill, so icons take the text colour and
-therefore participate in the state system (VIS-07) for free. Use SVG, not the
+therefore participate in the state system (VIS-07, done — see "Already
+completed") for free. Use SVG, not the
 PNGs: `textures/icons/*.png` are 32 px pixel-art assets meant for the *game's*
 UI, and scaling them into a 16 px chrome button will alias (the same fractional
 scaling problem GEO-07 fixed for the palette, done - see "Already completed").
@@ -2002,9 +1960,11 @@ illustration; one line and one link.
 
 **Current.** `index.html:23-24` — a `▶` button, `disabled`, with
 `title="Playtest is inert: the game cannot load .lvl archives yet
-(game/todo.txt 3.1)"`. Rendered at `opacity: .35` over `--acc`, it computes to
-roughly 1.5:1 — a barely-visible glyph in the corner of the tab strip
-(confirmed in the screenshot).
+(game/todo.txt 3.1)"`. Still a barely-discoverable glyph in the corner of the
+tab strip with no visible "soon" affordance and no screen-reader explanation -
+though it is no longer near-invisible: VIS-07 (done, see "Already completed")
+replaced `opacity: .35` with `--fg-disabled`, so the button's own contrast is
+now 3.48-4.56:1 rather than the ≈1.5:1 the original audit measured.
 
 `CLAUDE.md` documents the reasoning and it is honest: the button renders per
 the design, and the game genuinely cannot load `.lvl` yet (`game/todo.txt`
@@ -2018,7 +1978,7 @@ step 3.1, minizip + jansson).
    right home for a not-yet-implemented command.
 2. `aria-disabled` plus `aria-describedby` pointing at the explanation, so the
    reason reaches a screen reader (A11Y-08).
-3. Raise the disabled contrast to ≥3:1 (VIS-07).
+3. Disabled contrast ≥3:1 is done (VIS-07, see "Already completed").
 4. When the game does gain `.lvl` support, the implementation is: write the
    document to `app.getPath('temp')`, spawn the game binary with it, and stream
    its stderr into the status bar. Worth recording in `CLAUDE.md` next to the
@@ -2235,39 +2195,6 @@ users will read as "3 things were undone".
 
 ---
 
-#### UX-04 — Zoom has no controls, no indicator, and no fit-width
-
-**Category** UX · **Severity** Medium · **Priority** P1 · **Affects** UX
-
-**Current.** Zoom is wheel-only - Ctrl+wheel or a pinch, since NAT-11 (done,
-see "Already completed") gave a bare wheel event to panning instead. There is
-no numeric indicator, no zoom in/out command, no 100 % command, and
-`Grid.fit()` fits the **height** only (`grid.js:163`).
-
-**Why fit-height alone is a problem.** A level is 540 columns × 100 px = 54 000
-world pixels wide. In the measured default window, `Grid.fit()` on a 12-row
-level produced `z = 0.606`, at which the visible canvas (1 204 CSS px) shows
-1 204 / 0.606 ≈ 1 986 world px — **3.7 % of the level's width**. The user's
-first view of any level is a narrow slice, with no overview and no indication
-that 96 % of the level is off-screen to the right.
-
-**Recommended.**
-- **Zoom indicator** in the status bar showing the percentage, clickable to
-  open a menu of 25/50/100/200 % and Fit.
-- **Commands** for zoom in/out (⌘+/⌘−), 100 % (⌘0 or ⇧⌘0), Fit Height, Fit
-  Width, Fit All — in a new View menu, following the same `cmd`/`ACTS`
-  dispatch the shipped menu (NAT-01, see "Already completed") already uses for
-  File and Edit; there is no View menu yet.
-- **`Grid.fit()` should fit the level, not one axis** by default: take the
-  smaller of the width-fit and height-fit scales, clamped to `ZMIN`. Keep
-  fit-height as an explicit command since it is the useful one while editing.
-- A **minimap or overview strip** is the real answer for 540-column levels.
-  Scope it as a follow-up (§13, Nice-to-have), but the horizontal scrollbar
-  (`#hbar`) is already the right place to host one: render a downsampled level
-  strip into its track.
-
----
-
 #### UX-05 — The editing verb set is thin
 
 **Category** UX · **Severity** Medium · **Priority** P2 · **Affects** UX
@@ -2311,8 +2238,10 @@ slightly lighter background (`style.css:187`) — a 1 px purple border on a
 border was easy to miss on the old 42.25 px fractional one and still is on
 the new integer one), among 31 similar cells.
 
-**Recommended.** Strengthen the selected state per VIS-07 (accent border **and**
-a filled corner marker **and** a background step), and mirror it in the status
+**Recommended.** Strengthen the selected state further still (VIS-07, done -
+see "Already completed", already gave `.cell.on` the accent border + fill
+background it now shares with `li.on`/`.tab.on`; a filled corner marker on
+top of that is this finding's own remaining scope), and mirror it in the status
 bar: `tool: brick` / `tool: air (eraser)` / `tool: chapeleira`. The status bar
 is already the right place and is currently carrying only a cursor position and
 a stale message.
@@ -2737,13 +2666,16 @@ would become invisible.
 
 **Category** Accessibility · **Severity** Low · **Priority** P2 · **Affects** UI
 
-**Current.** Disabled = `opacity: .35`. Error = the text turns `#ff8f8f`.
-Selected = the text turns `--acc`. Each is a colour-only distinction, failing
-WCAG 1.4.1 (Use of Colour), and each is invisible under forced colours.
+**Current.** Error = the text turns `#ff8f8f` - still colour-only, still
+invisible under forced colours. Disabled and selected are no longer colour-
+alone (VIS-07, done - see "Already completed"): disabled gets `--fg-disabled`
+plus `cursor: default` (still no `aria-disabled` attribute, this finding's
+own remaining scope for that state), and selected rows/tabs get a
+leading-edge marker alongside their colour and fill change.
 
-**Recommended.** Pair every state with a non-colour cue: disabled gets
-`aria-disabled` and a cursor change; errors get an icon and a prefix; selection
-gets a leading-edge marker (VIS-07). None of these costs layout.
+**Recommended.** Pair every remaining colour-only state with a non-colour cue:
+disabled gets `aria-disabled`; errors get an icon and a prefix. None of these
+costs layout.
 
 ---
 
@@ -3002,7 +2934,7 @@ window and menu layers.
 | App identity | `.icns`; bundle id `com.pellizzolabrothers.studio` (`productName`, `app.setName()` and `setAboutPanelOptions` are already shipped, NAT-01) | NAT-07, NAT-17 |
 | Window chrome | `titleBarStyle: 'hiddenInset'` + `trafficLightPosition`; the fake dots are deleted; the green button is real full screen, not `maximize()` — done, see "Already completed" | NAT-02 |
 | Title | Document name only; `setRepresentedFilename` for the proxy icon; `setDocumentEdited` for the close-button dot. Not a path, not an asterisk — done, see "Already completed" | NAT-03 |
-| Toolbar | Remove the New/Open/Save hotbar — it duplicates File, and the menu bar exists regardless of window framing. | NAT-04 |
+| Toolbar | The New/Open/Save hotbar is gone — the menu bar carries File regardless of window framing — done, see "Already completed" | NAT-04 |
 | Context menus | `Menu.popup()` — done, see "Already completed". Ctrl+click must still not erase. | NAT-05, NAT-12 |
 | Open Recent | `addRecentDocument` — feeds both the File menu and the Dock icon menu. | NAT-06, NAT-17 |
 | File association | `CFBundleDocumentTypes` for `.lvl` via electron-builder; handle `app.on('open-file')`, including before `whenReady`. | NAT-07 |
@@ -3018,7 +2950,7 @@ window and menu layers.
 | Area | Do this | Finding |
 |---|---|---|
 | Window chrome | `titleBarStyle: 'hidden'` + `titleBarOverlay: {color, symbolColor, height}` so Windows draws its own caption buttons, correctly placed top-right and themed — done, see "Already completed" (implemented against Electron's documented behaviour; not yet run on real Windows hardware). Re-pushing the colours on an OS theme change is still open. | NAT-02, NAT-15 |
-| Toolbar | The application menu is already set unconditionally (NAT-01, shipped) so its accelerators work even with no visible menu bar; keep an in-window toolbar as the visible surface, since `titleBarStyle: 'hidden'` shows none. Consider a hamburger that calls `Menu.popup()`. | NAT-04 |
+| Toolbar | The hotbar stays, since `titleBarStyle: 'hidden'` shows no visible menu bar - now a real `role="toolbar"` with accelerator tooltips and roving tabindex — done, see "Already completed" (implemented against Electron's documented behaviour; not yet run on real Windows hardware). A hamburger that calls `Menu.popup()` was not added. | NAT-04 |
 | Title | `Document — Pellizzola Brothers Studio`, with dirty state reflected in the OS title, not only in the DOM — done, see "Already completed" (implemented against Electron's documented `titleBarOverlay`/`setTitle` behaviour; not yet run on real Windows hardware) | NAT-03 |
 | File association | Registry entries + `.ico` via electron-builder; handle the path in `process.argv` **and** in `second-instance`. | NAT-07, NAT-08 |
 | Single instance | Required — without it every double-clicked `.lvl` launches a whole new app. | NAT-08 |
@@ -3038,13 +2970,13 @@ chosen deliberately, not as the default the other two inherit.
 |---|---|---|
 | Window chrome | Landed as `frame: true`, not `titleBarOverlay` — done, see "Already completed": Electron's Linux `titleBarOverlay` support is inconsistent across desktops and was untestable on the machine this shipped from, so guessing at it was judged worse than the documented fallback, which the audit itself names as correct here. Letting the WM decorate also means the fake macOS dots never applied on Linux at all, on this platform or any other. | NAT-02 |
 | Button layout | Resolved as a side effect of the `frame: true` choice above: `org.gnome.desktop.wm.preferences.button-layout` is now entirely the WM's own to honour, since Studio no longer draws window controls itself on any platform. | NAT-02 |
-| Toolbar | The application menu is already set (NAT-01, shipped) and GNOME may surface parts of it in the shell; keep the in-window toolbar as on Windows. | NAT-04 |
+| Toolbar | Same as Windows — a real toolbar, not four bare buttons — done, see "Already completed" (not run on real Linux hardware); GNOME may also surface parts of the menu itself in the shell. | NAT-04 |
 | Context menus | Native menus inherit the GTK theme — the fastest single change to stop looking foreign — done, see "Already completed" (not run on real Linux hardware). | NAT-05 |
 | Dialogs | GNOME convention: destructive action leftmost, "Discard" is the right word here (unlike macOS/Windows) — done, see "Already completed", NAT-21. Sentence case elsewhere is not yet applied. | VIS-10 |
 | File association | `.desktop` file + MIME XML (`application/x-pellizzola-level`) + hicolor icons via electron-builder; handle `process.argv`. | NAT-07 |
 | Recent files | `addRecentDocument` writes `recently-used.xbel`, honoured by GTK file choosers. | NAT-06 |
 | Single instance | Required. | NAT-08 |
-| Fonts | The `DejaVu Sans Mono` fallback is the *only* one likely to be present, and it differs in metrics from JetBrains Mono — bundling the font matters most here. | VIS-05 |
+| Fonts | The `DejaVu Sans Mono` fallback was the *only* one likely to be present, and differed in metrics from JetBrains Mono — bundling the font (done, see "Already completed") matters most here, since Linux had no other realistic path to it. | VIS-05 |
 | Wayland | Fractional scaling changes `devicePixelRatio` without a CSS resize — done, see "Already completed" (not yet run on real Wayland hardware) | BUG-12 |
 | DE variance | State explicitly in `CLAUDE.md` which desktops were tested. "Linux" is not one target. | — |
 
@@ -3082,8 +3014,8 @@ GEO-11 — see "Already completed").
 | # | Value | Where | What should determine it | Finding |
 |---|---|---|---|---|
 | 3 | `.hdr` `24px` (now `--row-sm`, 26px — GEO-02, done) | `style.css:107` | Design says 36 px, still not adopted | GEO-13 |
-| 8 | `#scripts 60%` / `#midis 40%` | `style.css:116-117` | Content height, with a floor and a splitter | GEO-05 |
-| 9 | `#props 46%` | `style.css:191` | Content height, or the design's 47.5 % as a named token | GEO-06 |
+| 8 | `--scripts-h: 60%` / `#midis` remainder | `style.css` | Content height, with a floor - the splitter itself is done (GEO-04) | GEO-05 |
+| 9 | `--props-h: 46%` | `style.css` | Content height, or the design's 47.5 % as the token's default - the splitter itself is done (GEO-04) | GEO-06 |
 | 11 | `.tab max-width: 260px` | `style.css:79` | `24ch` — a statement about filenames | GEO-08 |
 | 12 | `textarea height: 48px` | `style.css:208` | `calc(var(--line-box) * 3)` | GEO-08 |
 | 13 | Gaps `14px` on `.acts`, `10px` on `#title` | `style.css` passim | `--space-*` scale (the `li`/`.tab`/`#palette`/`#props`/`.grp` gaps that were also here are now tokenised — GEO-01, done) | GEO-08 |
@@ -3116,10 +3048,11 @@ floated, since `--acc` already clears the 3:1 non-text threshold everywhere it
 is used (VIS-02). Colour composes for the canvas via `--acc-rgb`, a decimal
 triple (`123, 86, 186`), rather than a fourth `--acc-alpha`-shaped token — the
 same number, read once by `tokens.js` into a `'rgba(...)'` string, so canvas
-alpha and the CSS accent can never drift apart. `--surface-hover` (VIS-07) is
-not yet defined — there is no consumer for it yet, and GEO-01's own
-implementation note says introduce a token with the component that needs it,
-not before.
+alpha and the CSS accent can never drift apart. `--surface-hover`/
+`--surface-active`/`--fg-disabled` (VIS-07, done — see "Already completed")
+are defined and consumed now, exactly per GEO-01's own implementation note
+that a token should arrive with the component that needs it, not before -
+the same note `--split`/`--scripts-h`/`--props-h` (GEO-04, done) followed too.
 
 Not yet consumed by anything (defined, waiting on the findings that will use
 them): `--radius-*`, `--elev-*` (VIS-09), `--dur-*`/`--ease` (VIS-08),
@@ -3157,34 +3090,34 @@ the finding that resolves it.
 
 | Area | Current state | Resolution |
 |---|---|---|
-| **Typography** | One family that never loads (VIS-05); font sizes down to two now (GEO-01, done), `10px`/`13px` remain; `font-weight: normal` forced onto `<b>` in two places, so `<b>` is being used purely for layout | Bundle the font; replace `<b>` with `<span>` and delete the overrides (VIS-05, GEO-08) |
+| **Typography** | Fixed — the app renders in its own bundled font now, identically on all three platforms, and the two `<b>`-plus-`font-weight: normal` layout hacks are `<span>`s instead (VIS-05, done — see "Already completed"); font sizes down to two (GEO-01, done), `10px`/`13px` remain | GEO-08 |
 | **Spacing** | Fixed — a 7-step scale now covers most of the stylesheet (GEO-01, done — see "Already completed"); `.acts`'/`#title`'s two gaps and a few `10px`/`13px` one-offs remain | GEO-08 |
 | **Rows / heights** | Fixed — `--row-sm`/`--row`/`--row-lg`, derived from the 18px line box, now cover the title bar, tab strip, section headers, status bar and file-manager rows (GEO-01, GEO-02, done — see "Already completed") | A11Y-04's hit-area padding and VIS-11's row icon are the remaining, unrelated pieces |
 | **Colour** | Fixed — one `:root` definition, consumed by `grid.js`'s canvas and `code.js`'s Monaco theme through `tokens.js` instead of each restating it (VIS-04, done — see "Already completed") | — |
-| **Contrast** | Resting and accent text, and control borders, are fixed (VIS-01, VIS-02, done — see "Already completed"); still failing: disabled ≈1.5:1, `.mi.off` ≈1.3:1 | `--fg-disabled` at ≥3:1, never opacity alone (VIS-07) |
+| **Contrast** | Fixed — resting and accent text, control borders, and disabled text (VIS-01, VIS-02, VIS-07, all done — see "Already completed"); `.mi.off` is moot, its `<div>` menu deleted by NAT-05 | — |
 | **Borders** | `--line` is now split from `--control-border` (VIS-02, done); still one width only, no distinct strong/emphasis weight | Add `--border-strong` |
 | **Radius** | `50%` and `6px`, nothing else; design specifies 26 px window/tab radius | Three-step radius scale; adopt the tab flare (VIS-09, GEO-13) |
 | **Shadows** | Exactly one, on the context menu, which is about to become native | Two-step elevation; panel `--elev-1` per the design's filters (VIS-09, GEO-13) |
 | **Scrollbars** | Fixed — all five containers now share one tokenised treatment with `scrollbar-gutter: stable` (NAT-20/GEO-09, done — see "Already completed"); Monaco's own scrollbar keys are still VS Code's defaults | Monaco keys set (VIS-18) |
-| **Hover** | The only state; always the same mechanism (text colour swap) | Surface tint, text unchanged (VIS-07) |
-| **Active / pressed** | Does not exist | Deeper tint (VIS-07) |
+| **Hover** | Fixed — every button, row and tab gets a `--surface-hover` tint, text unchanged (VIS-07, done — see "Already completed") | — |
+| **Active / pressed** | Fixed — a deeper `--surface-active` tint on `:active` (VIS-07, done — see "Already completed") | — |
 | **Focus** | Fixed — a global `:focus-visible` ring, 2 px + 2 px offset, now applies everywhere including the canvas (VIS-06, done — see "Already completed") | — |
-| **Disabled** | `opacity: .35` only; ≈1.5:1; reason lives only in `title` | `--fg-disabled` at ≥3:1 + `aria-disabled` + cursor (VIS-07, VIS-13, A11Y-08) |
-| **Selected** | Three different mechanisms for one semantic (`li.on`, `.tab.on`, `.cell.on`) | One treatment: accent text + surface + leading-edge marker (VIS-07) |
+| **Disabled** | Fixed — `--fg-disabled` at ≥3:1 replaces `opacity: .35` everywhere, including `#props`'s read-only fields (VIS-07, done — see "Already completed"); `aria-disabled` on top of the native `disabled` attribute remains open | VIS-13, A11Y-08 |
+| **Selected** | Fixed — one treatment across `li.on`/`.tab.on`/`.cell.on`: accent text (or border, for the palette's icon swatches) + surface fill + a leading-edge marker (VIS-07, done — see "Already completed") | — |
 | **Icons** | Five text glyphs at four effective sizes, three of them `+`; an unused icon set exists in `textures/icons/` | Inline-SVG set, `currentColor`, one `--icon` token (VIS-11) |
 | **Text alignment** | `.hdr` left in the file manager, right in the inspector — deliberate mirroring per the design; keep | — |
 | **Capitalisation** | Four conventions, `midi`/`MIDI` in one interface | Lowercase in-window, platform convention on OS surfaces, proper nouns always (VIS-10) |
-| **Cursor** | Fixed on the canvas — seven states (`crosshair`/`copy`/`grab`/`grabbing`/`not-allowed`) driven by `Grid.cursor()` (NAT-13, done — see "Already completed"); `col-resize` on splitters still needs GEO-04's splitters to exist first | GEO-04 |
-| **Tooltips** | Native `title=` on some controls, absent on tabs, window controls and rows; Title Case among lowercase labels | Keep native `title` (correct choice — it is the platform's tooltip); add the missing ones; include accelerators on toolbar buttons (NAT-04, VIS-10) |
+| **Cursor** | Fixed — seven states on the canvas (`crosshair`/`copy`/`grab`/`grabbing`/`not-allowed`) driven by `Grid.cursor()` (NAT-13, done — see "Already completed"), and `col-resize`/`row-resize` on the four splitters (GEO-04, done — see "Already completed") | — |
+| **Tooltips** | Native `title=` on some controls, absent on tabs and rows; Windows/Linux's hotbar carries accelerators now (NAT-04, done — see "Already completed"); Title Case among lowercase labels elsewhere | Add the missing ones; VIS-10 for capitalisation |
 | **Loading** | Fixed for the editor — Monaco now shows a plain "loading editor…" text while it lazy-loads (ARCH-08, done — see "Already completed"); long saves still block silently | Progress for long ops (NAT-19) |
 | **Empty states** | Two blank voids in the file manager on every launch | One line + one action per list (VIS-12) |
 | **Error states** | `var(--danger)` text, colour-only; save failures now reach a native dialog regardless of tab (BUG-07, shipped), and every error is announced to a screen reader (A11Y-05, shipped) — still colour-only visually | Icon (VIS-14, A11Y-08) |
 | **Context menus** | Fixed — native `Menu.popup()`, real keyboard navigation and platform appearance (NAT-05, done — see "Already completed") | — |
 | **Dialogs** | The unsaved-changes prompt now has a per-platform template, `detail`, `noLink`, and string verdicts (NAT-21, BUG-10, done — see "Already completed") | — |
 | **Forms** | Borders now visible via `--control-border` (VIS-02, done); still: a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `appearance: none` on the select control only; one shared `.field` class (NAT-16, VIS-15) |
-| **Buttons** | Text-only, no border except `.act`, no pressed state, `.acts` and `.hdr button` and `#add` all differently sized | One button component with size variants (VIS-07, GEO-08) |
-| **Resizers / splitters** | Do not exist | Four splitters, keyboard-operable (GEO-04) |
-| **Panels** | Flat, no elevation; widths are proportional and clamped now, not fixed (GEO-03, done — see "Already completed"); not collapsible or user-resizable | Elevation, collapsible sections, resizing (GEO-04, GEO-05, VIS-09) |
+| **Buttons** | One shared hover/active/disabled treatment now (VIS-07, done — see "Already completed"); still no border except `.act`, and `.acts`/`.hdr button`/`#add` remain differently sized | One button component with size variants (GEO-08) |
+| **Resizers / splitters** | Fixed — four keyboard-operable splitters (GEO-04, done — see "Already completed") | — |
+| **Panels** | Widths are proportional, clamped and user-resizable now (GEO-03/GEO-04, done — see "Already completed"); still flat, no elevation, and not collapsible | Elevation, collapsible sections (GEO-05, VIS-09) |
 | **Overlays** | NAT-05 (done) removed the app's only `z-index` along with the DOM context menu it belonged to; `--z-*` is defined (GEO-01, done) with nothing to convert yet | — |
 | **Animation** | None at all | Three tokens, applied to states and panels, with `prefers-reduced-motion` (VIS-08) |
 | **Canvas indicators** | Purple-on-purple, no contrast guarantee, unreachable by forced colours | Two-tone strokes (VIS-16) |
@@ -3203,16 +3136,17 @@ with Recent (UX-09); recent documents in the menu and the Dock/JumpList
 `.lvl` in the file manager (NAT-07).
 
 **Editing** — rectangle fill, flood fill, duplicate, arrow-key nudge (UX-05);
-zoom controls, an indicator, and a fit that actually fits (UX-04); a visible
-active tool (UX-06); Escape cancels and reverts a gesture (UX-12); trackpad
-scroll now pans instead of zooming, and pinch/Ctrl+wheel zooms (NAT-11,
-shipped, see "Already completed"); the canvas now shows a cursor for every
-gesture - crosshair, copy, grab, grabbing, not-allowed (NAT-13, shipped, see
-"Already completed").
+a visible active tool (UX-06); Escape cancels and reverts a gesture (UX-12);
+trackpad scroll now pans instead of zooming, and pinch/Ctrl+wheel zooms
+(NAT-11, shipped, see "Already completed"); the canvas now shows a cursor for
+every gesture - crosshair, copy, grab, grabbing, not-allowed (NAT-13,
+shipped, see "Already completed"); zoom now has controls, an indicator, and a
+fit that actually fits the level instead of one axis of it (UX-04, shipped,
+see "Already completed").
 
 **Navigating** — a vertical scrollbar (GEO-10); resizable panels that remember
-their size (GEO-04); tabs that overflow into a scroller instead of vanishing
-(UX-16); keyboard tab switching (NAT-14).
+their size are shipped (GEO-04, see "Already completed"); tabs that overflow
+into a scroller instead of vanishing (UX-16); keyboard tab switching (NAT-14).
 
 **Files and scripts** — double-click to open a script (UX-01); row menus that
 carry row actions only (UX-02); rename that validates as you type and does not
@@ -3226,8 +3160,9 @@ playability warnings before the game rejects the level are all shipped
 (BUG-02, BUG-03, BUG-07, UX-10, BUG-11 — see "Already completed"). Still open:
 destructive actions that report what they did (UX-08).
 
-**Feedback** — status messages that expire, errors that do not, plus persistent
-zoom/size/entity-count/tool fields (VIS-14, UX-06); progress for long
+**Feedback** — status messages that expire, errors that do not, plus
+persistent size/entity-count/tool fields (VIS-14, UX-06 — the zoom field
+itself is shipped, UX-04, see "Already completed"); progress for long
 operations (NAT-19); undo and redo are visible in the Edit menu now (NAT-01,
 shipped) but still need to say what they undid rather than how many steps
 remain (UX-03).
@@ -3244,7 +3179,7 @@ still requires a pointer (A11Y-03).
 
 | Requirement | Status | Fix |
 |---|---|---|
-| 1.4.1 Use of Colour | Fail — disabled, error and selected states are colour-only | A11Y-08, VIS-07 |
+| 1.4.1 Use of Colour | Partial — disabled and selected are no longer colour-only (VIS-07, done); error still is | A11Y-08 |
 | 1.4.3 Contrast (Minimum) | Fixed — was 2.5–2.9:1, now 4.77–5.91:1 for the affected text | VIS-01, done |
 | 1.4.11 Non-text Contrast | Fixed — was 1.18:1, now 3.12–3.59:1 for control borders | VIS-02, done |
 | 1.4.12 Text Spacing | Fail — all-`px` layout, no response to OS text size | A11Y-06 |
@@ -3361,12 +3296,12 @@ relitigated.
 | Right-click semantics | ❌ Ctrl+click erases | ✅ | ✅ | NAT-12 |
 | Keyboard shortcuts | ⚠️ conflicts with default menu; layout-dependent | ⚠️ same | ⚠️ same | NAT-14 |
 | Scrollbars | ✅ shipped - one tokenised treatment, `scrollbar-gutter: stable` (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | — |
-| Fonts | ⚠️ falls back to SF Mono | ⚠️ Consolas | ⚠️ DejaVu | VIS-05 |
+| Fonts | ✅ shipped - bundled, identically on all three platforms (VIS-05) | ✅ shipped (VIS-05) | ✅ shipped (VIS-05) | — |
 | High contrast / forced colours | ⚠️ Increase Contrast ignored | ❌ untested, will break | ⚠️ | A11Y-07 |
 | Reduced motion | n/a (no motion) → required with VIS-08 | same | same | VIS-08, A11Y-07 |
 | Screen reader | ⚠️ the palette, file lists and tab strip are now named and role-bearing (A11Y-01, shipped), and status/error messages are announced (A11Y-05, shipped); everything else VoiceOver reaches is still unlabelled | ⚠️ same for Narrator | ⚠️ same for Orca | A11Y-02 |
 | Notifications | ❌ | ❌ | ❌ | NAT-19 |
-| Full screen | ❌ regression: the default menu's Toggle Full Screen (⌃⌘F) had no replacement when NAT-01's own menu shipped without a View menu | ⚠️ | ⚠️ | needs a new View menu item, unfiled |
+| Full screen | ✅ shipped - a new View menu carries `role: 'togglefullscreen'`, closing the regression NAT-01's own menu opened by shipping without a View menu (UX-04) | ✅ shipped (UX-04) | ✅ shipped (UX-04) | — |
 | Quit / lifecycle | ✅ ⌘Q works (`role: 'appMenu'`, NAT-01); a hung/dirty renderer no longer wedges close (BUG-09, shipped) | ✅ shipped (BUG-09) | ✅ shipped (BUG-09) | — |
 | Packaging / signing | ❌ | ❌ | ❌ | NAT-07 |
 
@@ -3393,16 +3328,15 @@ at the top of this document. Nothing remains in this tier.
 
 | ID | Title |
 |---|---|
-| NAT-04 | Hotbar duplicates what belongs in the menu |
 | NAT-07 | No packaging, icons, or file association |
-| GEO-04 | Panels cannot be resized |
-| VIS-05 | The app has never rendered in its own typeface |
-| VIS-07 | No interaction-state system |
-| UX-04 | Zoom has no controls, indicator, or working fit |
 
-NAT-05, NAT-11, NAT-20, ARCH-02, ARCH-03, ARCH-08, BUG-12, GEO-01, GEO-03,
-GEO-07, GEO-11, NAT-03, NAT-10, NAT-13, PERF-01 and VIS-04, the other sixteen
-items that were listed here, are done — see "Already completed".
+NAT-04, NAT-05, NAT-11, NAT-20, ARCH-02, ARCH-03, ARCH-08, BUG-12, GEO-01,
+GEO-03, GEO-04, GEO-07, GEO-11, NAT-03, NAT-10, NAT-13, PERF-01, VIS-04,
+VIS-05 and VIS-07, and UX-04, the other twenty-one items that were listed
+here, are done — see "Already completed". NAT-07 - packaging, icons, file
+association, code signing and notarisation across three platforms, none of
+which this pass had the infrastructure (certificates, a release pipeline) to
+complete or verify - is the only item remaining in this tier.
 
 ### Medium — real friction, contained fixes
 
@@ -3440,7 +3374,9 @@ items that were listed here, are done — see "Already completed".
 
 ### Nice to have — genuinely optional, none of it required to call Studio polished
 
-- Minimap / overview strip rendered into the `#hbar` track (UX-04).
+- Minimap / overview strip rendered into the `#hbar` track - floated in
+  UX-04's own text (done, see "Already completed") as the real answer for
+  540-column levels, scoped out here as a separate, larger feature.
 - Palette search and collapsible groups (UX-07).
 - Rectangular selection, clipboard, multi-select entities (UX-05) — changes
   `Grid.sel`'s shape; scope deliberately.
@@ -3499,10 +3435,10 @@ context menus; `#menu` and ~55 lines of `app.js` are deleted, reusing the
 completed" for both. **NAT-03** (title, represented filename, edited dot -
 NAT-02, its prerequisite, was done; document identity itself was already in
 main, BUG-08) and **NAT-10** (window state persistence with display
-validation) are also done — see "Already completed" for both.
+validation) are also done — see "Already completed" for both. **NAT-04**
+(hotbar per platform - ARCH-03, its prerequisite, was done, and the menu
+itself did not block it either) is also done — see "Already completed".
 
-3. **NAT-04** hotbar per platform (ARCH-03, its prerequisite, is done; the
-   menu itself no longer blocks this either).
 5. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
    **NAT-06** recent documents; **NAT-09** drag and drop. These four are one
    coherent piece of work and share prerequisites — all can build directly on
@@ -3511,12 +3447,11 @@ validation) are also done — see "Already completed" for both.
 ### Phase 3 — Design system made real
 
 The contrast/focus-ring step originally scheduled here (VIS-01, VIS-02,
-VIS-06) is done — see "Already completed" — so this phase starts one step
-later than originally scoped.
+VIS-06) is done — see "Already completed". **VIS-05** (bundle JetBrains Mono
+- everything measured in the real typeface from here on) and **VIS-07** (the
+five-state contract, applied to every interactive surface) are also done —
+see "Already completed" for both.
 
-6. **VIS-05** bundle JetBrains Mono. Everything after this is measured in the
-   real typeface, so it must precede any type-metric work.
-7. **VIS-07** the five-state contract, applied to every interactive surface.
 8. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
    capitalisation.
 9. **NAT-20 / GEO-09** — done, see "Already completed": one scrollbar
@@ -3533,18 +3468,19 @@ later than originally scoped.
 
 **PERF-04** (resize coalescing) and **GEO-03** (proportional, clamped panel
 widths) are both done — see "Already completed"; PERF-04 was scheduled here
-specifically so a splitter drag would not stutter, and now cannot, since it
+specifically so a splitter drag would not stutter, and it did not, since it
 shipped ahead of the splitters themselves. **GEO-11** (the remaining unnamed
 canvas constants - `FITPAD`, `GRIDMIN`, `SELW`, `BARSLOP`) is also done.
+**GEO-04** (four keyboard-operable splitters, building directly on GEO-03's
+`--side`/`--right`/`--side-min`/`--side-max`/`--right-min`/`--right-max`
+tokens) and **UX-04** (zoom controls and a real fit, including the new View
+menu that also gives Toggle Full Screen a home again - see §12, "Full
+screen") are also done — see "Already completed" for both.
 
-13. **GEO-04** four keyboard-operable splitters, building directly on
-    GEO-03's `--side`/`--right`/`--side-min`/`--side-max`/`--right-min`/
-    `--right-max` tokens; **GEO-05 / GEO-06** content-driven list and
-    inspector heights.
+13. **GEO-05 / GEO-06** content-driven list and inspector heights - the
+    splitters themselves no longer need building.
 14. **GEO-10** vertical scrollbar (NAT-11, its prerequisite, is done - the
-    wheel already scrolls); **UX-04** zoom controls and a real fit, including
-    the new View menu that also gives Toggle Full Screen a home again (see
-    §12, "Full screen").
+    wheel already scrolls).
 15. **NAT-12** canvas context menu and Ctrl+click; **UX-12** gesture cancel
     (**NAT-13** cursors is done — see "Already completed").
 16. **PERF-01** — done, see "Already completed": `Panel.update()` now exists
@@ -3593,11 +3529,11 @@ BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
 ### Dependency summary
 
 ```
-VIS-05 (font) ────────► anything depending on type metrics
-GEO-03 ───────────────► GEO-04 (the min/max/proportion tokens a splitter
-   (done)                drag needs to constrain against already exist)
-
-Done and no longer on this graph: ARCH-07 (checks) unblocked everything below
+Done and no longer on this graph: VIS-05 (font, done) unblocked every
+type-metric-dependent step that follows it, needing nothing from this graph
+itself; GEO-03 (done) unblocked GEO-04 (also done - the min/max/proportion
+tokens a splitter drag needs to constrain against already existed by the time
+the splitters themselves were built); ARCH-07 (checks) unblocked everything below
 it by making every later change verifiable at all; BUG-08 (doc state)
 unblocked NAT-03, NAT-06, NAT-07, NAT-08, NAT-10, UX-10, all of which could
 then build on it directly - NAT-03 and NAT-10 have since shipped, done — see
@@ -3608,7 +3544,7 @@ UX-10/BUG-11 each shipped straight off BUG-08's `doc` module and BUG-02's
 atomic write, also without needing ARCH-03; ARCH-03 (platform) unblocked
 NAT-02 (also done) and VIS-10 (which can now apply the OS-facing
 capitalisation convention it asks for - not yet done), and NAT-02 in turn
-unblocked NAT-03 (now done) and NAT-04 (still open); NAT-05 deleted an entire
+unblocked NAT-03 and NAT-04 (both now done); NAT-05 deleted an entire
 inaccessible subsystem rather than fixing it in place, independently of the
 rest of this graph; NAT-11 unblocked GEO-10 (the wheel now scrolls) and named
 two of GEO-11's eight constants; A11Y-01 (also done, needing nothing from
@@ -3621,10 +3557,11 @@ exactly what this graph said it would: NAT-20 and A11Y-05 both shipped
 straight off it, PERF-01 shipped independently of it (the drag hot path is a
 pure-JS fix, not a token consumer), and GEO-07 and GEO-03 both then shipped
 straight off the `--sprite`/`--space-*`/`--scrollbar` tokens it provided;
-VIS-07/VIS-08/VIS-09/GEO-08/VIS-18/NAT-15's forced-colours work remain open,
-now genuinely unblocked rather than waiting on a foundation that does not
-exist yet; PERF-04 and GEO-11 (grid.js's own remaining unnamed constants)
-each shipped independently, needing nothing from this graph.
+VIS-08/VIS-09/GEO-08/VIS-18/NAT-15's forced-colours work remain open, now
+genuinely unblocked rather than waiting on a foundation that does not exist
+yet (VIS-07 was one of them and has since shipped, also needing nothing
+further from this graph); PERF-04 and GEO-11 (grid.js's own remaining unnamed
+constants) each shipped independently, needing nothing from this graph.
 ```
 
 ---
@@ -3682,12 +3619,16 @@ demonstrably true. Each is checkable, not a matter of opinion.
       `--row`/`--row-lg`, computed from `--line-box`, now drive the title bar,
       tab strip, section headers, status bar and file-manager rows; verified
       with the probe harness: `#tabs` 34px, `#status`/`.hdr` 26px, `li` 30px)
-- [ ] Side panels are proportional, clamped, user-resizable, and their sizes
-      persist. (GEO-03 — proportional and clamped, done: `--side`/`--right`
-      are `clamp()`s of the design's own SVG ratios with content-driven
-      minimums and an ultrawide-safe maximum, verified with the probe
-      harness against this machine's window width. User-resizable and
-      persisted is GEO-04, still open, so the box stays unchecked)
+- [x] Side panels are proportional, clamped, user-resizable, and their sizes
+      persist. (GEO-03 — proportional and clamped: `--side`/`--right` are
+      `clamp()`s of the design's own SVG ratios with content-driven minimums
+      and an ultrawide-safe maximum, verified with the probe harness against
+      this machine's window width. GEO-04 — user-resizable and persisted:
+      four keyboard-operable splitters drag those same tokens directly and
+      write the result to `localStorage`; verified with the probe harness: a
+      synthetic drag moves `#side` from 161px to exactly 250px and persists
+      `{"side":250}`, and double-click removes the override back to the
+      original width)
 - [x] Palette cells are an integer multiple of 32 px, and the column count —
       not the cell size — changes with the panel width. (GEO-07 — `--cell`
       and `repeat(auto-fill, var(--cell))`; verified with the probe harness:
@@ -3710,12 +3651,24 @@ demonstrably true. Each is checkable, not a matter of opinion.
       canvas draw calls and `code.js`'s `THEME` both consume that object;
       verified with the probe harness: `Tokens` matches every `:root` colour
       it names, and `THEME.colors['editorCursor.foreground'] === Tokens.acc`.
-      Radius/elevation/motion/z-index have no consumer yet, so nothing
-      restates them either - VIS-07/VIS-08/VIS-09 are what will)
-- [ ] The app renders in JetBrains Mono, bundled, identically on all three
-      platforms.
-- [ ] Every interactive surface implements the same five states (rest, hover,
-      active, selected, disabled), plus a composable focus ring.
+      Radius/elevation/motion/z-index still have no consumer, so nothing
+      restates them either - VIS-08/VIS-09 are what will; the colour tokens
+      this box is actually about have a new consumer, VIS-07, done - see
+      "Already completed")
+- [x] The app renders in JetBrains Mono, bundled, identically on all three
+      platforms. (VIS-05 — verified with the probe harness's canvas metrics
+      probe: "JetBrains Mono" now measures 93.6px against the fallback
+      stack's unchanged 103.34px for the same string, where before this
+      change all five families measured identically)
+- [x] Every interactive surface implements the same five states (rest, hover,
+      active, selected, disabled), plus a composable focus ring. (VIS-07 —
+      one generic `button` rule plus `li`/`.tab`/`.cell` share
+      `--surface-hover`/`--surface-active`/`--surface-selected`/
+      `--fg-disabled`; verified with the probe harness: the disabled
+      playtest button now computes `#786a9c` instead of an effectively
+      invisible ≈1.5:1; `.tab.on::after`/`li.on::before` both compute a 2px
+      `--acc` marker. VIS-06's ring, already shipped, composes with all of
+      it unchanged)
 - [x] All five scroll containers share one treatment, and the layout does not
       shift between overlay and classic scrollbars. (NAT-20/GEO-09 —
       `#scripts`/`#midis`/`#palette`/`#props`/`#hbar` share one tokenised
@@ -3794,8 +3747,10 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 - [ ] Dragging an entity across a level holds 60 fps with the inspector open.
 - [ ] Panning and zooming perform no forced synchronous layout per frame.
-- [ ] Dragging a splitter does not stutter. (Not yet testable - GEO-04's
-      splitters do not exist; PERF-04's coalescing they would need is done)
+- [ ] Dragging a splitter does not stutter. (GEO-04's splitters exist now and
+      drive the canvas resize through the same `requestAnimationFrame`-
+      coalesced path PERF-04 already built for exactly this; not yet backed
+      by a dedicated frame-timing measurement, so the box stays unchecked)
 - [ ] Cold start to an interactive Level Editor is under one second on a
       mid-range machine, with Monaco loaded lazily. (Monaco loaded lazily is
       done, ARCH-08; the under-one-second cold-start figure itself has not
