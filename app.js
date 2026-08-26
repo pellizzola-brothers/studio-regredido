@@ -182,8 +182,14 @@ App.select = function (id)
 	tabs();
 	if (id === 'level')
 		Grid.resize();
-	else
+	else if (Code.ready)
 		Code.show(id);
+	else
+		/* ARCH-08: the first script tab a session opens is what triggers
+		 * Monaco's lazy load; `done` reads App.tab rather than closing over
+		 * `id`, since the user is free to switch tabs again before a slow
+		 * load finishes. */
+		Code.init(() => { if (App.tab !== 'level') Code.show(App.tab); });
 	sidebar();
 	App.syncmenu();
 };
@@ -679,11 +685,6 @@ addEventListener('DOMContentLoaded', () => {
 		App.retitle();
 		App.setwarnings(r.warnings);
 		App.say('recovered unsaved changes - save to keep them', true);
-	});
-
-	Code.init(() => {
-		if (App.tab !== 'level')
-			Code.show(App.tab);
 	});
 
 	api.blank().then(r => {

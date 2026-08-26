@@ -5,7 +5,8 @@
  * saving the level needs no separate flush. */
 'use strict';
 
-const Code = {ed: null, models: new Map(), path: null, ready: false, quiet: false};
+const Code = {ed: null, models: new Map(), path: null, ready: false, quiet: false,
+	loading: false, pending: []};
 
 /* VIS-04: four of these eleven colours used to be transcribed by hand from
  * style.css's tokens - a copy that could silently drift, and once already
@@ -32,8 +33,31 @@ const THEME = {
 	}
 };
 
+/* ARCH-08: Monaco is several megabytes of JavaScript that the Level Editor -
+ * the tab every session opens first, and the only one most sessions ever use
+ * - never touches.  Code.init() is idempotent: the first call actually loads
+ * it; calls while that load is in flight queue their `done` behind it instead
+ * of starting a second `require(['vs/editor/editor.main'], ...)`; a call once
+ * loaded just runs `done` straight away. App.select() is what makes each of
+ * those three cases happen, calling this on the first script-tab activation
+ * instead of unconditionally at boot. */
 Code.init = function (done)
 {
+	if (Code.ready) {
+		done();
+		return;
+	}
+	if (Code.loading) {
+		Code.pending.push(done);
+		return;
+	}
+	Code.loading = true;
+	Code.pending.push(done);
+
+	const el = $('code');
+	el.textContent = 'loading editor…';
+	el.style.cssText = 'padding: 12px; color: var(--dim)';
+
 	const dir = 'node_modules/monaco-editor/min/vs';
 	const base = new URL(dir + '/', location.href).href;
 
@@ -49,7 +73,9 @@ Code.init = function (done)
 	require.config({paths: {vs: dir}});
 	require(['vs/editor/editor.main'], () => {
 		monaco.editor.defineTheme('pb', THEME);
-		Code.ed = monaco.editor.create($('code'), {
+		el.textContent = '';
+		el.style.cssText = '';
+		Code.ed = monaco.editor.create(el, {
 			theme: 'pb',
 			automaticLayout: true,
 			fontFamily: "'JetBrains Mono','DejaVu Sans Mono',monospace",
@@ -60,7 +86,11 @@ Code.init = function (done)
 			tabSize: 4
 		});
 		Code.ready = true;
-		done();
+		Code.loading = false;
+		const fns = Code.pending;
+		Code.pending = [];
+		for (const fn of fns)
+			fn();
 	});
 };
 

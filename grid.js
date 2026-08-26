@@ -16,12 +16,23 @@ const Grid = {
 	sel: -1,			/* index into level.entities, or -1 */
 	hov: {x: -1, y: -1},
 	pan: null, paint: -1, last: null, moving: false,
-	need: false, fitted: false, dpr: 1
+	need: false, rsz: false, fitted: false, dpr: 1
 };
 
 /* Zoom bounds, shared by Grid.fit() and the wheel handler so the two can
  * never drift apart (NAT-11, GEO-11). */
 const ZMIN = 0.03, ZMAX = 3;
+
+/* GEO-11: the rest of this file's unnamed constants, named and explained once
+ * rather than left as bare numbers at each site. */
+const FITPAD = B;	/* Grid.fit(): one block of margin above and below the level */
+const GRIDMIN = 10;	/* Grid.draw(): stop drawing grid lines once a tile is smaller
+			   than this many device px - below it the lines outweigh
+			   the content */
+const SELW = 2;		/* Grid.draw(): the selection ring's stroke width; the inset
+			   that keeps the stroke inside the tile is derived from it */
+const BARSLOP = 1;	/* Grid.syncbar()/onbar(): the re-entrancy tolerance CLAUDE.md
+			   documents - both sites must agree on the same value */
 
 function elist() { return App.doc.json.level.entities; }
 
@@ -118,21 +129,42 @@ Grid.cursor = function (c)
 	Grid.cv.style.cursor = cur;
 };
 
+/* PERF-04: the ResizeObserver callback used to reallocate the canvas backing
+ * store - a real cost, not just a style write - unconditionally, on every
+ * observed frame; a window drag fires it dozens of times a second.  Coalesced
+ * through requestAnimationFrame like Grid.redraw() already does, and the
+ * reallocation itself is skipped when the target device-pixel dimensions
+ * have not changed (a devicePixelRatio-only change, e.g. BUG-12's
+ * cross-monitor case, still needs it, since it changes the target size at
+ * the same CSS size). */
 Grid.resize = function ()
 {
-	const cv = Grid.cv, r = cv.parentElement.getBoundingClientRect();
+	if (Grid.rsz)
+		return;
+	Grid.rsz = true;
+	requestAnimationFrame(() => { Grid.rsz = false; doresize(); });
+};
 
-	Grid.dpr = devicePixelRatio || 1;
-	cv.width = Math.max(1, Math.round(r.width * Grid.dpr));
-	cv.height = Math.max(1, Math.round(r.height * Grid.dpr));
+function doresize()
+{
+	const cv = Grid.cv, r = cv.parentElement.getBoundingClientRect();
+	const dpr = devicePixelRatio || 1;
+	const w = Math.max(1, Math.round(r.width * dpr));
+	const h = Math.max(1, Math.round(r.height * dpr));
+
+	Grid.dpr = dpr;
 	cv.style.width = r.width + 'px';
 	cv.style.height = r.height + 'px';
+	if (cv.width !== w || cv.height !== h) {
+		cv.width = w;
+		cv.height = h;
+	}
 	if (!Grid.fitted && Grid.a) {
 		Grid.fitted = true;
 		Grid.fit();
 	}
 	Grid.draw();
-};
+}
 
 /* Unpack block_data into the working array. */
 Grid.load = function ()
@@ -199,7 +231,7 @@ Grid.fit = function ()
 
 	/* Never fit *above* 100% - a small level should not be blown up past its
 	 * native pixel size just because the window is large. */
-	Grid.cam.z = Math.max(ZMIN, Math.min(1, r.height / (Grid.h * B + 2 * B)));
+	Grid.cam.z = Math.max(ZMIN, Math.min(1, r.height / (Grid.h * B + 2 * FITPAD)));
 	Grid.cam.x = 0;
 	Grid.cam.y = -B / 2;
 	Grid.redraw();
@@ -227,7 +259,7 @@ Grid.syncbar = function ()
 
 	document.getElementById('hspace').style.width =
 		Math.round(W * B * Grid.cam.z) + 'px';
-	if (Math.abs(bar.scrollLeft - want) >= 1)
+	if (Math.abs(bar.scrollLeft - want) >= BARSLOP)
 		bar.scrollLeft = want;
 };
 
@@ -235,7 +267,7 @@ function onbar()
 {
 	const bar = document.getElementById('hbar');
 
-	if (Math.abs(bar.scrollLeft - Grid.cam.x * Grid.cam.z) < 1)
+	if (Math.abs(bar.scrollLeft - Grid.cam.x * Grid.cam.z) < BARSLOP)
 		return;				/* our own write coming back */
 	Grid.cam.x = bar.scrollLeft / Grid.cam.z;
 	Grid.redraw();
@@ -293,10 +325,13 @@ Grid.draw = function ()
 		}
 	}
 
-	if (B * z >= 10) {
+	if (B * z >= GRIDMIN) {
 		g.strokeStyle = Tokens.gridLine;
 		g.lineWidth = 1;
 		g.beginPath();
+		/* GEO-11: + .5 centres a 1px canvas stroke on a whole device pixel
+		 * rather than straddling two - the one magic number in this file
+		 * that is correct as a bare literal and should stay one. */
 		for (const x of ex) { g.moveTo(x + .5, ey[0]); g.lineTo(x + .5, ey[ey.length - 1]); }
 		for (const y of ey) { g.moveTo(ex[0], y + .5); g.lineTo(ex[ex.length - 1], y + .5); }
 		g.stroke();
@@ -312,8 +347,10 @@ Grid.draw = function ()
 		blit(g, entdefs.get(e.def) || {file: PLACEHOLDER}, sx, sy, s, s);
 		if (i === Grid.sel) {
 			g.strokeStyle = Tokens.acc;
-			g.lineWidth = 2;
-			g.strokeRect(sx + 1, sy + 1, s - 2, s - 2);
+			g.lineWidth = SELW;
+			/* Half the stroke width insets the rect so the stroke itself
+			 * lands inside the tile rather than straddling its edge. */
+			g.strokeRect(sx + SELW / 2, sy + SELW / 2, s - SELW, s - SELW);
 		}
 	}
 

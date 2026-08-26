@@ -56,10 +56,16 @@ function customdefs()
 	return App.doc.json.level.entity_definitions.filter(d => !entdefs.has(d.id));
 }
 
-/* PALCOLS must match style.css's grid-template-columns: repeat(4, 1fr) - the
- * roving tabindex helper needs the row length to move focus up/down a grid
- * that CSS alone lays out. */
-const PALCOLS = 4;
+/* The roving-tabindex helper needs the palette's row length to move focus
+ * up/down a grid that CSS alone lays out. GEO-07 made the column count
+ * itself a function of the panel's width (repeat(auto-fill, var(--cell))),
+ * so a fixed PALCOLS constant would go stale the moment the panel resized -
+ * read it back from the grid's own resolved column list instead, which is
+ * exactly as many columns as are actually on screen. */
+function palcols(el)
+{
+	return getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length || 1;
+}
 
 Panel.palette = function ()
 {
@@ -94,7 +100,7 @@ Panel.palette = function ()
 	el.appendChild(add);
 	items.push(add);
 
-	roving(el, items, PALCOLS);
+	roving(el, items, palcols(el));
 };
 
 function group(parent, name)

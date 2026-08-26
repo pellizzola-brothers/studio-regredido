@@ -60,9 +60,29 @@
 	--row:    calc(var(--line-box) + var(--space-3) * 2);	/* 30px */
 	--row-lg: calc(var(--line-box) + var(--space-4) * 2);	/* 34px - the title bar and tab strip */
 
-	/* ---- panels: unchanged geometry (GEO-03/04, still open) ---- */
-	--side: 184px;
-	--right: 212px;
+	/* ---- sprites: every texture in the library is 32x32 (GEO-07) ---- */
+	--sprite: 32px;
+	--cell: var(--sprite);		/* an integer multiple - x2 for a larger palette, never fractional */
+
+	/* ---- panels: proportional and clamped, not fixed pixels (GEO-03) -----
+	   The percentage is the design's own ratio (Pellizzola Brothers.svg:
+	   157/1504 = 10.44%, 197/1505 = 13.09%), now stated as such instead of
+	   frozen into the pixel values it produced at one particular window
+	   width. Each minimum is content-driven rather than guessed: --right's
+	   is the width the palette needs for three whole cell columns plus its
+	   own padding/gaps and scrollbar gutter (GEO-07, NAT-20); --side's is a
+	   legible file name (in ch, so it tracks the actual font metrics) plus
+	   li's own indent/padding and scrollbar gutter. Each maximum keeps the
+	   panel from ballooning into empty space on an ultrawide display - wide
+	   enough for the palette's default four-across layout or the inspector's
+	   widest field, not a fraction of the window. User-resizing that
+	   overrides this default is GEO-04, still open. */
+	--side-min: calc(16ch + var(--space-6) + var(--space-4) + var(--scrollbar));
+	--side-max: 320px;
+	--side: clamp(var(--side-min), 10.5%, var(--side-max));
+	--right-min: calc(3 * var(--cell) + 2 * var(--space-2) + 2 * var(--space-4) + var(--scrollbar));
+	--right-max: 320px;
+	--right: clamp(var(--right-min), 13%, var(--right-max));
 
 	/* ---- borders, radius, elevation: defined, not yet consumed (VIS-09) ---- */
 	--border: 1px;
@@ -171,6 +191,12 @@ html[data-platform="win32"] #title { padding-right: 138px; }	/* titleBarOverlay 
 	display: flex;
 	flex-direction: column;
 	background: var(--panel);
+	/* A flex item's default min-width is auto, i.e. its content's intrinsic
+	   minimum - normally invisible, but #palette's auto-fill grid (GEO-07)
+	   has a large one (fixed-size tracks don't shrink the way 1fr ones did),
+	   so without this #right ignored its clamped flex-basis outright and sized
+	   itself off the palette's content instead. The standard fix. */
+	min-width: 0;
 }
 #side { flex: 0 0 var(--side); }
 #right { flex: 0 0 var(--right); }
@@ -266,14 +292,25 @@ body.text #code { display: block; }
 body.text #right { display: none; }
 
 /* palette */
+/* GEO-07: repeat(4, 1fr) stretched every cell to whatever quarter of the
+   panel's width was left over - 42.25px for a 32px sprite at the panel's
+   default width, a fractional, shimmering scale factor that also drifted
+   with every resize.  auto-fill with a --cell column keeps every cell an
+   integer multiple of the sprite instead: the column count changes with the
+   panel's width, not the cell size, which is also the correct *behavioural*
+   answer - more room shows more items, not bigger ones. justify-content:
+   start keeps the leftover width (there is always some, since --cell rarely
+   divides the panel's content box exactly) after the last column rather than
+   stretched back into every cell. */
 #palette {
 	display: grid;
 	overflow: auto;
 	flex: 1 1 auto;
 	align-content: start;
+	justify-content: start;
 	gap: var(--space-2);
 	padding: var(--space-4);
-	grid-template-columns: repeat(4, 1fr);
+	grid-template-columns: repeat(auto-fill, var(--cell));
 }
 .grp {
 	padding: var(--space-3) var(--space-1) var(--space-1);
