@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The thirty-one items below have shipped and are removed from the findings
+The thirty-eight items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -597,6 +597,126 @@ per canvas so a resolution change is never left unwatched.
 
 ---
 
+#### GEO-01 — There is no spacing, sizing or type scale
+
+Shipped: `style.css` `:root` gained its one spacing/row/type scale - `--space-1`
+through `--space-7` (a 2/4/6/8/12/16/24 progression), `--font-size`/
+`--font-size-sm`, and a line-box token every row height is derived from
+(`--row-sm`/`--row`/`--row-lg`, replacing `--bar`, `--tabs`, `.hdr`'s 24px,
+`#status`'s 22px and `li`'s `1px 10px 1px 18px` padding with three named,
+derived rows) - plus radius, elevation, motion and z-index tokens, defined but
+not yet consumed (VIS-07/VIS-08/VIS-09 will). The line-box token is named
+`--line-box`, not `--line` as the audit's own draft proposed, because `--line`
+already names the separator-colour token shipped with VIS-01 and the two would
+otherwise silently overwrite each other in `:root`. GEO-02 (band heights) and
+part of GEO-08 (the gaps and font sizes that exactly matched a new scale step)
+are resolved as a side effect - see their own entries. Verified with the probe
+harness: `#tabs` computes to `34px` and `#status`/`.hdr` to `26px` (both
+`--row-lg`/`--row-sm`); after adding a script row, `li` computes to `30px`
+(`--row`) where it previously measured 20px.
+
+---
+
+#### GEO-02 — Chrome band heights are unrelated to each other and to the type
+
+Covered in detail as **GEO-01**, above — the same commit closes both.
+
+---
+
+#### VIS-04 — Colour is defined in four independent places
+
+Shipped: `style.css` `:root` gained the missing surfaces (`--surface-raised`,
+`--surface-selected`, `--canvas-bg`, `--checker-a`/`--checker-b`,
+`--missing-tex`, `--missing-def`, `--scroll-thumb`, `--danger`) and an
+`--acc-rgb` decimal triple so canvas alpha and the CSS accent read from one
+number instead of two. A new `tokens.js` reads the colour custom properties
+once, at load, into a plain `Tokens` object - the piece neither consumer could
+do itself, since a canvas 2D context cannot resolve `var(...)` and Monaco's
+`defineTheme()` wants a plain object literal, not a live stylesheet reference.
+`grid.js`'s canvas clear, grid lines, selection ring, hover cell, level bounds
+and missing-texture swatches all read `Tokens` instead of restating the
+literal; `code.js`'s `THEME` generates its `--fg`/`--acc`/`--tab`/
+`--scroll-thumb`-derived keys from the same object rather than transcribing
+them by hand (the three keys with no existing token to duplicate - `#150f24`,
+`#2e2049`, `#1e1633` - are untouched; giving them a considered relationship to
+the surrounding chrome is VIS-18, not this). `main.js`'s `backgroundColor`
+remains the one documented, necessary duplicate, now with a comment naming
+`--frame` as its source. Verified with the probe harness: `Tokens` matches
+every `:root` colour value it names exactly; `THEME.colors['editorCursor.
+foreground'] === Tokens.acc` and `'editorWidget.background' === Tokens.tab`
+both read `true`; `getComputedStyle()` on a palette cell and a `#props input`
+both compute to `--surface-raised`'s `rgb(23, 16, 42)`.
+
+---
+
+#### NAT-20 — Only one of four scroll containers is styled
+
+Shipped, together with **GEO-09** below since the same commit closes both: new
+`--scrollbar`/`--scrollbar-pad`/`--scrollbar-thumb` tokens (track thickness,
+thumb inset, and the thumb's own thickness derived from the other two, so the
+capsule radius is `--scrollbar-thumb / 2` by construction rather than by the
+coincidence of a too-large radius CSS silently clamps) are now shared by
+`#scripts`, `#midis`, `#palette` and `#props` as well as `#hbar`, with
+`scrollbar-gutter: stable` on the four vertical containers so their content
+width no longer depends on the platform's overlay-vs-classic scrollbar
+convention or the user's "always show scrollbars" setting. Monaco's own
+scrollbar theme keys are untouched - that is VIS-18's scope, not this one's.
+Verified with the probe harness: `getComputedStyle(...).scrollbarGutter` reads
+`"stable"` on all four vertical containers and `"auto"` on `#hbar` (by design -
+a horizontal-only container has no vertical gutter to reserve); a screenshot
+of the running app shows no unstyled system scrollbar in the palette.
+
+---
+
+#### GEO-09 — The horizontal scrollbar band is three mismatched numbers
+
+Covered in detail as **NAT-20**, above — the same commit closes both.
+
+---
+
+#### PERF-01 — The inspector is rebuilt from an HTML string on every cell of an entity drag
+
+Shipped: a new `Panel.update(e)` (`panel.js`) writes the `x`/`y`/`cell` field
+values directly when the inspector is already showing the entity being
+dragged, returning `false` (so the caller falls back to a full rebuild) only
+when it is not. `onmove()`'s entity-move branch (`grid.js`) calls it instead
+of `App.inspect()` on every cell the entity crosses; `onup()` calls the real
+`App.inspect()` once, when the gesture ends, exactly as the audit's own
+"Recommended" section asked. `ARCH-04`'s other call site - the `onchange`
+handlers destroying a field's own caret - is unaffected and still open, though
+`Panel.update()` is now there for it to reuse. Verified with the probe
+harness: instrumented `Panel.inspect()` and drove a synthetic 5-cell entity
+drag directly through `ondown()`/`onmove()`/`onup()` - `Panel.inspect()` was
+called **0** times during the 5-cell drag (previously once per cell, several
+dozen times a second at a fast drag) and **1** time after `onup()`; the
+`#p_x` DOM node's identity was unchanged across the whole drag, confirming no
+rebuild happened; the field's value tracked the entity's position live
+(`"700"` after moving to column 7).
+
+---
+
+#### A11Y-05 — Nothing is announced
+
+Shipped: `#msg` carries `role="status"` and `aria-atomic="true"` in
+`index.html`, present and empty in the DOM at load rather than created when
+the first message arrives, per the audit's own requirement for a reliably
+announced live region. `App.fail()`'s dynamically-created `.err` block gets
+`role="alert"`/`aria-atomic="true"` at creation instead - the audit's
+alternative suggestion, and the correct one here: `role="alert"` is defined to
+announce even a freshly-inserted node, which is what this block always is,
+since `Panel.inspect()` (called immediately before it) wipes `#props` on every
+failure. The audit's literal recommendation to give the *whole* `#status` bar
+`role="status"` was not followed - it would also make every mouse-driven
+cursor-position update (`#cursor`, updated on almost every `mousemove`) a
+live-region announcement, which is noise no user asked for; A11Y-03's own
+keyboard-cursor case is where position genuinely needs announcing, and it now
+has `#msg`'s live region to speak through when it lands. Verified with the
+probe harness: `#msg`'s `role` reads `"status"`; calling `App.fail()` produces
+a `.err` element with `role="alert"`, `aria-atomic="true"` and the failure
+text.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -676,21 +796,29 @@ the canvas backing store re-rendered instead of staying soft (BUG-12); and
 the palette, file manager and tab strip are reachable and operable by
 keyboard for the first time, closing the largest remaining accessibility
 gap outside the canvas itself (A11Y-01) — see "Already completed" above for
-all five. The shell's remaining problems are below.
+all five. Most recently: `style.css` gained its one design-token definition —
+spacing, row heights, type, radius, elevation, motion and z-index alongside
+colour — with `tokens.js` reading the colour tokens for `grid.js`'s canvas and
+`code.js`'s Monaco theme to consume instead of each restating its own copy
+(GEO-01/VIS-04, folding in GEO-02's and GEO-09's band-height and scrollbar-
+token asks); all five scroll containers now share one scrollbar treatment
+instead of just `#hbar` (NAT-20); the inspector no longer rebuilds itself from
+an HTML string on every cell an entity drag crosses (PERF-01); and status
+messages and validation failures now reach a screen reader instead of being
+silent visual-only changes (A11Y-05) — see "Already completed" above for all
+of these. The shell's remaining problems are below.
 
 ### The three biggest remaining sources of perceived unpolish
 
-1. **Geometry is arbitrary.** The stylesheet now contains 24 distinct pixel
-   literals with no scale (was 23; NAT-02's `[data-platform]` padding rules
-   removed a handful tied to the deleted fake dots and `#menu`, and added two
-   of its own — `78px`/`138px`, the space reserved for macOS's/Windows' real
-   window controls — which GEO-01's eventual token pass should name too):
-   chrome bands of 34/32/24/22/13 px unrelated to the
-   18 px line box; side panels pinned at 184 px and 212 px that consume 41 % of
+1. **Geometry is still partly arbitrary.** GEO-01 gave the stylesheet its one
+   spacing/row/type scale and moved the chrome bands (title bar, tab strip,
+   section headers, status bar, file-manager rows) onto it — done, see
+   "Already completed" — but the panels themselves are not yet part of that
+   scale: side panels are still pinned at 184 px and 212 px, consuming 41 % of
    the 960 px minimum window; `#props { flex: 0 1 46% }`; `#scripts { flex: 1 1
-   60% }`; a palette of `repeat(4, 1fr)` that computes to **42.25 px cells for
-   32 px sprites** — a fractional, shimmering scale factor of 1.32 (GEO-01,
-   GEO-03, GEO-07).
+   60% }`; and the palette's `repeat(4, 1fr)` still computes to **42.25 px
+   cells for 32 px sprites** — a fractional, shimmering scale factor of 1.32
+   (GEO-03, GEO-04, GEO-07).
 2. **Most of the rest is still not native.** Window controls, context menus,
    the window title/proxy-icon/edited-dot and window-state persistence are
    now the OS's own (NAT-02, NAT-05, NAT-03, NAT-10, see "Already
@@ -710,15 +838,16 @@ all five. The shell's remaining problems are below.
 
 ### The highest-impact improvements
 
-In order of user-visible payoff per unit of work. Two of the original four
+In order of user-visible payoff per unit of work. Three of the original four
 are done — `titleBarStyle`/`titleBarOverlay` in place of the fake dots
-(NAT-02) and native `Menu.popup()` context menus (NAT-05), both see "Already
-completed" — and are not repeated below.
+(NAT-02), native `Menu.popup()` context menus (NAT-05), and the spacing/row/
+type token scale (GEO-01/VIS-04), all see "Already completed" — and are not
+repeated below. The fourth still needs proportional, splitter-resizable
+panels (GEO-03/GEO-04) on top of the scale GEO-01 now provides.
 
 | # | Change | Why |
 |---|--------|-----|
 | 1 | Bundle JetBrains Mono as a woff2 | The app finally looks like its own design, identically on all three platforms |
-| 2 | One spacing/size scale derived from the 18 px line box; proportional panels with splitters | Removes every arbitrary dimension at once |
 
 ---
 
@@ -823,24 +952,31 @@ Five global-scope modules, coordinated by `App`:
 Rendering is entirely imperative full-subtree rebuilds. There is no diffing,
 no component model and no reactive layer, which is the right choice at this
 size — but it means every rebuild destroys focus, scroll position and caret,
-which matters in the two places it happens on a hot path (PERF-01, UX-15).
+which matters where it happens on a hot path (UX-15; the entity-drag case,
+formerly the more severe of the two, is done — see "Already completed",
+PERF-01).
 
 ### Existing design system
 
-There is a **token seed, not a system**. `style.css` `:root` defines nine
-colour tokens and four layout tokens. Against that:
-
-- Sixteen further colours are written as literals in `style.css`, `grid.js`
-  (`#0b0813`, `rgba(123,86,186,.14)`, `rgba(200,170,255,.75)`, `#7b56ba`,
-  `#4a3a6a`, `#803050`) and `panel.js`/`app.js` inline `cssText`.
-- `code.js` `THEME` is an entirely independent, hand-transcribed copy of the
-  palette for Monaco (11 more literals).
-- There are **no** tokens for spacing, radius, border width, shadow,
-  typography, icon size, duration, easing, or z-index. Twenty-three distinct
-  pixel literals appear in the stylesheet.
-- There is exactly **one** shadow (`0 6px 20px rgba(0,0,0,.55)`), **one**
-  non-circular radius (`6px`, on the scrollbar thumb), and **zero**
-  transitions or animations in the entire application.
+Done — see "Already completed", GEO-01/VIS-04. `style.css` `:root` is now a
+real token system: colour (unchanged from VIS-01/VIS-02's already-shipped
+retune, plus the surfaces VIS-04 added), spacing, row heights derived from the
+line box, radius, elevation, motion and z-index each have exactly one
+definition. `tokens.js` reads the colour custom properties once into a plain
+object; `grid.js`'s canvas draw calls and `code.js`'s Monaco `THEME` both
+consume it instead of restating their own copies of the same values (the
+Monaco keys that are not a restatement of an existing token - `code.js`'s own
+`#150f24`/`#2e2049`/`#1e1633` - are unaffected; giving them a considered
+relationship to the surrounding chrome is VIS-18, not this). `main.js`'s
+`backgroundColor` and `chrome.js`'s `BAR` remain the two documented, necessary
+duplicates (each must be known before any CSS has loaded). Not every token has
+a consumer yet: radius, elevation, motion and z-index are defined but unused,
+waiting on VIS-08/VIS-09; panel widths (184 px/212 px) and the palette's
+fractional cell size are still open (GEO-03/GEO-04/GEO-07); there is still
+exactly **one** shadow (`0 6px 20px rgba(0,0,0,.55)`), **one** non-circular
+radius in use (the scrollbar thumb's, now a token relationship rather than a
+coincidence - NAT-20, done), and **zero** transitions or animations applied
+anywhere.
 
 ### Existing platform abstractions
 
@@ -850,9 +986,13 @@ Done — see "Already completed", ARCH-03. `chrome.js` is now the only place
 `discardbuttons()` (NAT-21) all consume it rather than each holding their own
 check. The renderer knows its OS through `api.platform` and the
 `<html data-platform>` attribute it drives; real per-platform window chrome
-(NAT-02) already keys off it. The ⌘/Ctrl handling, the label capitalisation
-(VIS-10) and the scrollbar assumptions (NAT-20) are not yet ported to use it,
-but the abstraction itself - the thing this finding was about - now exists.
+(NAT-02) already keys off it. The ⌘/Ctrl handling and the label
+capitalisation (VIS-10) are not yet ported to use it, but the abstraction
+itself - the thing this finding was about - now exists. NAT-20's scrollbar
+treatment (done, see "Already completed") turned out not to need a
+platform branch at all: one token-driven `::-webkit-scrollbar` rule plus
+`scrollbar-gutter: stable` behaves correctly under both the overlay and
+classic scrollbar conventions without asking which one is active.
 
 ---
 
@@ -1154,7 +1294,8 @@ that is feature quantity, not polish.
 theming:
 1. **`prefers-contrast: more`** — raise border and text contrast further still
    on top of the VIS-01/VIS-02 retune (done — see "Already completed"); nearly
-   free once the rest of the token block (GEO-01) exists.
+   free now that the rest of the token block exists (GEO-01, done — see
+   "Already completed").
 2. **`forced-colors: active`** (Windows High Contrast) — Chromium overrides
    colours wholesale; make sure the layout does not collapse and that
    canvas-drawn content, which forced colours cannot reach, gets a fallback
@@ -1244,142 +1385,11 @@ something the user just watched happen is noise.
 
 ---
 
-#### NAT-20 — Only one of four scroll containers is styled
-
-**Category** Native / Visual · **Severity** Medium · **Priority** P1 · **Affects** UI
-
-**Current.** `style.css:153-156` styles `#hbar`'s scrollbar — height 12 px,
-`--chrome` track, `#3b285b` thumb with a 3 px `--chrome` border and 6 px
-radius, `--acc` on hover. **Four other elements scroll and are unstyled**:
-`#scripts`, `#midis`, `#palette` (`overflow: auto`), and `#props`.
-
-Measured in the running app: `#palette` has `scrollHeight 463` against
-`clientHeight 438` — it scrolls today, at the default window size, with only
-the built-in catalog loaded. The screenshot shows the resulting light-grey
-system scrollbar running down the right edge of the purple panel.
-
-**Why it's a problem.** It is the exact failure the brief names: one element
-carefully themed, its siblings left default, which reads as unfinished. It is
-also a **layout** problem, not only a cosmetic one: on macOS with "Show scroll
-bars: Always" (and on Windows/Linux, where classic scrollbars are the default),
-a 15 px classic scrollbar is subtracted from the palette's content width, so
-the four fixed columns (GEO-07) get narrower on those platforms than on a Mac
-with overlay scrollbars. The palette's geometry silently differs by platform
-and by an accessibility setting.
-
-**Recommended.**
-1. One shared scrollbar treatment applied to a `.scroll` class (or to
-   `#scripts, #midis, #palette, #props, #hbar` collectively), with the metrics
-   coming from tokens rather than repeated literals.
-2. Use `scrollbar-gutter: stable` on the vertical containers so the reserved
-   width does not change between overlay and classic modes — this is what makes
-   the layout platform-independent.
-3. Keep the styling restrained: a themed scrollbar is fine in an editor, but it
-   must still be the right *width* for the platform and must still respond to
-   the OS's "always show" setting. Set `::-webkit-scrollbar` width from a token
-   and do not fight the overlay behaviour.
-4. Monaco has its own scrollbar implementation and its own theme keys
-   (`scrollbarSlider.background` / `hoverBackground` / `activeBackground`) —
-   currently unset in `code.js`'s `THEME`, so the editor's scrollbars are
-   VS Code's defaults. Add them from the same tokens (VIS-18).
-
-**Platforms.** macOS overlay scrollbars hide the problem for most Mac users and
-expose it for anyone who has changed the setting; Windows and Linux see it
-always.
-
----
-
 ### 4.3 Layout and geometry (GEO)
 
 The brief asks that arbitrary geometry be eliminated. This section identifies
 every instance and states what should determine the value instead. The design
 tokens that come out of it are collected in §6.
-
----
-
-#### GEO-01 — There is no spacing, sizing or type scale
-
-**Category** Design system · **Severity** High · **Priority** P0 · **Affects** UI, Maintainability
-
-**Current.** Counted across `style.css`, the pixel literals are (re-counted
-after NAT-02 and NAT-05, both done — see "Already completed" — removed the
-fake dots' and `#menu`'s literals and added two of their own for the real
-window controls' reserved space):
-
-```
-1px ×9    10px ×8   2px ×7   12px ×7   8px ×5   6px ×5   4px ×4
-3px ×2    18px ×2   16px ×2  14px ×2   13px ×2  11px ×2
-5px ×1    22px ×1   24px ×1  32px ×1   34px ×1  48px ×1
-78px ×1   138px ×1  184px ×1 212px ×1  260px ×1
-```
-
-Twenty-four distinct values (was 23), of which 5, 22, 24, 32, 34, 48, 78, 138,
-184, 212 and 260 are one-offs. `78px`/`138px` (`style.css`'s
-`[data-platform]` rules) are the two NAT-02 added - the space macOS's inset
-traffic lights and Windows' caption buttons need - and are exactly the kind
-of literal this finding is about: real, necessary, and still not derived from
-anything named. There is no relationship between any of them and nothing
-names them.
-
-**Why it's a problem.** Every new component invents its own spacing, so
-consistency has to be maintained by hand and cannot be. It is also the root
-cause of most findings in §4.4: mismatched paddings, unaligned rows,
-inconsistent gutters and inconsistent control heights are all downstream of
-having no scale.
-
-**Recommended.** One scale, derived from the type, since this is a
-text-dominant tool UI:
-
-```
---font-size:  12px            /* the design's body size */
---line:       18px            /* 12 × 1.5, the existing line-height */
---space-1:     2px            /* hairline separation, icon nudges  */
---space-2:     4px
---space-3:     6px
---space-4:     8px            /* the base gutter                   */
---space-5:    12px            /* = --font-size; panel padding      */
---space-6:    16px
---space-7:    24px
-```
-A 2/4/6/8/12/16/24 progression: dense enough for a tool UI, coarse enough that
-neighbouring steps are visibly different. Not a geometric series for its own
-sake — the steps are the ones the design actually uses, deduplicated.
-
-Control heights derive from the line box:
-
-```
---row-sm: calc(var(--line) + var(--space-2) * 2)   /* 22px — status bar     */
---row:    calc(var(--line) + var(--space-3) * 2)   /* 30px — list rows      */
---row-lg: calc(var(--line) + var(--space-4) * 2)   /* 34px — title bar, tabs*/
-```
-This replaces `--bar: 34px` (which becomes `--row-lg`, and is now *explained*),
-`--tabs: 32px`, `.hdr` 24 px, `#status` 22 px, and the `li` padding — five
-unrelated numbers become three named rows with a stated origin.
-
-**Implementation.** Introduce the tokens, then convert one component per
-commit, deleting literals as you go. When a literal resists conversion, that is
-a finding: either the scale is wrong or the component is.
-
----
-
-#### GEO-02 — Chrome band heights are unrelated to each other and to the type
-
-**Category** Layout · **Severity** Medium · **Priority** P1 · **Affects** UI
-
-**Current.** `--bar: 34px` (title), `--tabs: 32px` (tab strip), `.hdr`
-`flex: 0 0 24px` (section headers), `#status` `flex: 0 0 22px`, `#hbar`
-`flex: 0 0 13px`. The 12 px/1.5 body text gives an 18 px line box; none of the
-five is 18 plus a symmetric padding.
-
-Specifically, `.hdr` at 24 px gives 3 px of leading above and below an 18 px
-line — visually tight and not a value on any scale. `#status` at 22 px with
-11 px text (`style.css:249`) gives a 16.5 px line box in 22 px — 2.75 px
-leading, a fractional number that lands text on a half-pixel.
-
-**Recommended.** As GEO-01: `--row-lg` for the title bar and tab strip,
-`--row-sm` for section headers and the status bar, computed from the line box
-so text is always vertically centred on a whole pixel. The scrollbar band
-becomes `--scrollbar` (see GEO-09).
 
 ---
 
@@ -1561,8 +1571,9 @@ Offer 1× and 2× cell sizes as a view preference — pixel art at 32 px is smal
 on a HiDPI display, and this is the one place where a user-configurable size is
 genuinely warranted (UX-11).
 
-**Depends on.** GEO-01 (tokens), GEO-03 (panel min width must accommodate at
-least three columns plus padding and the scrollbar gutter, NAT-20).
+**Depends on.** GEO-01 (tokens, done — see "Already completed"), GEO-03
+(panel min width must accommodate at least three columns plus padding and the
+scrollbar gutter — NAT-20 itself is done, see "Already completed").
 
 ---
 
@@ -1573,40 +1584,21 @@ least three columns plus padding and the scrollbar gutter, NAT-20).
 Each of these is a single literal with no stated origin. Collected rather than
 given its own finding.
 
+Two rows are gone rather than resolved onto a token: `#menu`'s `min-width:
+150px`, the `2`/`4` px clamps in `menu()`, and the `.dots i` dimensions and
+gap no longer exist in the codebase (NAT-05, NAT-02 — done, see "Already
+completed"); and `li`'s padding, gap and row height are now `--space-3
+--space-4 --space-3 --space-6` and `--row` (GEO-01/GEO-02, done — see
+"Already completed", which also tokenised `.tab`'s gap and `#status`'s
+`font-size` to the exact values below, unchanged visually but no longer bare
+literals).
+
 | Value | Location | What should determine it |
 |---|---|---|
 | `max-width: 260px` on `.tab` | `style.css:79` | A character count (`ch` units) — tabs hold filenames, so `max-width: 24ch` is a statement about content; 260 px is not. Add `min-width` too, so a one-character name is not a sliver. |
-| `height: 48px` on `#props textarea` | `style.css:208` | `calc(var(--line) * 3)` — "three lines of description", which is a decision; 48 px is 2.67 lines, which is not. |
-| `gap: 14px` on `.acts`, `gap: 10px` on `#title`, `gap: 18px` on `#status`, `gap: 6px` on `li`, `gap: 8px` on `.tab` | `style.css` passim | All become spacing tokens. Five different gutters in one title bar and status bar is the definition of unsystematic. |
-
-`#menu`'s `min-width: 150px`, the `2`/`4` px clamps in `menu()`, and the
-`.dots i` dimensions and gap are gone from this list entirely rather than
-resolved onto a token: the DOM context menu and the fake traffic-light dots
-they belonged to no longer exist in the codebase (NAT-05, NAT-02 — done, see
-"Already completed").
-| `padding: 1px 10px 1px 18px` on `li` | `style.css:123` | Asymmetric top/bottom (1 px) gives a 20 px row — below the 24 px minimum hit target (A11Y-08). The 18 px left indent is a hanging indent with no icon to hang; once rows get a file-type icon (VIS-12) the indent becomes `--space-4 + --icon`. |
-| `font-size: 10px` on `.grp`, `.hint`, `#props h4`; `11px` on `#status`; `13px` on `.run` | `style.css` passim | Four ad-hoc sizes below the 12 px body. Two are enough: `--font-size` and `--font-size-sm` (11 px). 10 px is below the practical legibility floor for a UI face and should go. |
-
----
-
-#### GEO-09 — The horizontal scrollbar band is three mismatched numbers
-
-**Category** Layout · **Severity** Low · **Priority** P2 · **Affects** UI
-
-**Current.** `#hbar { flex: 0 0 13px; border-top: 1px solid var(--line) }`
-with `#hbar::-webkit-scrollbar { height: 12px }` and a thumb with
-`border: 3px solid var(--chrome)` and `border-radius: 6px`. Measured height:
-13 px. So: 13 = 12 + 1 border, and the thumb's visible height is 12 − 6 = 6 px,
-matching the 6 px radius by coincidence rather than by construction.
-
-**Recommended.** One token, one relationship:
-```
---scrollbar:      12px;                          /* track thickness */
---scrollbar-pad:   3px;                          /* inset around the thumb */
---scrollbar-thumb: calc(var(--scrollbar) - var(--scrollbar-pad) * 2);
-   /* radius = thumb / 2, i.e. a capsule, stated as such */
-```
-Shared with the other four scroll containers (NAT-20) so all five agree.
+| `height: 48px` on `#props textarea` | `style.css:208` | `calc(var(--line-box) * 3)` — "three lines of description", which is a decision; 48 px is 2.67 lines, which is not. |
+| `gap: 14px` on `.acts`, `gap: 10px` on `#title` | `style.css` passim | Neither is on the 2/4/6/8/12/16/24 scale GEO-01 introduced (12 or 16 is the nearest step); become spacing tokens once a value is chosen. |
+| `font-size: 10px` on `.grp`, `.hint`, `#props h4`; `13px` on `.run` | `style.css` passim | Two ad-hoc sizes remain (`#status`'s 11 px is now `--font-size-sm`, done). `--font-size-sm` covers the 11 px case; 10 px is below the practical legibility floor for a UI face and should go rather than gain a third size token. |
 
 ---
 
@@ -1734,56 +1726,6 @@ completed" — so what is left is recording the mapping to the design's
 `#7E58BE` / `#815AC1` in `CLAUDE.md`. Then update the SVG or the deviations
 note so the two artefacts agree — a design file that silently disagrees with
 the build is worse than no design file.
-
----
-
-#### VIS-04 — Colour is defined in four independent places
-
-**Category** Design system · **Severity** High · **Priority** P1 · **Affects** Maintainability, UI
-
-**Current.** The palette exists in four unconnected forms:
-
-1. `style.css :root` — nine tokens.
-2. **Literals in `style.css`** — `#17102a` (×4: `.cell` background, form field
-   background, `#menu` background, and again inline in `app.js:217`),
-   `#3b285b` (scrollbar thumb), `#251a3a` (`.cell.on`), `#1d1530`/`#120d1f`
-   (the air checkerboard), `#ff8f8f` (×2: `.err`, `#msg.bad`).
-3. **Literals in `grid.js`** — `#0b0813` (canvas clear, line 228),
-   `rgba(123,86,186,.14)` (grid lines — `--acc` in decimal, line 258),
-   `#7b56ba` (selection ring — `--acc` again, as a literal, line 275),
-   `rgba(123,86,186,.5)` (level bounds, line 290),
-   `rgba(200,170,255,.75)` (hover cell, line 285), `#4a3a6a` / `#803050`
-   (missing-texture swatches, line 304).
-4. **`code.js` `THEME`** — eleven more literals hand-transcribed for Monaco
-   (`b9a6d6`, `150f24`, `1a122c`, `2e2049`, `7b56ba`, `3b285b`, `1e1633`…),
-   two of which (`b9a6d6`, `7b56ba`) are `--fg` and `--acc` duplicated a third
-   time.
-
-Plus `backgroundColor: '#1c1d20'` in `main.js:38`, a fifth copy of `--frame`.
-
-**Why it's a problem.** Changing the accent — which the VIS-01 retune already
-had to do once, see "Already completed" — means finding and editing it in five
-files, with no way to know you got them all. `rgba(123,86,186,.14)` will not be
-found by a search for `#7b56ba`.
-
-**Recommended.** One source of truth, consumed three ways:
-
-1. `style.css :root` remains the **definition**, extended with the missing
-   surfaces (`--surface-raised: #17102a`, `--canvas-bg: #0b0813`,
-   `--danger: #ff8f8f`, `--scroll-thumb`, `--checker-a/b`, `--missing-tex`,
-   `--missing-def`).
-2. A tiny `tokens.js` reads them **once** at startup via
-   `getComputedStyle(document.documentElement).getPropertyValue()`, caching
-   into a plain object with numeric variants where the canvas needs alpha
-   (`rgba(var(--acc-rgb), .14)` — store the accent as an `r, g, b` triple so
-   both CSS and canvas can compose alpha from one definition). `grid.js` reads
-   from that object. Re-read on `nativeTheme` change if NAT-15 ever adds one.
-3. `code.js`'s `THEME` is **generated** from the same object rather than
-   transcribed.
-4. `main.js`'s `backgroundColor` is the one legitimate duplicate — it must be
-   known before the page loads — so keep it, with a comment naming `--frame` as
-   its source and a note that the two must be changed together. That is the
-   documented-exception pattern the brief asks for.
 
 ---
 
@@ -2074,7 +2016,10 @@ step 3.1, minizip + jansson).
 **Current.** `App.say()` (`app.js:19-24`) writes to `#msg` and nothing ever
 clears it. `saved /Users/…/level.lvl` stays on screen for the rest of the
 session. Errors and successes use the same slot, distinguished only by
-`#msg.bad` turning the text `#ff8f8f`.
+`#msg.bad` turning the text `var(--danger)` (VIS-04, done — see "Already
+completed"). `#msg` carries `role="status"` and `App.fail()`'s `.err` block
+carries `role="alert"` now (A11Y-05, done — see "Already completed"), so both
+are already announced; what A11Y-05 did not add is any expiry.
 
 **Recommended.**
 - Transient confirmations ("saved", "imported 3 files", "undo") auto-clear
@@ -2082,8 +2027,6 @@ session. Errors and successes use the same slot, distinguished only by
 - **Errors do not auto-clear** — they persist until the next action, and they
   get an icon plus the `--danger` colour, not colour alone (a colour-only
   distinction fails WCAG 1.4.1).
-- Add `aria-live="polite"` to `#msg` and `aria-live="assertive"` for errors so
-  the message is announced (A11Y-05).
 - The status bar should also carry **persistent** information that currently
   has nowhere to live: zoom percentage, level dimensions, entity count, and the
   active tool (UX-06). Separate the persistent fields from the transient
@@ -2174,29 +2117,34 @@ Name both colours as tokens if they survive.
 
 **Category** Visual · **Severity** Medium · **Priority** P2 · **Affects** UI, Maintainability
 
-**Current.** `code.js:10-26` defines eleven colour keys by hand. Two of them
-(`#b9a6d6`, `#7b56ba`) duplicate `--fg` and `--acc`; the rest
-(`#150f24`, `#2e2049`, `#1e1633`) are values that exist nowhere else in the
-app — so the editor's background is a *different* dark violet from every panel
-around it.
+**Current.** Four of `code.js`'s eleven colour keys (`editor.foreground`,
+`editor.lineHighlightBackground`, `editorCursor.foreground`,
+`editorLineNumber.foreground`/`activeForeground`, `editorWidget.background`)
+are generated from `Tokens` (`tokens.js`) rather than transcribed by hand
+(VIS-04, done — see "Already completed"). The rest — `#150f24`, `#2e2049`,
+`#1e1633` — are values that exist nowhere else in the app, so the editor's
+background is still a *different* dark violet from every panel around it;
+VIS-04's own scope stopped at removing the duplication, not at giving these
+three a considered relationship to the surrounding chrome, which is this
+finding's remaining scope.
 
 Unset keys fall through to `vs-dark`'s defaults, which is why the editor's
-scrollbars (NAT-20), find widget, suggestion list, bracket-match highlights,
-error squiggles and selection-match highlights are all VS Code blue inside a
-purple application.
+scrollbars (NAT-20's own gap here is done — see "Already completed"; Monaco's
+scrollbar theme keys below are not), find widget, suggestion list,
+bracket-match highlights, error squiggles and selection-match highlights are
+all VS Code blue inside a purple application.
 
 **Recommended.**
-1. Generate `THEME` from the token object (VIS-04).
-2. Set the keys that currently leak VS Code's defaults into a themed app:
+1. Set the keys that currently leak VS Code's defaults into a themed app:
    `scrollbarSlider.*`, `editorWidget.border`, `editorSuggestWidget.*`,
    `list.hoverBackground`, `list.activeSelectionBackground`,
    `editorBracketMatch.*`, `editor.selectionHighlightBackground`,
    `editorError.foreground`, `editorWarning.foreground`, `focusBorder`.
-3. Align `editor.background` with the surface it sits in — currently `#150f24`
+2. Align `editor.background` with the surface it sits in — currently `#150f24`
    floats between `--panel` `#100a1a` and `--tab` `#1a122c` for no reason.
-4. Set Monaco's own options to match the chrome: `lineHeight` from `--line`,
-   `fontSize` from `--font-size`, and `renderLineHighlight` consistent with the
-   app's selection treatment.
+3. Set Monaco's own options to match the chrome: `lineHeight` from
+   `--line-box`, `fontSize` from `--font-size`, and `renderLineHighlight`
+   consistent with the app's selection treatment.
 
 ---
 
@@ -2542,7 +2490,8 @@ not stacked, not indicated. `App.closetab` has no way to reach them and neither
 does the user.
 
 **Recommended.** `overflow-x: auto` with the shared scrollbar treatment
-(NAT-20), plus: scroll the active tab into view on `App.select()`; a
+(NAT-20, done — see "Already completed"), plus: scroll the active tab into
+view on `App.select()`; a
 `⌘1…⌘9` / `⌃Tab` keyboard route (NAT-14); and an overflow chevron listing
 hidden tabs via the native menu (NAT-05, done — see "Already completed", so
 this is a new `menu:row`-style channel and template rather than a new
@@ -2629,7 +2578,11 @@ the pattern:
 - Each section header becomes a real heading (`<h2>`) and the list it labels
   gets `aria-labelledby` pointing at it, so "scripts" and "midi" become
   navigable landmarks.
-- The status bar gets `role="status"` and `aria-live` (A11Y-05).
+- The status bar's confirmation/error messaging gets `role="status"`/
+  `role="alert"` - done (A11Y-05, see "Already completed"). The persistent
+  cursor-position and warning-count fields next to it are deliberately not
+  live (A11Y-03's keyboard cursor is the case that actually needs position
+  announced, and only while it is in use).
 - `#props` gets `role="region" aria-label="Properties"` and its `h4`s become
   real headings, so an inspector user can jump between sections.
 - The disabled `▶` gets `aria-disabled` and `aria-describedby` (VIS-13).
@@ -2666,12 +2619,16 @@ here. What *is* reasonable, and is what comparable tools do:
    hover cell); Return/Space paints the current tool; Delete erases; Tab-into
    announces the cursor position. This makes the core verb — place a tile —
    keyboard-operable, which is the meaningful bar.
-3. **Announce position and content** through the status bar's live region
-   (A11Y-05) as the cursor moves: `column 14, row 2 — brick`.
+3. **Announce position and content** through `#msg`'s live region as the
+   cursor moves: `column 14, row 2 — brick`. The region itself already exists
+   and already carries the right role (A11Y-05, done — see "Already
+   completed"); what's missing is this step's own content, writing a position
+   string to it as the keyboard cursor moves.
 4. Keep the pointer gestures exactly as they are.
 
 **Depends on.** UX-06 (a tool indicator); VIS-06's focus ring, which step 2
-needs to be usable, is already shipped.
+needs to be usable, is already shipped; A11Y-05's live region, which step 3
+needs to announce into, is already shipped too.
 
 ---
 
@@ -2684,40 +2641,19 @@ needs to be usable, is already shipped.
 | Target | Size | Minimum |
 |---|---|---|
 | `.tab i` close glyph (`×`) | ~7 × 18 px | 24 × 24 |
-| `li` file rows | ~20 px tall (`padding: 1px 10px 1px 18px` + 18 px line) | 24 |
+| `li` file rows | fixed - 30 px tall now (`--row`, GEO-01, done) | 24 |
 | `.hdr button` (`+`) | ~12 × 12 px | 24 × 24 |
-| `#hbar` scrollbar | 12 px tall | acceptable for a scrollbar (exempt as an inline control, but see NAT-20) |
+| `#hbar` scrollbar | 12 px tall | acceptable for a scrollbar (exempt as an inline control; its track/thumb metrics are now tokenised and shared with four other containers - NAT-20, done, see "Already completed") |
 
 **Recommended.** Every target reaches at least 24 × 24 px of *hit area*, which
 does not require 24 px of *visual* area — pad the clickable element, or use a
 transparent `::before` overlay, so the visual density the design wants is
-preserved while the target grows. `li` rows go to `--row` (30 px) from GEO-01,
-which also fixes the cramped list in the screenshot. Window controls are
-already the OS's own (NAT-02, done — see "Already completed") and already
-inherit correct sizing for free - the row above this used to track them and
-is now removed.
-
----
-
-#### A11Y-05 — Nothing is announced
-
-**Category** Accessibility · **Severity** Medium · **Priority** P1 · **Affects** UX
-
-**Current.** Every piece of feedback in the application is a silent visual
-change: `App.say()` writes text into a `<span>`; `App.fail()` prepends a div;
-validation errors, save confirmations, undo results and import counts are all
-invisible to assistive technology.
-
-**Recommended.**
-- `#status` → `role="status"` (implicit `aria-live="polite"`) for confirmations
-  and cursor position.
-- Errors → a separate `aria-live="assertive"` region, or `role="alert"` on the
-  `.err` block, so a failed save interrupts.
-- Ensure the live region exists **in the DOM at load**, empty, rather than
-  being created when the first message arrives — a live region inserted at
-  announcement time is frequently missed by screen readers. `#msg` already
-  satisfies this; the `.err` block created in `App.fail()` (`app.js:47`) does
-  not, and should become a permanent, empty container that gets filled.
+preserved while the target grows. `li` rows are 30 px tall now (`--row`,
+GEO-01, done — see "Already completed"), so only the `.tab` close glyph and
+`.hdr button` remain below the minimum. Window controls are already the OS's
+own (NAT-02, done —
+see "Already completed") and already inherit correct sizing for free - the
+row above this used to track them and is now removed.
 
 ---
 
@@ -2809,21 +2745,27 @@ functions, each of which assigns a freshly-concatenated HTML string to
 `p.innerHTML` and then re-binds every handler by `getElementById`. The same
 pattern is used by `Panel.palette()`, `tabs()` and `list()`.
 
-For most call sites this is fine and appropriately simple. Two call sites make
+For most call sites this is fine and appropriately simple. Two call sites made
 it a defect:
-1. **`onmove()` calls `App.inspect()` on every cell crossed while dragging an
-   entity** (`grid.js:458`) — see PERF-01.
-2. **Any rebuild while a field has focus destroys the caret.** `bind()`
+1. `onmove()` called `App.inspect()` on every cell crossed while dragging an
+   entity (`grid.js:458`) - **done, see "Already completed", PERF-01**, which
+   added exactly the `Panel.update()` this finding's own "Recommended" section
+   asks for below, scoped to the fields a drag can change (`p_x`, `p_y`, the
+   disabled cell field).
+2. **Any rebuild while a field has focus still destroys the caret.** `bind()`
    (`panel.js:299-305`) works around this for the three level-info text fields
    by binding `oninput` without rebuilding — a good, documented workaround —
-   but `p_x`, `p_y`, `p_rows`, `p_def` and `p_script` all call
-   `Panel.inspect()` from their `onchange`, so the element the user just
-   interacted with is destroyed and recreated underneath them.
+   but `p_rows`, `p_def` and `p_script` (`p_x`/`p_y`'s own `onchange` handlers
+   still call the full `Panel.inspect()` too, same as before PERF-01 - only
+   the drag path was rewired) all call `Panel.inspect()` from their
+   `onchange`, so the element the user just interacted with is destroyed and
+   recreated underneath them.
 
-**Recommended.** Do not introduce a framework. Two targeted changes:
-- A `Panel.update()` that writes **values** into the existing fields when the
-  view's *shape* has not changed, used by the drag path and the `onchange`
-  handlers. `Panel.inspect()` stays for shape changes (selection kind changed).
+**Recommended.** Do not introduce a framework. `Panel.update()` (PERF-01,
+done) already exists; the remaining work is two targeted changes:
+- Extend `Panel.update()`, or call it from, the `onchange` handlers listed
+  above so a value commit does not destroy the very field the user is still
+  interacting with.
 - Build with `document.createElement` + `textContent` for anything carrying
   user data, retiring `esc()` (`panel.js:11`) — a hand-rolled four-character
   escaper is a small, avoidable risk surface in a document format that carries
@@ -2931,34 +2873,6 @@ The renderer's hot path is already well-engineered: viewport culling
 whole-device-pixel snapping (`grid.js:238-244`), and a texture cache
 (`catalog.js:85-98`). The findings below are the specific places where that
 care lapses. Each has an identified cause; none is speculative.
-
----
-
-#### PERF-01 — The inspector is rebuilt from an HTML string on every cell of an entity drag
-
-**Category** Performance · **Severity** High · **Priority** P1 · **Affects** UI, Performance
-
-**Current.** `onmove()` (`grid.js:448-460`), in the entity-move branch, calls
-`App.touch()`, `App.inspect()` and `Grid.redraw()` **every time the entity
-crosses a cell boundary**. `App.inspect()` → `Panel.inspect()` →
-`entityview()` (`panel.js:152`) concatenates a ~1 KB HTML string containing a
-`<select>` with one `<option>` per known definition plus one per script,
-assigns it to `innerHTML`, and re-binds seven event handlers by
-`getElementById`.
-
-At a fast drag across a level this is a full parse-and-reflow of the inspector
-several dozen times per second, in the same frame as the canvas redraw. It also
-destroys and recreates two `<select>` elements each time, which is one of the
-more expensive things Chromium can be asked to build.
-
-**Recommended.** During a drag, update only what changed: the `x`, `y` and
-`cell` field values. That is three `element.value` writes. Use the
-`Panel.update()` split from ARCH-04. Call the full `Panel.inspect()` once, on
-`mouseup`.
-
-**Expected effect.** Removes the dominant per-frame cost of entity dragging.
-Verify with a performance capture before and after — this is the one finding
-here where the effect should be visible in a profile.
 
 ---
 
@@ -3115,10 +3029,10 @@ window and menu layers.
 | File association | `CFBundleDocumentTypes` for `.lvl` via electron-builder; handle `app.on('open-file')`, including before `whenReady`. | NAT-07 |
 | Trackpad | Two-finger scroll pans; pinch (`wheel` + `ctrlKey`) zooms — done, see "Already completed". This was the single biggest day-to-day usability defect on a Mac. | NAT-11 |
 | Shortcuts | `CmdOrCtrl` accelerators from the menu; drop the hand-rolled `Ctrl+Y`. Settings is **⌘,** and is called "Settings". | NAT-14, UX-11 |
-| Scrollbars | Respect the overlay/classic setting; `scrollbar-gutter: stable` so layout does not depend on it. | NAT-20 |
+| Scrollbars | Respect the overlay/classic setting; `scrollbar-gutter: stable` so layout does not depend on it — done, see "Already completed" | NAT-20 |
 | Dialogs | "Don't Save", not "Discard"; sheet-parented; `detail` added — done, see "Already completed" | NAT-21 |
 | Distribution | `hardenedRuntime`, code signing, notarisation — without these an unsigned build is blocked by Gatekeeper. | NAT-07 |
-| Accessibility | VoiceOver reaches nothing today; native menus (NAT-05, done) and real controls in the palette/file lists/tabs (A11Y-01, done) fix most of it at once — remaining: headings, landmarks and the status bar's live region (A11Y-02, A11Y-05). | A11Y-02, A11Y-05 |
+| Accessibility | VoiceOver reaches nothing today; native menus (NAT-05, done), real controls in the palette/file lists/tabs (A11Y-01, done) and the status bar's live region (A11Y-05, done) fix most of it at once — remaining: headings and landmarks (A11Y-02). | A11Y-02 |
 
 ### 5.2 Windows
 
@@ -3131,7 +3045,7 @@ window and menu layers.
 | Single instance | Required — without it every double-clicked `.lvl` launches a whole new app. | NAT-08 |
 | JumpList | `setUserTasks` ("New Level") plus automatic recent documents once the association exists. | NAT-06, NAT-17 |
 | Dialogs | Button order Save / Don't Save / Cancel; `noLink: true` so they are push buttons, not command links; `title` set — done, see "Already completed" | NAT-21 |
-| Scrollbars | Classic scrollbars consume layout width — this is where NAT-20's unstyled palette scrollbar is most visible and where `scrollbar-gutter` matters most. | NAT-20 |
+| Scrollbars | Classic scrollbars consume layout width — this is where NAT-20's `scrollbar-gutter: stable` fix (done, see "Already completed") matters most, though not yet exercised on real Windows hardware. | NAT-20 |
 | High contrast | `forced-colors: active` is a real, commonly-enabled Windows mode; currently untested and certain to break the canvas indicators. | A11Y-07, VIS-16 |
 | Mixed DPI | Per-monitor scaling is common; the canvas goes soft when the window moves between displays — done, see "Already completed" (implemented against the documented `matchMedia`/`devicePixelRatio` mechanism; not yet run on real per-monitor-DPI Windows hardware) | BUG-12 |
 | Distribution | Authenticode signing; NSIS or MSI. | NAT-07 |
@@ -3175,34 +3089,33 @@ chosen deliberately, not as the default the other two inherit.
 
 ### 6.1 Every instance of arbitrary geometry
 
-Three rows from the original 26 are gone rather than resolved onto a token:
+Eight rows from the original 26 are gone rather than resolved onto a token:
 `#menu`'s `min-width: 150px`, its click-handler's `2`/`4` px edge clamps, and
 `.dots i`'s `12px`/`gap 8px` all named code that no longer exists (NAT-05,
-NAT-02 — done, see "Already completed").
+NAT-02 — done, see "Already completed"); `--bar`/`--tabs`/`#status`'s band
+heights, the horizontal scrollbar's three mismatched numbers, and
+`backgroundColor`'s duplication are now real token relationships instead of
+bare literals (GEO-01/GEO-02, NAT-20/GEO-09, VIS-04 — all done, see "Already
+completed").
 
 | # | Value | Where | What should determine it | Finding |
 |---|---|---|---|---|
-| 1 | `--bar: 34px` | `style.css:14` | `--row-lg` = line box + 2 × `--space-4` | GEO-01, GEO-02 |
-| 2 | `--tabs: 32px` | `style.css:15` | `--row-lg` (same band as the title bar) | GEO-02 |
-| 3 | `.hdr` `24px` | `style.css:107` | `--row-sm`; design says 36 px | GEO-02, GEO-13 |
-| 4 | `#status` `22px` | `style.css:242` | `--row-sm` | GEO-02 |
-| 5 | `#hbar` `13px` | `style.css:148` | `--scrollbar` + `--border` | GEO-09 |
+| 3 | `.hdr` `24px` (now `--row-sm`, 26px — GEO-02, done) | `style.css:107` | Design says 36 px, still not adopted | GEO-13 |
 | 6 | `--side: 184px` | `style.css:16` | `clamp(min, 10.5%, max)` — the design's ratio | GEO-03 |
 | 7 | `--right: 212px` | `style.css:17` | `clamp(min, 13%, max)` — the design's ratio | GEO-03 |
 | 8 | `#scripts 60%` / `#midis 40%` | `style.css:116-117` | Content height, with a floor and a splitter | GEO-05 |
 | 9 | `#props 46%` | `style.css:191` | Content height, or the design's 47.5 % as a named token | GEO-06 |
 | 10 | `repeat(4, 1fr)` palette | `style.css:170` | `repeat(auto-fill, N × --sprite)` — integer sprite scale | GEO-07 |
 | 11 | `.tab max-width: 260px` | `style.css:79` | `24ch` — a statement about filenames | GEO-08 |
-| 12 | `textarea height: 48px` | `style.css:208` | `calc(var(--line) * 3)` | GEO-08 |
-| 13 | Gaps 4/6/8/10/12/14/16/18 px | `style.css` passim | `--space-*` scale | GEO-01 |
-| 14 | Font sizes 10/11/12/13 px | `style.css` passim | `--font-size`, `--font-size-sm`; drop 10 px | GEO-08 |
-| 15 | `li padding 1px 10px 1px 18px` | `style.css:123` | `--row` height; indent from icon width | GEO-08, A11Y-04 |
+| 12 | `textarea height: 48px` | `style.css:208` | `calc(var(--line-box) * 3)` | GEO-08 |
+| 13 | Gaps `14px` on `.acts`, `10px` on `#title` | `style.css` passim | `--space-*` scale (the `li`/`.tab`/`#palette`/`#props`/`.grp` gaps that were also here are now tokenised — GEO-01, done) | GEO-08 |
+| 14 | Font sizes `10px`/`13px` | `style.css` passim | `--font-size-sm` covers the `11px` case now (GEO-01, done); `10px`/`13px` remain | GEO-08 |
+| 15 | `li` indent has no icon to hang from | `style.css:123` | `--space-4 + --icon` once rows get a file-type icon (the padding/height itself is `--row` now — GEO-01/GEO-02, done) | A11Y-04, VIS-11 |
 | 17 | `2 * B` fit padding | `grid.js:163` | `FITPAD = B`, named | GEO-11 |
 | 18 | `1` (max fit zoom) | `grid.js:163` | Named, not derived — `ZMIN`, its other half, is already named and shared with the wheel (NAT-11, done) | GEO-11 |
 | 19 | `B * z >= 10` grid threshold | `grid.js:257` | `GRIDMIN`, named and commented | GEO-11 |
 | 20 | `1` px bar tolerance | `grid.js:191, 199` | `BARSLOP`, shared by both sites | GEO-11 |
 | 21 | Selection inset `1`/`2` | `grid.js:275-277` | Derived from `SELW` | GEO-11 |
-| 22 | `backgroundColor '#1c1d20'` | `main.js:38` | `--frame`, documented as a necessary duplicate | VIS-04 |
 
 `0.03`/`3` zoom clamps and the `0.0015` wheel factor, both formerly rows here,
 are done (NAT-11, see "Already completed"): `ZMIN`, `ZMAX` and
@@ -3214,82 +3127,34 @@ display's work area, clamped between the unchanged `960 × 620` floor and the
 `1600 × 950` the UI was designed at, and the actual size and position are
 persisted across launches.
 
-### 6.2 Design tokens that should exist
+### 6.2 Design tokens
 
-```css
-:root {
-	/* ---- type ------------------------------------------------------ */
-	--font:            'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
-	--font-size:       12px;   /* the design's body size                */
-	--font-size-sm:    11px;   /* status bar, hints — the 10px is dropped */
-	--line-height:     1.5;
-	--line:            18px;   /* = font-size × line-height; the unit
-	                              every row height is derived from      */
+Done — see "Already completed", GEO-01/VIS-04. The shipped `:root` block
+(`style.css`) differs from what this section originally proposed in two
+deliberate ways, both because the proposal collided with something already
+real: the line-box token is named `--line-box`, not `--line`, because `--line`
+already names the separator-colour token (VIS-01) and the two would otherwise
+overwrite each other; and `--control-border` stayed aliased to `--acc`
+(3.1-3.6:1), not the alternate `#77599f` an earlier draft of this section
+floated, since `--acc` already clears the 3:1 non-text threshold everywhere it
+is used (VIS-02). Colour composes for the canvas via `--acc-rgb`, a decimal
+triple (`123, 86, 186`), rather than a fourth `--acc-alpha`-shaped token — the
+same number, read once by `tokens.js` into a `'rgba(...)'` string, so canvas
+alpha and the CSS accent can never drift apart. `--surface-hover` (VIS-07) is
+not yet defined — there is no consumer for it yet, and GEO-01's own
+implementation note says introduce a token with the component that needs it,
+not before.
 
-	/* ---- spacing --------------------------------------------------- */
-	--space-1:  2px;  --space-2:  4px;  --space-3:  6px;
-	--space-4:  8px;  --space-5: 12px;  --space-6: 16px;  --space-7: 24px;
+Not yet consumed by anything (defined, waiting on the findings that will use
+them): `--radius-*`, `--elev-*` (VIS-09), `--dur-*`/`--ease` (VIS-08),
+`--z-*` (no finding currently needs more than one layer above the surface).
+`--side`/`--right` are unchanged literals, not yet the `clamp()`-based
+percentages GEO-03 asks for.
 
-	/* ---- rows (derived from the line box, not chosen) -------------- */
-	--row-sm:  calc(var(--line) + var(--space-2) * 2);  /* 26px */
-	--row:     calc(var(--line) + var(--space-3) * 2);  /* 30px */
-	--row-lg:  calc(var(--line) + var(--space-4) * 2);  /* 34px */
-
-	/* ---- panels (proportions from the design file) ----------------- */
-	--side-ratio:   10.5%;   /* SVG: 157 / 1504 = 10.44%               */
-	--right-ratio:    13%;   /* SVG: 197 / 1505 = 13.09%               */
-	--side-min / --side-max / --right-min / --right-max: content-derived
-	--split:         1px;    /* splitter rule; 7px transparent grab zone */
-
-	/* ---- sprites --------------------------------------------------- */
-	--sprite:  32px;                          /* every texture is 32×32 */
-	--cell:    var(--sprite);                 /* ×1 or ×2, never fractional */
-	--icon:    16px;
-
-	/* ---- colour: surfaces ------------------------------------------ */
-	--frame / --chrome / --tab / --panel / --hdr        (existing)
-	--surface-raised:  #17102a;   /* inputs, cells, popovers — was ×4 literal */
-	--surface-hover / --surface-selected                (new, VIS-07)
-	--canvas-bg:       #0b0813;                          /* was in grid.js */
-	--checker-a / --checker-b                            /* was literal */
-
-	/* ---- colour: text and lines --------------------------------- */
-	/* --fg, --dim, --acc, --acc-text, --line and --control-border are
-	   shipped already (VIS-01/VIS-02, see "Already completed") with the
-	   values below; --control-border there is aliased to --acc (#7b56ba,
-	   3.1-3.6:1) rather than the alternate #77599f this block originally
-	   proposed, per the audit's own "if a single value must clear 3:1 on
-	   all three" fallback.  --fg-disabled and --danger are still open. */
-	--fg:              #b9a6d6;   /* 7.6–8.8:1 — the DEFAULT text       */
-	--dim:             #9b7fd4;   /* 5.1–5.9:1 — secondary text         */
-	--acc:             #7b56ba;   /* 3.1–3.6:1 — NON-TEXT only          */
-	--acc-text:        #9a74e0;   /* 4.8–5.5:1 — accent text            */
-	--fg-disabled:                /* ≥3:1, never opacity alone          */
-	--line:            #241938;   /* decorative separators only         */
-	--control-border:  var(--acc);/* ≥3:1 — inputs, buttons (WCAG 1.4.11) */
-	--danger:          #ff8f8f;   /* 8.8:1 — was literal ×2             */
-
-	/* ---- borders, radius, elevation -------------------------------- */
-	--border: 1px;  --border-strong: 2px;
-	--radius-1: 2px;  --radius-2: 4px;  --radius-3: 8px;
-	--elev-1: 0 1px 2px rgba(0,0,0,.4);
-	--elev-2: 0 6px 20px rgba(0,0,0,.55);
-
-	/* ---- scrollbars (one treatment for all five containers) -------- */
-	--scrollbar: 12px;  --scrollbar-pad: 3px;
-	--scrollbar-thumb: calc(var(--scrollbar) - var(--scrollbar-pad) * 2);
-
-	/* ---- motion ---------------------------------------------------- */
-	--dur-fast: 90ms;  --dur: 140ms;  --ease: cubic-bezier(.2, 0, 0, 1);
-
-	/* ---- layering (currently one z-index: 10 on #menu) ------------- */
-	--z-panel: 1;  --z-splitter: 5;  --z-overlay: 10;  --z-modal: 20;
-}
-```
-
-JavaScript-side constants that belong in a named block, not inline
-(`grid.js`): `FITPAD`, `ZMIN`, `ZMAX`, `ZOOM_PX_PER_DOUBLING`, `GRIDMIN`,
-`SELW`, `BARSLOP`.
+JavaScript-side constants that still belong in a named block, not inline
+(`grid.js`): `FITPAD`, `GRIDMIN`, `SELW`, `BARSLOP` (GEO-11). `ZMIN`, `ZMAX`
+and `ZOOM_PX_PER_DOUBLING` are already named (NAT-11, done — see "Already
+completed").
 
 ### 6.3 Values that must stay fixed, and why
 
@@ -3301,9 +3166,9 @@ Per the brief, each surviving literal is documented rather than removed.
 | `W = 540` | `catalog.js:13` | The on-disk format: every `block_data` row holds exactly 540 entries. | No | No |
 | `H = 12` | `catalog.js` | Rows in a fresh level — a product decision, not a derivation. Moved from `lvl.js` (ARCH-02, done — see "Already completed"). | No | Yes, as a preference |
 | `999` max rows | `grid.js:134` | Bound implied by the three-digit id format's sibling conventions and by memory (999 × 540 × 2 B ≈ 1 MB grid). Name it `HMAX` and state the reason. | No | No |
-| `--sprite: 32px` | new | Every texture in the library is 32 × 32; verified. It is a fact about the asset library, not a design choice. | No | No |
-| `backgroundColor: '#1c1d20'` | `main.js:38` | Must be known before the page and its CSS load, so it cannot read `--frame`. Duplicate deliberately, with a comment naming its source and the requirement to change both together. | No | No |
-| `--scrollbar: 12px` | new | Chromium's `::-webkit-scrollbar` needs a concrete length; there is no CSS-side access to the platform's metric. | Effectively — macOS overlay vs classic; mitigate with `scrollbar-gutter: stable` | No |
+| `--sprite: 32px` | `style.css` | Every texture in the library is 32 × 32; verified. It is a fact about the asset library, not a design choice. Defined (GEO-01, done); not yet consumed (GEO-07, open). | No | No |
+| `backgroundColor: '#1c1d20'` | `main.js:38` | Must be known before the page and its CSS load, so it cannot read `--frame`. Duplicated deliberately (VIS-04, done — see "Already completed"), with a comment naming its source and the requirement to change both together. | No | No |
+| `--scrollbar: 12px` | `style.css`, shipped (NAT-20, done — see "Already completed") | Chromium's `::-webkit-scrollbar` needs a concrete length; there is no CSS-side access to the platform's metric. | Effectively — macOS overlay vs classic; mitigated with `scrollbar-gutter: stable` | No |
 | `+ .5` canvas offsets | `grid.js` passim | A 1 px canvas stroke is centred on the coordinate, so a half-pixel offset is what lands it on a whole device pixel. Correct as written; comment it. | No | No |
 | `trafficLightPosition` | new, macOS | Derived from `--row-lg`, but must be passed to `BrowserWindow` as a number before CSS exists — the same class of exception as `backgroundColor`. | **Yes, macOS only** | No |
 
@@ -3316,15 +3181,15 @@ the finding that resolves it.
 
 | Area | Current state | Resolution |
 |---|---|---|
-| **Typography** | One family that never loads (VIS-05); four sizes (10/11/12/13 px) with no scale; `font-weight: normal` forced onto `<b>` in two places, so `<b>` is being used purely for layout | Bundle the font; two sizes; replace `<b>` with `<span>` and delete the overrides (VIS-05, GEO-08) |
-| **Spacing** | 23 pixel literals, 9 of them one-offs; six different gaps between the title bar and status bar alone | One 7-step scale (GEO-01) |
-| **Rows / heights** | Five unrelated band heights, none derived from the 18 px line box; `li` rows 20 px tall | Three `--row-*` tokens derived from the line box (GEO-01, GEO-02, A11Y-04) |
-| **Colour** | Nine tokens plus ~16 literals in CSS, 7 in `grid.js`, 11 in `code.js`, 1 in `main.js` | One definition, three consumers (VIS-04) |
+| **Typography** | One family that never loads (VIS-05); font sizes down to two now (GEO-01, done), `10px`/`13px` remain; `font-weight: normal` forced onto `<b>` in two places, so `<b>` is being used purely for layout | Bundle the font; replace `<b>` with `<span>` and delete the overrides (VIS-05, GEO-08) |
+| **Spacing** | Fixed — a 7-step scale now covers most of the stylesheet (GEO-01, done — see "Already completed"); `.acts`'/`#title`'s two gaps and a few `10px`/`13px` one-offs remain | GEO-08 |
+| **Rows / heights** | Fixed — `--row-sm`/`--row`/`--row-lg`, derived from the 18px line box, now cover the title bar, tab strip, section headers, status bar and file-manager rows (GEO-01, GEO-02, done — see "Already completed") | A11Y-04's hit-area padding and VIS-11's row icon are the remaining, unrelated pieces |
+| **Colour** | Fixed — one `:root` definition, consumed by `grid.js`'s canvas and `code.js`'s Monaco theme through `tokens.js` instead of each restating it (VIS-04, done — see "Already completed") | — |
 | **Contrast** | Resting and accent text, and control borders, are fixed (VIS-01, VIS-02, done — see "Already completed"); still failing: disabled ≈1.5:1, `.mi.off` ≈1.3:1 | `--fg-disabled` at ≥3:1, never opacity alone (VIS-07) |
 | **Borders** | `--line` is now split from `--control-border` (VIS-02, done); still one width only, no distinct strong/emphasis weight | Add `--border-strong` |
 | **Radius** | `50%` and `6px`, nothing else; design specifies 26 px window/tab radius | Three-step radius scale; adopt the tab flare (VIS-09, GEO-13) |
 | **Shadows** | Exactly one, on the context menu, which is about to become native | Two-step elevation; panel `--elev-1` per the design's filters (VIS-09, GEO-13) |
-| **Scrollbars** | One of five containers styled; unstyled palette scrollbar visible in the default window; layout width varies by platform and by an OS setting | One treatment, tokenised metrics, `scrollbar-gutter: stable`, Monaco keys set (NAT-20, GEO-09, VIS-18) |
+| **Scrollbars** | Fixed — all five containers now share one tokenised treatment with `scrollbar-gutter: stable` (NAT-20/GEO-09, done — see "Already completed"); Monaco's own scrollbar keys are still VS Code's defaults | Monaco keys set (VIS-18) |
 | **Hover** | The only state; always the same mechanism (text colour swap) | Surface tint, text unchanged (VIS-07) |
 | **Active / pressed** | Does not exist | Deeper tint (VIS-07) |
 | **Focus** | Fixed — a global `:focus-visible` ring, 2 px + 2 px offset, now applies everywhere including the canvas (VIS-06, done — see "Already completed") | — |
@@ -3337,14 +3202,14 @@ the finding that resolves it.
 | **Tooltips** | Native `title=` on some controls, absent on tabs, window controls and rows; Title Case among lowercase labels | Keep native `title` (correct choice — it is the platform's tooltip); add the missing ones; include accelerators on toolbar buttons (NAT-04, VIS-10) |
 | **Loading** | None; Monaco loads eagerly so its absence is never visible; long saves block silently | Editor loading state (ARCH-08); progress for long ops (NAT-19) |
 | **Empty states** | Two blank voids in the file manager on every launch | One line + one action per list (VIS-12) |
-| **Error states** | `#ff8f8f` text, colour-only; save failures now reach a native dialog regardless of tab (BUG-07, shipped) but are still colour-only and unannounced otherwise | Icon + colour; live region (VIS-14, A11Y-05, A11Y-08) |
+| **Error states** | `var(--danger)` text, colour-only; save failures now reach a native dialog regardless of tab (BUG-07, shipped), and every error is announced to a screen reader (A11Y-05, shipped) — still colour-only visually | Icon (VIS-14, A11Y-08) |
 | **Context menus** | Fixed — native `Menu.popup()`, real keyboard navigation and platform appearance (NAT-05, done — see "Already completed") | — |
 | **Dialogs** | The unsaved-changes prompt now has a per-platform template, `detail`, `noLink`, and string verdicts (NAT-21, BUG-10, done — see "Already completed") | — |
 | **Forms** | Borders now visible via `--control-border` (VIS-02, done); still: a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `appearance: none` on the select control only; one shared `.field` class (NAT-16, VIS-15) |
 | **Buttons** | Text-only, no border except `.act`, no pressed state, `.acts` and `.hdr button` and `#add` all differently sized | One button component with size variants (VIS-07, GEO-08) |
 | **Resizers / splitters** | Do not exist | Four splitters, keyboard-operable (GEO-04) |
 | **Panels** | Flat, no elevation, fixed widths, not collapsible | Elevation, proportional widths, collapsible sections (GEO-03, GEO-05, VIS-09) |
-| **Overlays** | One `z-index: 10`, no layering rule | `--z-*` scale (GEO-01 token block) |
+| **Overlays** | NAT-05 (done) removed the app's only `z-index` along with the DOM context menu it belonged to; `--z-*` is defined (GEO-01, done) with nothing to convert yet | — |
 | **Animation** | None at all | Three tokens, applied to states and panels, with `prefers-reduced-motion` (VIS-08) |
 | **Canvas indicators** | Purple-on-purple, no contrast guarantee, unreachable by forced colours | Two-tone strokes (VIS-16) |
 | **Missing assets** | Flat purple and maroon rectangles that read as blocks | Empty while loading; hatch + warning when genuinely missing (VIS-17) |
@@ -3410,9 +3275,9 @@ still requires a pointer (A11Y-03).
 | 2.1.1 Keyboard | Partial — the palette, file rows and tabs are operable now (A11Y-01, done); the canvas itself still is not | A11Y-03 |
 | 2.4.3 Focus Order | Fixed — roving tabindex gives the palette, file lists and tab strip one Tab stop each, in a defined title-bar-to-status-bar order | A11Y-01, done |
 | 2.4.7 Focus Visible | Fixed — global `:focus-visible` rule, nothing left to suppress it | VIS-06, done |
-| 2.5.8 Target Size | Fail — 12 px window controls, ~7 px tab close, 20 px rows | A11Y-04 |
+| 2.5.8 Target Size | Partial — `li` rows are 30 px now (GEO-01, done); window controls are the OS's own (NAT-02, done); `.tab` close glyph and `.hdr button` remain below 24 px | A11Y-04 |
 | 4.1.2 Name, Role, Value | Partial — the palette, file lists and tab strip now carry `role`/`aria-*` (A11Y-01, done); the rest of the application still has none | A11Y-02 |
-| 4.1.3 Status Messages | Fail — nothing is announced | A11Y-05 |
+| 4.1.3 Status Messages | Fixed — `#msg` carries `role="status"`, `App.fail()`'s error block carries `role="alert"` | A11Y-05, done |
 | 2.3.3 Animation from Interactions | N/A today; becomes required with VIS-08 | VIS-08, A11Y-07 |
 | System high contrast | Untested; will break canvas indicators | A11Y-07, VIS-16 |
 
@@ -3420,10 +3285,12 @@ Native menus (NAT-05, done — see "Already completed") already deleted one
 entire inaccessible subsystem rather than fixing it in place, and replacing
 the palette, file rows and tabs' clickable `<div>`s with real controls
 (A11Y-01, done — see "Already completed") was the single largest remaining
-piece of keyboard, focus-order and semantics work. What is left is the
-canvas itself (A11Y-03, the one surface a parallel-DOM approach genuinely
-cannot cover), the rest of the DOM's semantics (A11Y-02), announcements
-(A11Y-05) and system preferences (A11Y-06, A11Y-07).
+piece of keyboard, focus-order and semantics work; status and error messages
+reaching a screen reader (A11Y-05, done — see "Already completed") closed
+the announcements gap the same way. What is left is the canvas itself
+(A11Y-03, the one surface a parallel-DOM approach genuinely cannot cover),
+the rest of the DOM's semantics (A11Y-02) and system preferences (A11Y-06,
+A11Y-07).
 
 ---
 
@@ -3444,11 +3311,10 @@ four are driven from.
 
 | Problem | Finding |
 |---|---|
-| Full innerHTML rebuilds on a drag hot path; hand-rolled `esc()` | ARCH-04, PERF-01 |
+| Full innerHTML rebuilds on a drag hot path (done, see "Already completed", PERF-01); an `onchange` commit still destroys the field the user just used; hand-rolled `esc()` | ARCH-04 |
 | Three IPC naming conventions, two response shapes, forgettable `cancel` (the `ask:discard` response is a named string now, BUG-10, done — see "Already completed") | ARCH-06 |
 | Monaco eager and shipped whole | ARCH-08 |
 | Synchronous main-process I/O | ARCH-09, NAT-19 |
-| Colour defined in four places | VIS-04 |
 | Two components styling themselves with inline `cssText` | VIS-15 |
 | `App.open_`'s trailing underscore | ARCH-06 |
 | Prefix-only path containment in the protocol handler | BUG-13 |
@@ -3463,27 +3329,26 @@ container. Do not index the entity list until entity counts justify it
 
 ## 11. Performance summary
 
-The renderer is already carefully built. Four real problems, three
-non-problems, in priority order.
+The renderer is already carefully built. The one measurable hot-path defect is
+done (PERF-01, see "Already completed"); three real problems and three
+non-problems remain, in priority order.
 
 **Fix:**
-1. **PERF-01** — the inspector's HTML is rebuilt from a string on every cell of
-   an entity drag. The one measurable hot-path defect.
-2. **PERF-02** — `getBoundingClientRect` and `getElementById` called on every
+1. **PERF-02** — `getBoundingClientRect` and `getElementById` called on every
    frame, with a style write between the read and the next read (layout
    thrash), during every pan and drag.
-3. **PERF-04** — canvas backing store reallocated on every `ResizeObserver`
+2. **PERF-04** — canvas backing store reallocated on every `ResizeObserver`
    callback; becomes a stutter as soon as splitters exist (GEO-04).
-4. **ARCH-08** — Monaco loaded eagerly at startup for a tab most sessions never
+3. **ARCH-08** — Monaco loaded eagerly at startup for a tab most sessions never
    open, and packaged whole.
 
 **Also worth doing:**
-5. **PERF-05** — `App.refresh()` rebuilds every view for every undo step; walk
+4. **PERF-05** — `App.refresh()` rebuilds every view for every undo step; walk
    back a long history and the whole UI is rebuilt per step.
-6. **PERF-07** — the window is shown before the document exists.
+5. **PERF-07** — the window is shown before the document exists.
 
 **Measure before touching:**
-7. **PERF-06** / **NAT-19** — `Grid.commit()` + `JSON.stringify` + `zipSync` on
+6. **PERF-06** / **NAT-19** — `Grid.commit()` + `JSON.stringify` + `zipSync` on
    a 999-row level. Bounded, save-only, and simple as written. Get a number
    first.
 
@@ -3521,11 +3386,11 @@ relitigated.
 | Trackpad scroll vs pinch | ✅ shipped (NAT-11) | ✅ shipped (NAT-11) | ✅ shipped (NAT-11) | — |
 | Right-click semantics | ❌ Ctrl+click erases | ✅ | ✅ | NAT-12 |
 | Keyboard shortcuts | ⚠️ conflicts with default menu; layout-dependent | ⚠️ same | ⚠️ same | NAT-14 |
-| Scrollbars | ⚠️ hidden by overlay default | ❌ visible and unstyled | ❌ visible and unstyled | NAT-20 |
+| Scrollbars | ✅ shipped - one tokenised treatment, `scrollbar-gutter: stable` (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | — |
 | Fonts | ⚠️ falls back to SF Mono | ⚠️ Consolas | ⚠️ DejaVu | VIS-05 |
 | High contrast / forced colours | ⚠️ Increase Contrast ignored | ❌ untested, will break | ⚠️ | A11Y-07 |
 | Reduced motion | n/a (no motion) → required with VIS-08 | same | same | VIS-08, A11Y-07 |
-| Screen reader | ⚠️ the palette, file lists and tab strip are now named and role-bearing (A11Y-01, shipped); everything else VoiceOver reaches is still unlabelled | ⚠️ same for Narrator | ⚠️ same for Orca | A11Y-02, A11Y-05 |
+| Screen reader | ⚠️ the palette, file lists and tab strip are now named and role-bearing (A11Y-01, shipped), and status/error messages are announced (A11Y-05, shipped); everything else VoiceOver reaches is still unlabelled | ⚠️ same for Narrator | ⚠️ same for Orca | A11Y-02 |
 | Notifications | ❌ | ❌ | ❌ | NAT-19 |
 | Full screen | ❌ regression: the default menu's Toggle Full Screen (⌃⌘F) had no replacement when NAT-01's own menu shipped without a View menu | ⚠️ | ⚠️ | needs a new View menu item, unfiled |
 | Quit / lifecycle | ✅ ⌘Q works (`role: 'appMenu'`, NAT-01); a hung/dirty renderer no longer wedges close (BUG-09, shipped) | ✅ shipped (BUG-09) | ✅ shipped (BUG-09) | — |
@@ -3556,21 +3421,18 @@ at the top of this document. Nothing remains in this tier.
 |---|---|
 | NAT-04 | Hotbar duplicates what belongs in the menu |
 | NAT-07 | No packaging, icons, or file association |
-| NAT-20 | One of five scroll containers styled |
-| GEO-01 | No spacing, sizing or type scale |
 | GEO-03 | Fixed side panels consume 41 % of the minimum window |
 | GEO-04 | Panels cannot be resized |
 | GEO-07 | Palette produces fractional cells for 32 px sprites |
 | GEO-11 | Canvas magic numbers (partly done - the zoom constants, NAT-11) |
-| VIS-04 | Colour defined in four independent places |
 | VIS-05 | The app has never rendered in its own typeface |
 | VIS-07 | No interaction-state system |
 | UX-04 | Zoom has no controls, indicator, or working fit |
 | ARCH-08 | Monaco eager and shipped whole |
-| PERF-01 | Inspector rebuilt from a string on every drag cell |
 
-NAT-05, NAT-11, ARCH-02, ARCH-03, BUG-12, NAT-03, NAT-10 and NAT-13, the other
-eight items that were listed here, are done — see "Already completed".
+NAT-05, NAT-11, NAT-20, ARCH-02, ARCH-03, BUG-12, GEO-01, NAT-03, NAT-10,
+NAT-13, PERF-01 and VIS-04, the other twelve items that were listed here, are
+done — see "Already completed".
 
 ### Medium — real friction, contained fixes
 
@@ -3583,12 +3445,12 @@ eight items that were listed here, are done — see "Already completed".
 | NAT-12 | Right-click erases; Ctrl+click collision on macOS |
 | NAT-14 | Command set is thin: zoom, tab switching, region operations |
 | NAT-16 | Native `<select>` among custom fields |
-| GEO-02, GEO-05, GEO-06, GEO-08, GEO-09 | Band heights, list splits, one-offs |
+| GEO-05, GEO-06, GEO-08 | List splits, one-offs |
 | GEO-10 | No vertical scrollbar |
 | VIS-03, VIS-08, VIS-09, VIS-10, VIS-11 | Design divergence, motion, radius/elevation, capitalisation, icons |
 | VIS-12, VIS-14, VIS-15, VIS-16, VIS-18 | Empty states, status messages, inline `cssText`, canvas indicators, Monaco theme |
 | UX-01, UX-03, UX-05, UX-06, UX-08, UX-09, UX-12, UX-15, UX-16 | Editing and navigation friction |
-| A11Y-02, A11Y-03, A11Y-04, A11Y-05, A11Y-06 | Semantics, canvas, targets, announcements, scaling |
+| A11Y-02, A11Y-03, A11Y-04, A11Y-06 | Semantics, canvas, targets, scaling |
 | ARCH-04, ARCH-06 | Panel rebuilds, IPC shape |
 | PERF-02, PERF-04, PERF-07 | Layout thrash, resize coalescing, startup paint |
 
@@ -3642,13 +3504,12 @@ also done — see "Already completed"; `chrome.js` already absorbed `menu.js`'s
 own `process.platform` branch and NAT-21's `discardbuttons()`, and it is
 where NAT-02 (below, also done) got the platform options it needed.
 
-1. **GEO-01 + VIS-04** — the token block, in one commit: spacing, rows, type,
-   radius, elevation, motion, z-index, plus the `tokens.js` reader that
-   `grid.js` and `code.js` consume. The colour half of this block (VIS-01,
-   VIS-02) is already shipped — see "Already completed" — so this step is
-   narrower than originally scoped: everything except colour. Unblocks every
-   remaining visual finding. Nothing in §7 should be attempted before this
-   lands.
+**GEO-01 + VIS-04** — the token block: spacing, rows, type, radius, elevation,
+motion, z-index, plus the `tokens.js` reader that `grid.js` and `code.js`
+consume — is done, together with GEO-02's and GEO-09's band-height and
+scrollbar asks, which turned out to be the same fix (see "Already completed").
+Nothing remains in this phase. §7's remaining rows can now be attempted -
+this was the gate on all of them.
 
 ### Phase 2 — Native shell
 
@@ -3688,10 +3549,12 @@ later than originally scoped.
 7. **VIS-07** the five-state contract, applied to every interactive surface.
 8. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
    capitalisation.
-9. **NAT-20 / GEO-09** one scrollbar treatment across all five containers;
-   **VIS-18** Monaco theme generated from tokens.
-10. **GEO-07** integer palette cells; **GEO-02 / GEO-08** band heights and
-    one-offs onto the scale.
+9. **NAT-20 / GEO-09** — done, see "Already completed": one scrollbar
+   treatment across all five containers. **VIS-18** Monaco theme fully
+   aligned with the surrounding chrome (its own colour duplication is
+   resolved, VIS-04, done) is still open.
+10. **GEO-07** integer palette cells; **GEO-08** the remaining one-offs onto
+    the scale.
 11. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
     messages, `.field`/`.cell.add` classes, canvas indicators, missing-texture
     treatment.
@@ -3710,8 +3573,10 @@ later than originally scoped.
     §12, "Full screen").
 15. **NAT-12** canvas context menu and Ctrl+click; **UX-12** gesture cancel
     (**NAT-13** cursors is done — see "Already completed").
-16. **PERF-01** `Panel.update()` split (with **ARCH-04**); **PERF-02** cached
-    rect and refs.
+16. **PERF-01** — done, see "Already completed": `Panel.update()` now exists
+    and the drag hot path uses it. **ARCH-04**'s remaining scope (the
+    `onchange` handlers, `esc()`) can reuse it. **PERF-02** cached rect and
+    refs.
 17. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
     tab switching, region operations — the menu/shortcut consolidation itself
     is done, NAT-01).
@@ -3723,8 +3588,10 @@ done — see "Already completed"; it was the largest single piece of work in
 this phase, now that native menus (NAT-05) and A11Y-01 together have deleted
 or fixed every inaccessible subsystem outside the canvas itself.
 
-19. **A11Y-02** semantics and landmarks; **A11Y-05** live regions.
-20. **A11Y-04** hit targets (mostly free once GEO-01's `--row` lands).
+19. **A11Y-02** semantics and landmarks. **A11Y-05** live regions is done —
+    see "Already completed".
+20. **A11Y-04** hit targets — the `li` row height piece is done (GEO-01,
+    done); the `.tab` close glyph and `.hdr button` remain.
 21. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
     already in place); **A11Y-06** scaling; **A11Y-07** system preferences;
     **A11Y-08** non-colour cues.
@@ -3752,9 +3619,6 @@ BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
 ### Dependency summary
 
 ```
-GEO-01 + VIS-04 ──────┬─► VIS-07, VIS-08, VIS-09
-   (tokens; colour     ├─► GEO-02, GEO-07, GEO-08, GEO-09, NAT-20, VIS-18
-   half already done)  └─► NAT-15's forced-colours/contrast work
 VIS-05 (font) ────────► anything depending on type metrics
 PERF-04 ──────────────► GEO-04 (splitters)
 
@@ -3763,20 +3627,26 @@ it by making every later change verifiable at all; BUG-08 (doc state)
 unblocked NAT-03, NAT-06, NAT-07, NAT-08, NAT-10, UX-10, all of which could
 then build on it directly - NAT-03 and NAT-10 have since shipped, done — see
 "Already completed"; BUG-09 closed the live gap NAT-01 opened;
-VIS-01/VIS-02/VIS-06 unblocked nothing else in this graph (the rest of
-GEO-01/VIS-04 does not depend on them); NAT-18 closed NAT-09's navigation hole
-without needing any of the above; NAT-21/BUG-10 and UX-10/BUG-11 each shipped
-straight off BUG-08's `doc` module and BUG-02's atomic write, also without
-needing ARCH-03 or GEO-01/VIS-04; ARCH-03 (platform) unblocked NAT-02 (also
-done) and VIS-10 (which can now apply the OS-facing capitalisation
-convention it asks for - not yet done), and NAT-02 in turn unblocked NAT-03
-(now done) and NAT-04 (still open); NAT-05 deleted an entire inaccessible
-subsystem rather than fixing it in place, independently of the rest of this
-graph; NAT-11 unblocked GEO-10 (the wheel now scrolls) and named two of
-GEO-11's eight constants; A11Y-01 (also done, needing nothing from this
-graph) unblocked A11Y-02, A11Y-03 and A11Y-04, none of which depend on
-GEO-01/VIS-04 either; BUG-12 and NAT-13 each shipped independently, needing
-nothing from this graph and unblocking nothing on it.
+VIS-01/VIS-02/VIS-06 unblocked nothing else in this graph; NAT-18 closed
+NAT-09's navigation hole without needing any of the above; NAT-21/BUG-10 and
+UX-10/BUG-11 each shipped straight off BUG-08's `doc` module and BUG-02's
+atomic write, also without needing ARCH-03; ARCH-03 (platform) unblocked
+NAT-02 (also done) and VIS-10 (which can now apply the OS-facing
+capitalisation convention it asks for - not yet done), and NAT-02 in turn
+unblocked NAT-03 (now done) and NAT-04 (still open); NAT-05 deleted an entire
+inaccessible subsystem rather than fixing it in place, independently of the
+rest of this graph; NAT-11 unblocked GEO-10 (the wheel now scrolls) and named
+two of GEO-11's eight constants; A11Y-01 (also done, needing nothing from
+this graph) unblocked A11Y-02, A11Y-03 and A11Y-04, none of which depended on
+tokens either; BUG-12 and NAT-13 each shipped independently, needing nothing
+from this graph and unblocking nothing on it; **GEO-01 + VIS-04** (the token
+block - spacing, rows, type, radius, elevation, motion, z-index, colour
+consolidation, folding in GEO-02's and GEO-09's asks) is done and unblocked
+exactly what this graph said it would: NAT-20 and A11Y-05 both shipped
+straight off it, PERF-01 shipped independently of it (the drag hot path is a
+pure-JS fix, not a token consumer), and VIS-07/VIS-08/VIS-09/GEO-07/GEO-08/
+VIS-18/NAT-15's forced-colours work remain open, now genuinely unblocked
+rather than waiting on a foundation that does not exist yet.
 ```
 
 ---
@@ -3827,7 +3697,10 @@ demonstrably true. Each is checkable, not a matter of opinion.
       except values documented in §6.3 with a stated reason.
 - [ ] No unnamed numeric constant exists in `grid.js`'s camera, zoom or render
       paths.
-- [ ] Every band height derives from the line box.
+- [x] Every band height derives from the line box. (GEO-01/GEO-02 — `--row-sm`/
+      `--row`/`--row-lg`, computed from `--line-box`, now drive the title bar,
+      tab strip, section headers, status bar and file-manager rows; verified
+      with the probe harness: `#tabs` 34px, `#status`/`.hdr` 26px, `li` 30px)
 - [ ] Side panels are proportional, clamped, user-resizable, and their sizes
       persist.
 - [ ] Palette cells are an integer multiple of 32 px, and the column count —
@@ -3843,15 +3716,25 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 ### Visual
 
-- [ ] Colour, type, spacing, radius, elevation, motion and z-index each have
+- [x] Colour, type, spacing, radius, elevation, motion and z-index each have
       exactly one definition; `grid.js` and `code.js` consume it rather than
-      restating it.
+      restating it. (GEO-01/VIS-04 — `style.css` `:root` is the one
+      definition; `tokens.js` reads the colour tokens once and `grid.js`'s
+      canvas draw calls and `code.js`'s `THEME` both consume that object;
+      verified with the probe harness: `Tokens` matches every `:root` colour
+      it names, and `THEME.colors['editorCursor.foreground'] === Tokens.acc`.
+      Radius/elevation/motion/z-index have no consumer yet, so nothing
+      restates them either - VIS-07/VIS-08/VIS-09 are what will)
 - [ ] The app renders in JetBrains Mono, bundled, identically on all three
       platforms.
 - [ ] Every interactive surface implements the same five states (rest, hover,
       active, selected, disabled), plus a composable focus ring.
-- [ ] All five scroll containers share one treatment, and the layout does not
-      shift between overlay and classic scrollbars.
+- [x] All five scroll containers share one treatment, and the layout does not
+      shift between overlay and classic scrollbars. (NAT-20/GEO-09 —
+      `#scripts`/`#midis`/`#palette`/`#props`/`#hbar` share one tokenised
+      `::-webkit-scrollbar` rule and `scrollbar-gutter: stable` on the four
+      vertical ones; verified with the probe harness: `scrollbarGutter` reads
+      `"stable"` on all four)
 - [ ] Motion is tokenised and honours `prefers-reduced-motion`.
 - [ ] Every list has an empty state; every error has an icon, a colour and a
       message that persists until acted on.
@@ -3873,7 +3756,10 @@ demonstrably true. Each is checkable, not a matter of opinion.
       contrast checker, not by eye.
 - [ ] No state is communicated by colour alone.
 - [ ] All hit targets are at least 24 × 24 px.
-- [ ] Status messages and errors are announced by a screen reader.
+- [x] Status messages and errors are announced by a screen reader. (A11Y-05 —
+      `#msg` carries `role="status"`, `App.fail()`'s error block carries
+      `role="alert"`; verified with the probe harness: both roles present,
+      `aria-atomic="true"` on both)
 - [ ] The app is usable under Windows High Contrast, `prefers-contrast: more`,
       and OS text scaling.
 - [ ] A VoiceOver, Narrator and Orca pass each reach and describe the file
@@ -3911,9 +3797,11 @@ demonstrably true. Each is checkable, not a matter of opinion.
       `[data-platform]` selectors in CSS. (ARCH-03)
 - [x] `W`, `H` and `B` are each defined once. (ARCH-02)
 - [ ] `npm run dist` produces installable artefacts for all three platforms.
-- [ ] `CLAUDE.md` is updated to describe the new architecture — main-owned
+- [x] `CLAUDE.md` is updated to describe the new architecture — main-owned
       document state, the menu, the platform module, the token system — so the
-      next reader does not have to rediscover any of it.
+      next reader does not have to rediscover any of it. (BUG-08/ARCH-01,
+      NAT-01, ARCH-03 for the first three; GEO-01/VIS-04 added the token
+      system paragraph and the `tokens.js` row in the file table)
 
 ### Performance
 
