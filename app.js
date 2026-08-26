@@ -637,8 +637,21 @@ async function tryclose()
 addEventListener('DOMContentLoaded', () => {
 	Grid.init($('cv'));
 
-	for (const b of document.querySelectorAll('.acts button'))
+	/* NAT-04: on Windows/Linux the hotbar is the only visible command surface
+	 * (style.css hides it on macOS, where the menu bar already carries File
+	 * regardless of window framing), so it gets the same tooltip-with-
+	 * accelerator and one-Tab-stop-plus-arrow-keys treatment as any other
+	 * toolbar - the roving() helper A11Y-01 already gave the palette, file
+	 * lists and tab strip, reused rather than reinvented. */
+	const ACCEL = api.platform === 'darwin' ?
+		{'new': '⌘N', open: '⌘O', save: '⌘S', saveas: '⌘⇧S'} :
+		{'new': 'Ctrl+N', open: 'Ctrl+O', save: 'Ctrl+S', saveas: 'Ctrl+Shift+S'};
+	const acts = [...document.querySelectorAll('.acts button')];
+	for (const b of acts) {
 		b.onclick = () => ACTS[b.dataset.act]();
+		b.title = b.textContent + ' (' + ACCEL[b.dataset.act] + ')';
+	}
+	roving(document.querySelector('.acts'), acts, 1);
 	$('add').onclick = addscript;
 	$('addmidi').onclick = ev => { ev.stopPropagation(); addmidi(); };
 	$('side').onclick = panelmenu;

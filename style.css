@@ -176,6 +176,15 @@ button:disabled { opacity: .35; cursor: default; }
 html[data-platform="darwin"] #title { padding-left: 78px; }	/* hiddenInset traffic lights */
 html[data-platform="win32"] #title { padding-right: 138px; }	/* titleBarOverlay caption buttons */
 
+/* NAT-04: the menu bar (menu.js) carries File on every platform, independent
+   of window framing - so on macOS, where it is a real, always-visible menu
+   bar regardless of the window being frameless, the hotbar only duplicates
+   it. On Windows/Linux titleBarStyle: 'hidden' (chrome.js) shows no visible
+   menu bar at all, so the hotbar stays there as the in-window command
+   surface - now a real toolbar (role="toolbar", accelerator tooltips and
+   roving tabindex, wired in app.js) rather than four bare buttons. */
+html[data-platform="darwin"] .acts { display: none; }
+
 /* tab strip */
 #tabs {
 	display: flex;
