@@ -223,19 +223,68 @@ Grid.setheight = function (h)
 	Grid.redraw();
 };
 
-Grid.fit = function ()
+/* Never fit *above* 100% - a small level should not be blown up past its
+ * native pixel size just because the window is large. */
+function fitset(z)
+{
+	Grid.cam.z = Math.max(ZMIN, Math.min(1, z));
+	Grid.cam.x = 0;
+	Grid.cam.y = -B / 2;
+	Grid.redraw();
+}
+
+/* UX-04: fit-height alone showed a 12-row level's full height but, on a 540
+ * column level, only ~4% of its width - there was no view that ever showed
+ * the whole thing.  Kept as an explicit command (it is the useful one while
+ * editing a tall level), alongside its width counterpart and Grid.fit()
+ * itself, which now takes whichever of the two is smaller. */
+Grid.fitH = function ()
 {
 	const r = Grid.cv.getBoundingClientRect();
 	if (!r.height)			/* not laid out yet; the resize does it */
 		return;
+	fitset(r.height / (Grid.h * B + 2 * FITPAD));
+};
 
-	/* Never fit *above* 100% - a small level should not be blown up past its
-	 * native pixel size just because the window is large. */
-	Grid.cam.z = Math.max(ZMIN, Math.min(1, r.height / (Grid.h * B + 2 * FITPAD)));
-	Grid.cam.x = 0;
-	Grid.cam.y = -B / 2;
+Grid.fitW = function ()
+{
+	const r = Grid.cv.getBoundingClientRect();
+	if (!r.height)
+		return;
+	fitset(r.width / (W * B + 2 * FITPAD));
+};
+
+Grid.fit = function ()		/* fit the level, not one axis */
+{
+	const r = Grid.cv.getBoundingClientRect();
+	if (!r.height)
+		return;
+	fitset(Math.min(r.height / (Grid.h * B + 2 * FITPAD), r.width / (W * B + 2 * FITPAD)));
+};
+
+/* UX-04: c.z *= 2 every two presses - the same "zoom doubles per N units of
+ * input" statement ZOOM_PX_PER_DOUBLING makes for the wheel, applied to a
+ * single keypress instead of a pixel of travel.  Consumed by app.js's ACTS
+ * table, not by this file. */
+/* exported ZOOM_STEP */
+const ZOOM_STEP = Math.SQRT2;
+
+/* Re-centres on the canvas's own midpoint, the natural anchor for a command
+ * with no pointer position to anchor to (onwheel()'s Ctrl+wheel zoom anchors
+ * on the pointer instead, since it has one). */
+Grid.zoomto = function (z)
+{
+	const r = Grid.cv.getBoundingClientRect();
+	const mx = r.width / 2, my = r.height / 2;
+	const wx = Grid.cam.x + mx / Grid.cam.z, wy = Grid.cam.y + my / Grid.cam.z;
+
+	Grid.cam.z = Math.max(ZMIN, Math.min(ZMAX, z));
+	Grid.cam.x = wx - mx / Grid.cam.z;
+	Grid.cam.y = wy - my / Grid.cam.z;
 	Grid.redraw();
 };
+
+Grid.zoomby = function (factor) { Grid.zoomto(Grid.cam.z * factor); };
 
 /* Keep the camera over the level so the scrollbar below the canvas can stand
  * for the whole range of x. */
@@ -289,6 +338,7 @@ Grid.draw = function ()
 
 	Grid.clamp();
 	Grid.syncbar();
+	App.zoom(Math.round(Grid.cam.z * 100));
 
 	const cw = Grid.cv.width, ch = Grid.cv.height;
 	const z = Grid.cam.z * Grid.dpr;

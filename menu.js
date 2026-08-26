@@ -49,10 +49,29 @@ function template(win, state)
 		]
 	};
 
+	/* UX-04: zoom had no command surface at all - wheel-only, no indicator, no
+	 * fit that actually fit the level.  Also gives Toggle Full Screen a home
+	 * again: the default menu's own Toggle Full Screen item had no replacement
+	 * once NAT-01's menu shipped without a View menu at all. */
+	const view = {
+		label: 'View',
+		submenu: [
+			{label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', enabled: onlevel, click: send('zoomin')},
+			{label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', enabled: onlevel, click: send('zoomout')},
+			{label: 'Actual Size', accelerator: 'CmdOrCtrl+0', enabled: onlevel, click: send('zoom100')},
+			{type: 'separator'},
+			{label: 'Fit Height', enabled: onlevel, click: send('fitheight')},
+			{label: 'Fit Width', enabled: onlevel, click: send('fitwidth')},
+			{label: 'Fit All', accelerator: 'CmdOrCtrl+9', enabled: onlevel, click: send('fitall')},
+			{type: 'separator'},
+			{role: 'togglefullscreen'}
+		]
+	};
+
 	const t = [];
 	if (mac)
 		t.push({role: 'appMenu'});
-	t.push(file, edit);
+	t.push(file, edit, view);
 	if (mac)
 		t.push({role: 'windowMenu'});
 	/* Reload and DevTools are development tools, not application features -

@@ -27,5 +27,9 @@ contextBridge.exposeInMainWorld('api', {
 	/* NAT-05: native context menus.  `rowmenu` sends the context captured at
 	 * click time; `onrowcmd` delivers back whichever item the user chose. */
 	rowmenu:	ctx => ipcRenderer.send('menu:row', ctx),
-	onrowcmd:	fn => ipcRenderer.on('rowcmd', (e, a) => fn(a))
+	onrowcmd:	fn => ipcRenderer.on('rowcmd', (e, a) => fn(a)),
+	/* UX-04: the status bar's zoom quick-menu (25/50/100/200%/Fit) - a native
+	 * popup like NAT-05's row menus, dispatching back over the same 'cmd'
+	 * channel the View menu's own zoom items use rather than a second one. */
+	zoommenu:	() => ipcRenderer.send('menu:zoom')
 });

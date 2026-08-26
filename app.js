@@ -64,6 +64,13 @@ App.status = function (cx, cy)
 		? cx + ', ' + cy : '';
 };
 
+/* UX-04: the only zoom feedback used to be none at all - wheel-only, with no
+ * numeric readout and no command beyond it.  Grid.draw() reports the current
+ * percentage on every frame; clicking it pops the same native quick-menu
+ * (main.js's 'menu:zoom' handler, NAT-05's pattern) the View menu's Zoom
+ * commands also dispatch through. */
+App.zoom = function (pct) { $('zoom').textContent = pct + '%'; };
+
 /* Semantic warnings (BUG-11) never block a save - lvl.js's review() only
  * says what the game would trip on: missing start/end, dangling script
  * references, out-of-bounds entities.  Recomputed by main on every
@@ -600,7 +607,18 @@ const ACTS = {
 	/* Reload must cross the same unsaved-changes guard as closing the window
 	 * (BUG-01) - a bare location.reload() would silently discard the level
 	 * exactly like the default menu's Reload item used to. */
-	reload:		async () => { if (await guard()) location.reload(); }
+	reload:		async () => { if (await guard()) location.reload(); },
+	/* UX-04: the View menu's zoom commands and the status bar's zoom quick-menu
+	 * both dispatch through this same table, alongside every other command. */
+	zoomin:		() => Grid.zoomby(ZOOM_STEP),
+	zoomout:	() => Grid.zoomby(1 / ZOOM_STEP),
+	zoom25:		() => Grid.zoomto(0.25),
+	zoom50:		() => Grid.zoomto(0.5),
+	zoom100:	() => Grid.zoomto(1),
+	zoom200:	() => Grid.zoomto(2),
+	fitheight:	() => Grid.fitH(),
+	fitwidth:	() => Grid.fitW(),
+	fitall:		() => Grid.fit()
 };
 
 /* Canvas-local keys only: Escape and Delete apply to the selection, not to
@@ -656,6 +674,7 @@ addEventListener('DOMContentLoaded', () => {
 	$('addmidi').onclick = ev => { ev.stopPropagation(); addmidi(); };
 	$('side').onclick = panelmenu;
 	$('side').oncontextmenu = panelmenu;
+	$('zoom').onclick = () => api.zoommenu();
 	addEventListener('keydown', keys, true);
 	api.onclose(tryclose);
 	api.oncmd(name => { if (ACTS[name]) ACTS[name](); });

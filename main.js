@@ -291,6 +291,23 @@ ipcMain.on('menu:row', (e, ctx) => {
 	Menu.buildFromTemplate(items).popup({window: win});
 });
 
+/* UX-04: the status bar's zoom indicator, clicked - the same five commands
+ * the View menu carries, dispatched through the one 'cmd' channel every menu
+ * command already goes through rather than a second, parallel one. */
+ipcMain.on('menu:zoom', () => {
+	if (!win)
+		return;
+	const send = name => () => win.webContents.send('cmd', name);
+	Menu.buildFromTemplate([
+		{label: '25%', click: send('zoom25')},
+		{label: '50%', click: send('zoom50')},
+		{label: '100%', click: send('zoom100')},
+		{label: '200%', click: send('zoom200')},
+		{type: 'separator'},
+		{label: 'Fit', click: send('fitall')}
+	]).popup({window: win});
+});
+
 ipcMain.handle('lvl:new', guard(async () => {
 	doc.path = null;
 	doc.name = null;
