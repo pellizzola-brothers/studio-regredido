@@ -654,6 +654,7 @@ async function tryclose()
 
 addEventListener('DOMContentLoaded', () => {
 	Grid.init($('cv'));
+	Layout.init();
 
 	/* NAT-04: on Windows/Linux the hotbar is the only visible command surface
 	 * (style.css hides it on macOS, where the menu bar already carries File

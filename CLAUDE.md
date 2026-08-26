@@ -46,6 +46,8 @@ tokens.js     Reads style.css's :root design tokens into a plain object, for
 undo.js       The level document's undo/redo history.
 grid.js       The level canvas: rendering, panning, every edit gesture.
 panel.js      Palette (top right) and property inspector (bottom right).
+layout.js     The four splitters between the panels: drag, keyboard, reset,
+              persistence.
 code.js       Monaco host: one model per script.
 app.js        Document state, tabs, file manager, keyboard commands.
 index.html    Markup and script order.
@@ -268,7 +270,7 @@ one in `panel.js` collide, and the later file silently wins. `grid.js` uses
 `cell()`. Check for collisions when adding top-level names:
 
 ```bash
-grep -hoE '^(function [a-z_]+|const [A-Z_a-z]+ =)' catalog.js tokens.js grid.js panel.js code.js app.js | sort | uniq -d
+grep -hoE '^(function [a-z_]+|const [A-Z_a-z]+ =)' catalog.js tokens.js grid.js panel.js layout.js code.js app.js | sort | uniq -d
 ```
 
 `npm run check` (`tools/check.js`) runs the same check on every invocation, so
@@ -314,7 +316,7 @@ box returns, default 1), `PB_WAIT` (ms before `PB_STEPS` runs, default 3500).
 `PB_SHOT` is optional; omit it to skip the screenshot.
 
 Because the renderer scripts share a global scope, internals are reachable from
-`executeJavaScript`: `Grid`, `App`, `Panel`, `Code`, `Undo`, `setblock()`,
+`executeJavaScript`: `Grid`, `App`, `Panel`, `Code`, `Undo`, `Layout`, `setblock()`,
 `stroke()`, `at()`, `newdef()`, `menu()`, `closemenu()`. Synthetic
 `MouseEvent`s on `#cv` and on `#scripts li` go through the same handlers as
 real input, which is the useful way to test the editing rules and the menu.

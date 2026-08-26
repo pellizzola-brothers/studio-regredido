@@ -18,7 +18,7 @@ const ROOT = path.join(__dirname, '..');
  * as classic scripts sharing one global object. */
 function collisions()
 {
-	const files = ['catalog.js', 'tokens.js', 'grid.js', 'panel.js', 'code.js', 'app.js'];
+	const files = ['catalog.js', 'tokens.js', 'grid.js', 'panel.js', 'layout.js', 'code.js', 'app.js'];
 	const seenin = new Map();
 	const dupes = [];
 

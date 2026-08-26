@@ -25,9 +25,14 @@
 	<aside id="side">
 		<div class="hdr">scripts</div>
 		<ul id="scripts"></ul>
+		<div id="splitter-scripts" class="splitter h" role="separator" tabindex="0"
+			aria-orientation="horizontal" aria-label="Resize scripts list"></div>
 		<div class="hdr">midi<button id="addmidi" title="Import MIDI">+</button></div>
 		<ul id="midis"></ul>
 	</aside>
+
+	<div id="splitter-side" class="splitter v" role="separator" tabindex="0"
+		aria-orientation="vertical" aria-label="Resize file manager"></div>
 
 	<main id="stage">
 		<div id="wrap"><canvas id="cv" tabindex="0"></canvas></div>
@@ -35,9 +40,14 @@
 		<div id="code"></div>
 	</main>
 
+	<div id="splitter-right" class="splitter v" role="separator" tabindex="0"
+		aria-orientation="vertical" aria-label="Resize inspector"></div>
+
 	<aside id="right">
 		<div class="hdr r">items</div>
 		<div id="palette"></div>
+		<div id="splitter-props" class="splitter h" role="separator" tabindex="0"
+			aria-orientation="horizontal" aria-label="Resize palette"></div>
 		<div class="hdr r">properties</div>
 		<div id="props"></div>
 	</aside>
@@ -51,5 +61,6 @@
 <script src="undo.js"></script>
 <script src="grid.js"></script>
 <script src="panel.js"></script>
+<script src="layout.js"></script>
 <script src="code.js"></script>
 <script src="app.js"></script>

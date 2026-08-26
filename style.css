@@ -86,14 +86,24 @@
 	   li's own indent/padding and scrollbar gutter. Each maximum keeps the
 	   panel from ballooning into empty space on an ultrawide display - wide
 	   enough for the palette's default four-across layout or the inspector's
-	   widest field, not a fraction of the window. User-resizing that
-	   overrides this default is GEO-04, still open. */
+	   widest field, not a fraction of the window. GEO-04: a splitter drag
+	   (layout.js) overwrites --side/--right directly, within these same
+	   min/max bounds - the clamp() below is what a double-click or Enter on
+	   the splitter goes back to, by simply removing the override. */
 	--side-min: calc(16ch + var(--space-6) + var(--space-4) + var(--scrollbar));
 	--side-max: 320px;
 	--side: clamp(var(--side-min), 10.5%, var(--side-max));
 	--right-min: calc(3 * var(--cell) + 2 * var(--space-2) + 2 * var(--space-4) + var(--scrollbar));
 	--right-max: 320px;
 	--right: clamp(var(--right-min), 13%, var(--right-max));
+	/* GEO-04: the splitter track width/height, and the two in-panel splits a
+	   splitter drag (layout.js) also overwrites directly - #scripts/#midis
+	   and #palette/#props have no content-driven min/max token of their own
+	   (that is GEO-05/GEO-06, still open), so these are plain percentages
+	   with a floor and ceiling enforced in JS instead. */
+	--split: 8px;
+	--scripts-h: 60%;
+	--props-h: 46%;
 
 	/* ---- borders, radius, elevation: defined, not yet consumed (VIS-09) ---- */
 	--border: 1px;
@@ -245,22 +255,44 @@ html[data-platform="darwin"] .acts { display: none; }
 #add { padding: 0 var(--space-5); }
 .run { padding: 0 var(--space-6); color: var(--acc-text); font-size: 13px; }
 
-/* body */
-#body { display: flex; flex: 1; min-height: 0; }
+/* body
+ *
+ * GEO-04: a grid, not a flex row, so a splitter drag needs only overwrite
+ * --side/--right within the bounds GEO-03 already defines for them - the two
+ * var(--split) tracks carry the splitters themselves, auto-placed into their
+ * columns by DOM order (#side, splitter, #stage, splitter, #right). */
+#body {
+	display: grid;
+	grid-template-columns: var(--side) var(--split) minmax(0, 1fr) var(--split) var(--right);
+	flex: 1;
+	min-height: 0;
+}
 
 #side, #right {
 	display: flex;
 	flex-direction: column;
 	background: var(--panel);
-	/* A flex item's default min-width is auto, i.e. its content's intrinsic
+	/* A grid item's default min-width is auto, i.e. its content's intrinsic
 	   minimum - normally invisible, but #palette's auto-fill grid (GEO-07)
 	   has a large one (fixed-size tracks don't shrink the way 1fr ones did),
-	   so without this #right ignored its clamped flex-basis outright and sized
+	   so without this #right ignored its own column track outright and sized
 	   itself off the palette's content instead. The standard fix. */
 	min-width: 0;
 }
-#side { flex: 0 0 var(--side); }
-#right { flex: 0 0 var(--right); }
+
+/* GEO-04: the hit area is wider than the 1px line it draws (a var(--split)
+   track, not the line's own width), so a splitter is easy to grab without
+   being visually heavy - the same "generous hit area, modest visual weight"
+   split NAT-13's cursor-per-state treatment already established for the
+   canvas, here applied to an element whose whole job is its cursor and its
+   hit area. */
+.splitter { position: relative; background: transparent; touch-action: none; }
+.splitter.v { cursor: col-resize; }
+.splitter.h { flex: 0 0 var(--split); cursor: row-resize; }
+.splitter::after { content: ''; position: absolute; background: var(--line); }
+.splitter.v::after { top: 0; bottom: 0; left: 50%; width: 1px; }
+.splitter.h::after { left: 0; right: 0; top: 50%; height: 1px; }
+.splitter:hover::after, .splitter:focus-visible::after { background: var(--acc); }
 
 .hdr {
 	display: flex;
@@ -273,9 +305,12 @@ html[data-platform="darwin"] .acts { display: none; }
 .hdr.r { justify-content: flex-end; }
 .hdr button { margin-left: auto; line-height: 1; }
 
-#scripts, #midis { overflow: auto; padding: var(--space-4) 0; list-style: none; }
-#scripts { flex: 1 1 60%; }
-#midis { flex: 1 1 40%; }
+#scripts, #midis { overflow: auto; min-height: 0; padding: var(--space-4) 0; list-style: none; }
+/* GEO-04/GEO-05: user-resizable now (layout.js drags --scripts-h/--props-h
+   within a floor and ceiling), defaulting to the same 60/40 and 54/46 splits
+   as before a drag ever happens. */
+#scripts { flex: 0 0 var(--scripts-h); }
+#midis { flex: 1 1 auto; }
 /* GEO-01/GEO-02: --space-3 top/bottom padding, on the same 18px line box
    every other row height derives from, gives exactly --row (30px) - the same
    relationship --row-lg and --row-sm state, applied here instead of the old
@@ -308,8 +343,7 @@ li span { overflow: hidden; text-overflow: ellipsis; }
 /* stage */
 #stage {
 	position: relative;
-	display: flex;
-	flex: 1;
+	display: flex;			/* its own children's layout - #body's is a grid now (GEO-04) */
 	flex-direction: column;
 	min-width: 0;
 }
@@ -379,6 +413,7 @@ body.text #right { display: none; }
 	display: grid;
 	overflow: auto;
 	flex: 1 1 auto;
+	min-height: 0;
 	align-content: start;
 	justify-content: start;
 	gap: var(--space-2);
@@ -414,7 +449,9 @@ body.text #right { display: none; }
 .cell.add { display: grid; place-items: center; color: var(--dim); }
 
 /* inspector */
-#props { overflow: auto; flex: 0 1 46%; padding: 10px; }
+/* GEO-04/GEO-06: user-resizable now (layout.js), defaulting to the same
+   ~46% split as before a drag ever happens. */
+#props { overflow: auto; flex: 0 0 var(--props-h); min-height: 0; padding: 10px; }
 #props h4 { margin: 10px 0 4px; color: var(--dim); font: inherit; font-size: 10px; }
 #props h4:first-child { margin-top: 0; }
 #props label { display: block; margin-bottom: var(--space-3); color: var(--dim); }
