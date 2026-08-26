@@ -5,10 +5,9 @@
    spacing, row heights, radius, elevation, motion and z-index alongside the
    colours - consumed by grid.js and code.js through tokens.js rather than
    each restating its own copy (POLISH.md). Not every token here has a
-   consumer yet (VIS-07's interaction states, VIS-08's motion, VIS-09's
-   radius/elevation and GEO-03/04's resizable panels are still open); they
-   are defined now so the components that need them later have a scale to
-   join instead of inventing their own. */
+   consumer yet (VIS-08's motion and VIS-09's radius/elevation are still
+   open); they are defined now so the components that need them later have a
+   scale to join instead of inventing their own. */
 :root {
 	/* ---- surfaces ---- */
 	--frame: #1c1d20;
@@ -18,6 +17,12 @@
 	--hdr: #161026;
 	--surface-raised: #17102a;		/* cells, inputs, popovers - was a literal x4 */
 	--surface-selected: #251a3a;		/* the palette's selected-cell fill */
+	/* VIS-07: the five-state contract's two tints, one step apart from
+	   --panel and from each other - hover a touch lighter, active/pressed a
+	   touch lighter still, both short of --surface-selected so a hovered or
+	   pressed row is never confused with a selected one. */
+	--surface-hover: #1a1229;
+	--surface-active: #211937;
 	--canvas-bg: #0b0813;			/* was a literal in grid.js */
 	--checker-a: #1d1530;			/* the palette's air/eraser checkerboard */
 	--checker-b: #120d1f;
@@ -41,6 +46,12 @@
 	--acc-text: #9a74e0;			/* text coloured with the accent - 4.5:1 use */
 	--control-border: var(--acc);		/* input/select/textarea/button boundaries - 3:1 */
 	--danger: #ff8f8f;			/* was a literal x3: .err, .warn, #msg.bad */
+	/* VIS-07: disabled used to be opacity: .35 on --dim, which measured
+	   ~1.5:1 - effectively invisible.  3.48-4.56:1 against every surface it
+	   sits on (computed the same way VIS-01 computed --dim/--acc-text),
+	   dimmer than --dim so disabled genuinely reads as de-emphasised, never
+	   opacity alone. */
+	--fg-disabled: #786a9c;
 
 	/* ---- type ---- */
 	--font-size: 12px;			/* the design's body size */
@@ -137,15 +148,25 @@ body {
 	cursor: default;
 }
 
+/* VIS-07: the five-state contract - rest/hover/active/selected/disabled,
+   applied the same way everywhere it applies (rows, tabs, palette cells,
+   buttons) rather than each surface inventing its own subset.  Selected is
+   each surface's own concern below, since what "selected" means differs by
+   surface (.cell.on's border+fill, li.on/.tab.on's leading-edge marker); the
+   other four are identical everywhere, so they live once, here. */
 button {
 	background: none;
 	border: 0;
+	border-radius: var(--radius-1);
 	color: var(--dim);
 	font: inherit;
 	cursor: pointer;
 }
-button:hover:not(:disabled) { color: var(--fg); }
-button:disabled { opacity: .35; cursor: default; }
+button:hover:not(:disabled) { color: var(--fg); background: var(--surface-hover); }
+button:active:not(:disabled) { background: var(--surface-active); }
+/* Never opacity alone (VIS-07) - a dimmer, still-legible colour instead, so a
+   disabled control reads as unavailable rather than as merely faded. */
+button:disabled { color: var(--fg-disabled); cursor: default; }
 
 /* :focus-visible rather than :focus so a mouse click leaves no ring - only
    keyboard/programmatic focus does.  2px width + 2px offset is what clears
@@ -194,6 +215,7 @@ html[data-platform="darwin"] .acts { display: none; }
 }
 #tablist { display: flex; overflow: hidden; }
 .tab {
+	position: relative;		/* anchors .on's leading-edge marker */
 	display: flex;
 	align-items: center;
 	gap: var(--space-4);
@@ -203,8 +225,20 @@ html[data-platform="darwin"] .acts { display: none; }
 	white-space: nowrap;
 	cursor: pointer;
 }
-.tab:hover { color: var(--fg); }
+.tab:hover { color: var(--fg); background: var(--surface-hover); }
+.tab:active { background: var(--surface-active); }
 .tab.on { background: var(--tab); color: var(--acc-text); }
+/* VIS-07: one selected treatment - text colour, a fill, and a 2px marker on
+   the edge that reads as "this one" - rather than li.on's colour-only one and
+   .cell.on's border-only one.  A tab's own leading edge is its bottom, where
+   it meets the content it opens. */
+.tab.on::after {
+	content: '';
+	position: absolute;
+	right: 0; bottom: 0; left: 0;
+	height: var(--border-strong);
+	background: var(--acc);
+}
 .tab span { overflow: hidden; text-overflow: ellipsis; }
 .tab .tabclose { font-style: normal; opacity: .6; }
 .tab .tabclose:hover { opacity: 1; }
@@ -247,6 +281,7 @@ html[data-platform="darwin"] .acts { display: none; }
    relationship --row-lg and --row-sm state, applied here instead of the old
    1px/18px pair that landed the row 10px short of it. */
 li {
+	position: relative;		/* anchors .on's leading-edge marker */
 	display: flex;
 	align-items: center;
 	gap: var(--space-3);
@@ -255,8 +290,19 @@ li {
 	white-space: nowrap;
 	cursor: pointer;
 }
-li:hover { color: var(--fg); }
-li.on { color: var(--acc-text); }
+li:hover { color: var(--fg); background: var(--surface-hover); }
+li:active { background: var(--surface-active); }
+li.on { color: var(--acc-text); background: var(--surface-selected); }
+/* VIS-07: matches .tab.on's marker, on the edge a vertical list's rows share
+   with the panel that owns them - their left edge, not a tab strip's bottom
+   one. */
+li.on::before {
+	content: '';
+	position: absolute;
+	top: 0; bottom: 0; left: 0;
+	width: var(--border-strong);
+	background: var(--acc);
+}
 li span { overflow: hidden; text-overflow: ellipsis; }
 
 /* stage */
@@ -360,6 +406,10 @@ body.text #right { display: none; }
 }
 .cell:hover { border-color: var(--dim); }
 .cell.on { border-color: var(--acc); background-color: var(--surface-selected); }
+/* VIS-07: beats the generic button:hover's background (below) on specificity,
+   so hovering the already-selected cell does not read as merely hovered -
+   selected stays visually selected under a hover too. */
+.cell.on:hover { background-color: var(--surface-selected); }
 .cell.air { background: repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 0/12px 12px; }
 .cell.add { display: grid; place-items: center; color: var(--dim); }
 
@@ -380,6 +430,11 @@ body.text #right { display: none; }
 #props input:focus, #props select:focus, #props textarea:focus {
 	border-color: var(--acc);
 }
+/* VIS-07: disabled fields (the level's own read-only width, an entity's
+   read-only cell coordinate) used to get whatever grey Chromium's UA
+   stylesheet supplies for a bare <input disabled> - not a colour this app
+   ever chose. */
+#props input:disabled { color: var(--fg-disabled); cursor: default; }
 #props textarea { height: 48px; resize: vertical; }
 #props .row { display: flex; gap: var(--space-3); }
 #props .row > * { flex: 1; }
@@ -390,7 +445,8 @@ body.text #right { display: none; }
 	border: 1px solid var(--control-border);
 	color: var(--dim);
 }
-#props .act:hover { border-color: var(--acc); color: var(--fg); }
+#props .act:hover { border-color: var(--acc); color: var(--fg); background: var(--surface-hover); }
+#props .act:active { background: var(--surface-active); }
 #props .err { color: var(--danger); white-space: pre-wrap; }
 #props .warn { margin: 0 0 var(--space-4) var(--space-6); padding: 0; color: var(--danger); font-size: 11px; }
 #props .warn li { margin-bottom: var(--space-1); }
