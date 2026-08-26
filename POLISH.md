@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The thirty-eight items below have shipped and are removed from the findings
+The forty-three items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -446,7 +446,8 @@ when the device has not already supplied its own `deltaX`. `ev.deltaMode` is
 normalised (`LINE`/`PAGE` to pixels) so the same physical notch feels the
 same on every device. `ZMIN` is now shared between `Grid.fit()` and the
 wheel's own clamp (GEO-11's `0.03`/`3` row and half of its `0.0015` row are
-therefore already done - `FITPAD`, `GRIDMIN`, `SELW` and `BARSLOP` are not).
+therefore already done here; `FITPAD`, `GRIDMIN`, `SELW` and `BARSLOP` were
+named later, see "Already completed", GEO-11).
 Verified with the probe harness: a plain wheel event (`deltaX: 40,
 deltaY: 20`) panned the camera by `(80, 40)` world px at `z = 0.5` and left
 zoom untouched; the same event with `ctrlKey: true` changed zoom
@@ -528,9 +529,11 @@ gone. The default size is now 80% of `screen.getPrimaryDisplay()
 clamped between the unchanged minimum and the `1600 × 950` the UI was
 actually designed and tested at - now a ceiling on the *default*, not a fixed
 size, and centred (`center: true`) rather than placed at a hard-coded
-`(160, 25)`. The true content-driven minimum GEO-03 would enable is still
-open, per the original finding's own note - `MINW`/`MINH` stay the old
-literals, named and commented, pending that. `getNormalBounds()` plus
+`(160, 25)`. `MINW`/`MINH` stay the old `960 × 620` literals, named and
+commented; deriving them from the panels' own new content-driven minimums
+(`--side-min` + `--right-min` + a usable canvas width - GEO-03, done, see
+"Already completed") instead of a guessed pair of numbers is still open, and
+is now a pure main.js change with nothing left blocking it. `getNormalBounds()` plus
 `isMaximized()`/`isFullScreen()` are persisted to
 `userData/window.json` on every `close`, and restored on the next launch
 **only if** the saved rectangle still overlaps some currently-attached
@@ -717,6 +720,121 @@ text.
 
 ---
 
+#### GEO-11 — Canvas magic numbers
+
+Shipped: `grid.js` gained a named `const` block - `FITPAD = B` (`Grid.fit()`'s
+margin above and below the level), `GRIDMIN = 10` (the device-px threshold
+below which grid lines stop drawing), `SELW = 2` (the selection ring's stroke
+width, with its inset now derived as `SELW / 2` rather than the bare `1`/`2`
+pair it used to be), and `BARSLOP = 1` (the scrollbar re-entrancy tolerance,
+now provably the same value at both the site that writes `bar.scrollLeft` and
+the site that reads it back) - joining `ZMIN`/`ZMAX`/`ZOOM_PX_PER_DOUBLING`,
+already named (NAT-11, done, see above). The `+ .5` canvas offsets are left as
+bare literals, per the finding's own text, with a comment added at their first
+use explaining why they are correct as written. `ZMIN` itself still uses its
+old floor rather than a "the level fits the narrowest viewport" derivation -
+the finding's own "Recommended" section scoped this to naming constants, not
+reformulating them, so that remains a separate, un-filed possibility rather
+than a gap in this fix. Verified with the probe harness: all four names are
+reachable in the renderer's shared global scope with their expected values
+(`100`, `10`, `2`, `1`); `Grid.fit()` still produces the same zoom it did
+before the rename for an unchanged level.
+
+---
+
+#### PERF-04 — Canvas resize is uncoalesced
+
+Shipped: `Grid.resize()` (`grid.js`) no longer reallocates the canvas backing
+store synchronously on every `ResizeObserver` callback - it now schedules one
+`requestAnimationFrame` (tracked on `Grid.rsz`, the same coalescing pattern
+`Grid.redraw()`/`Grid.need` already established), and the actual work,
+`doresize()`, skips reassigning `cv.width`/`cv.height` when the computed
+target device-pixel dimensions have not changed from the canvas's current
+ones - a DPI-only change (BUG-12's case) still reallocates, since the target
+dimensions genuinely differ at the same CSS size. Verified with the probe
+harness: instrumenting `requestAnimationFrame` and firing `Grid.resize()`
+five times in a burst scheduled exactly **one** frame, not five; the canvas's
+`width`/`height` were unchanged and correct after the coalesced frame ran.
+
+---
+
+#### GEO-07 — The palette produces fractional cells for 32 px sprites
+
+Shipped: `style.css` gained `--sprite: 32px` and `--cell: var(--sprite)`;
+`#palette`'s `grid-template-columns: repeat(4, 1fr)` is now
+`repeat(auto-fill, var(--cell))` with `justify-content: start`, so cells are
+always an integer 32px and the *column count*, not the cell size, changes
+with the panel's width. Offering 1×/2× cell sizes as a preference (UX-11) was
+not implemented - out of this finding's own scope, which only asked that the
+token exist for such a preference to flip later. Fixing this exposed a real,
+separate layout bug: `#right` (a flex item whose default `min-width` is
+`auto`) was sizing itself off the grid's own large intrinsic width instead of
+its clamped flex-basis, because a `repeat(auto-fill, <fixed size>)` grid -
+unlike the old `1fr`-based one, which had almost no minimum-content width -
+has a real one. `min-width: 0` on `#side`/`#right` (the standard fix for
+exactly this class of flex-sizing bug) closed it; without it, `#right` was
+measured at 350px against a computed 13% target of 200px, silently ignoring
+its own flex-basis entirely. `panel.js`'s roving-tabindex helper used a
+hardcoded `PALCOLS = 4` for arrow-key navigation, which the palette's now
+width-dependent column count would have made wrong at any width other than
+the one it was written against; replaced with `palcols()`, which reads the
+actual column count back from the grid's own resolved
+`gridTemplateColumns`. Verified with the probe harness: `getComputedStyle(
+palette).gridTemplateColumns` now reports N `"32px"` entries (previously
+`"42.25px"` × 4) at the window size tested; a screenshot shows crisp,
+unblurred cell borders where the old fractional cells anti-aliased to grey.
+
+---
+
+#### GEO-03 — Side panels are fixed pixel widths and consume 41 % of the minimum window
+
+Shipped: `--side`/`--right` in `style.css` are now
+`clamp(var(--side-min), 10.5%, var(--side-max))` /
+`clamp(var(--right-min), 13%, var(--right-max))` - the percentages are the
+design file's own ratios (`Pellizzola Brothers.svg`: 10.44%, 13.09%), stated
+as such rather than frozen into one window width's pixels. `--right-min` is
+content-driven exactly as the finding asked: the width three whole `--cell`
+columns need, plus the palette's own padding/gaps and the scrollbar gutter
+(GEO-07, NAT-20, both done). `--side-min` has no equally concrete formula in
+the finding to follow - the file manager has no analogous "N whole units"
+constraint - so it is derived instead from a legible file name in `ch` units
+(which tracks the actual font's metrics, not a guessed pixel count) plus
+`li`'s own indent/padding and the scrollbar gutter. Both maxima are 320px, a
+ceiling wide enough for the palette's default four-across layout or the
+inspector's widest field without ballooning into empty space on an ultrawide
+display. User-resizing that overrides this default, per the finding's own
+closing note ("the proportion is the default, not a cage"), is GEO-04 and
+remains open. Verified with the probe harness: at this machine's measured
+1536px window width, `#right` computed to `199.672px` (`clamp(132px, 13% =
+199.68px, 320px)`, matching by hand) and `#side` to `161.266px` (10.5% of
+1536, above its own floor); the palette rendered 4 whole 32px columns in that
+width, confirming GEO-07's own integer-cell math now has room to work with.
+
+---
+
+#### ARCH-08 — Monaco is loaded eagerly and shipped whole
+
+Shipped: `Code.init()` (`code.js`) is now idempotent - a first call actually
+loads Monaco (showing a plain "loading editor…" placeholder in `#code` while
+it does), a call made while that load is already in flight queues its
+callback instead of starting a second `require(['vs/editor/editor.main'],
+...)`, and a call once ready runs its callback immediately. `App.select()`
+(`app.js`) calls it on the first script-tab activation instead of the
+unconditional call `DOMContentLoaded` used to make, so the Level Editor tab -
+the one every session opens first, and the only one most sessions ever use -
+no longer pulls in several megabytes of JavaScript it never touches.
+Narrowing the packaged `files` list (this finding's other half) has nothing
+to narrow yet, since no packaging configuration exists (NAT-07, still open).
+Verified with the probe harness: `Code.ready`/`Code.loading` both read
+`false` immediately after boot, before any script tab is opened; opening a
+script tab drives `Code.ready` to `true` (polled), with a real Monaco model
+holding the new script's content; opening a second script tab immediately
+after reused the same editor instance with no second load, showing the
+second script's own content; a screenshot confirms the editor renders
+correctly end-to-end after the lazy load.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -806,19 +924,29 @@ instead of just `#hbar` (NAT-20); the inspector no longer rebuilds itself from
 an HTML string on every cell an entity drag crosses (PERF-01); and status
 messages and validation failures now reach a screen reader instead of being
 silent visual-only changes (A11Y-05) — see "Already completed" above for all
-of these. The shell's remaining problems are below.
+of these. Most recently still: the palette's cells are an integer multiple of
+their 32 px sprites instead of a fractional 42.25 px stretch (GEO-07); the
+side panels are proportional and clamped instead of frozen at one window
+width's worth of pixels (GEO-03); `grid.js`'s remaining unnamed constants are
+named (GEO-11); a window resize no longer reallocates the canvas backing
+store on every observed frame (PERF-04); and Monaco - several megabytes of
+JavaScript the Level Editor tab never touches - now loads on the first script
+tab a session opens instead of unconditionally at boot (ARCH-08) — see
+"Already completed" above for all five. The shell's remaining problems are
+below.
 
 ### The three biggest remaining sources of perceived unpolish
 
-1. **Geometry is still partly arbitrary.** GEO-01 gave the stylesheet its one
-   spacing/row/type scale and moved the chrome bands (title bar, tab strip,
-   section headers, status bar, file-manager rows) onto it — done, see
-   "Already completed" — but the panels themselves are not yet part of that
-   scale: side panels are still pinned at 184 px and 212 px, consuming 41 % of
-   the 960 px minimum window; `#props { flex: 0 1 46% }`; `#scripts { flex: 1 1
-   60% }`; and the palette's `repeat(4, 1fr)` still computes to **42.25 px
-   cells for 32 px sprites** — a fractional, shimmering scale factor of 1.32
-   (GEO-03, GEO-04, GEO-07).
+1. **Geometry is mostly real now; resizing is what's left.** GEO-01 gave the
+   stylesheet its one spacing/row/type scale (done); the side panels are now
+   proportional and clamped to a content-driven minimum instead of frozen at
+   184 px/212 px, and the palette's cells are an integer 32 px instead of a
+   fractional 42.25 px stretch (GEO-03/GEO-07, both done — see "Already
+   completed"). What the panels still cannot do is be dragged wider or
+   narrower by the user - the proportion is a *default*, not yet an
+   overridable one (GEO-04) - and `#props { flex: 0 1 46% }` / `#scripts
+   { flex: 1 1 60% }` are still unexplained fractions of their own (GEO-05,
+   GEO-06).
 2. **Most of the rest is still not native.** Window controls, context menus,
    the window title/proxy-icon/edited-dot and window-state persistence are
    now the OS's own (NAT-02, NAT-05, NAT-03, NAT-10, see "Already
@@ -841,9 +969,10 @@ of these. The shell's remaining problems are below.
 In order of user-visible payoff per unit of work. Three of the original four
 are done — `titleBarStyle`/`titleBarOverlay` in place of the fake dots
 (NAT-02), native `Menu.popup()` context menus (NAT-05), and the spacing/row/
-type token scale (GEO-01/VIS-04), all see "Already completed" — and are not
-repeated below. The fourth still needs proportional, splitter-resizable
-panels (GEO-03/GEO-04) on top of the scale GEO-01 now provides.
+type token scale plus proportional panels (GEO-01/VIS-04, GEO-03), all see
+"Already completed" — and are not repeated below. The fourth is narrower than
+originally scoped: the panels are proportional now, so what remains is making
+them user-resizable with splitters (GEO-04).
 
 | # | Change | Why |
 |---|--------|-----|
@@ -971,9 +1100,11 @@ relationship to the surrounding chrome is VIS-18, not this). `main.js`'s
 `backgroundColor` and `chrome.js`'s `BAR` remain the two documented, necessary
 duplicates (each must be known before any CSS has loaded). Not every token has
 a consumer yet: radius, elevation, motion and z-index are defined but unused,
-waiting on VIS-08/VIS-09; panel widths (184 px/212 px) and the palette's
-fractional cell size are still open (GEO-03/GEO-04/GEO-07); there is still
-exactly **one** shadow (`0 6px 20px rgba(0,0,0,.55)`), **one** non-circular
+waiting on VIS-08/VIS-09. Panel widths are proportional and clamped, and the
+palette's cells are an integer multiple of the sprite (GEO-03/GEO-07, done -
+see "Already completed"); user-resizing that overrides the proportional
+default is GEO-04, still open. There is still exactly **one** shadow
+(`0 6px 20px rgba(0,0,0,.55)`), **one** non-circular
 radius in use (the scrollbar thumb's, now a token relationship rather than a
 coincidence - NAT-20, done), and **zero** transitions or animations applied
 anywhere.
@@ -1135,7 +1266,9 @@ a no-bundler project) with:
   `textures/icons/` or the design file, at 1024 × 1024 down to 16 × 16, keeping
   the pixel art crisp at small sizes (hand-tune 16/32, do not just downscale).
 - `files` narrowed so the whole `textures/` clone and the whole
-  `monaco-editor` package do not ship (ARCH-08).
+  `monaco-editor` package do not ship - Monaco itself now loads lazily
+  (ARCH-08, done, see "Already completed"), but nothing narrows what a build
+  would package until this finding lands.
 - macOS `hardenedRuntime` + notarisation; Windows Authenticode; Linux AppImage
   and/or `.deb`.
 
@@ -1393,56 +1526,15 @@ tokens that come out of it are collected in §6.
 
 ---
 
-#### GEO-03 — Side panels are fixed pixel widths and consume 41 % of the minimum window
-
-**Category** Layout · **Severity** High · **Priority** P1 · **Affects** UI, UX
-
-**Current.** `--side: 184px`, `--right: 212px`, applied as
-`flex: 0 0 var(--side)` / `flex: 0 0 var(--right)`. Measured in the running
-app: `184 / 212 / win 1600` — 11.5 % and 13.25 % at the default size. At the
-declared minimum window width of 960 px they become **19.2 % and 22.1 %,
-together 41.3 %**, leaving the canvas 563 px — roughly five and a half tiles at
-100 % zoom.
-
-**Why it's a problem.** The canvas is the document. Fixed side panels mean the
-document's share of the window shrinks exactly when the window is smallest and
-the document needs it most.
-
-**Evidence for the intended proportion.** The design file
-(`Pellizzola Brothers.svg`, a 3 146 × 990 canvas holding two window mock-ups)
-places the window at x 48 → 1552 (1 504 wide), the left sidebar at x 48 → 205
-(**157 px = 10.44 %**) and the right panel at x 2 901 → 3 098 within the second
-mock-up's 1 505 px window (**197 px = 13.09 %**). The implementation's ratios
-at the default size (11.5 % / 13.25 %) are close to the design's — the *ratio*
-was the design intent; freezing it into pixels is what broke it.
-
-**Recommended.** Express panel widths as clamped percentages of the body:
-
-```
-#side  { flex: 0 0 clamp(var(--side-min), 10.5%, var(--side-max)); }
-#right { flex: 0 0 clamp(var(--right-min), 13%,  var(--right-max)); }
-```
-
-- The **percentage** is the design's proportion, now stated as such.
-- The **minimum** is content-driven: the width at which the palette still fits
-  its integer-sized cells (GEO-07) and a script name is still legible —
-  a computable number, not a guess.
-- The **maximum** stops the panels ballooning on an ultrawide display, where a
-  13 % right panel would be 500 px of empty inspector.
-
-Then make them **user-resizable** (GEO-04) and persist the user's choice, which
-overrides the proportion once set — the proportion is the *default*, not a
-cage.
-
----
-
 #### GEO-04 — Panels cannot be resized
 
 **Category** Layout / UX · **Severity** High · **Priority** P1 · **Affects** UI, UX
 
-**Current.** No splitters exist. The file manager, canvas and inspector widths
-are fixed by CSS; the scripts/MIDI split and the palette/inspector split are
-fixed percentages (GEO-05, GEO-06).
+**Current.** No splitters exist. The panels are proportional and clamped now,
+not fixed pixels (GEO-03, done — see "Already completed"), but still not
+user-resizable: the file manager, canvas and inspector widths are set by CSS
+alone; the scripts/MIDI split and the palette/inspector split are fixed
+percentages (GEO-05, GEO-06).
 
 **Why it's a problem.** This is the single most requested affordance in any
 editor with side panels, and its absence is felt constantly: a level author
@@ -1454,25 +1546,31 @@ has draggable splitters.
 `#scripts | #midis`, `#palette | #props`.
 
 **Implementation.** Convert `#body` to CSS Grid with named columns
-(`grid-template-columns: var(--side-w) var(--split) 1fr var(--split)
-var(--right-w)`), and the two `aside`s to grid rows likewise. A splitter is a
-`<div role="separator" tabindex="0" aria-orientation="vertical"
+(`grid-template-columns: var(--side) var(--split) 1fr var(--split)
+var(--right)`), and the two `aside`s to grid rows likewise - `--side`/`--right`
+already resolve to a clamped value (GEO-03, done), so a splitter drag need
+only overwrite that custom property within its own `--side-min`/`--side-max`/
+`--right-min`/`--right-max` bounds, already defined in `style.css` `:root`.
+A splitter is a `<div role="separator" tabindex="0" aria-orientation="vertical"
 aria-valuenow=…>`; pointer-drag updates the custom property; **arrow keys move
 it too** (that is what makes `role="separator"` honest and the layout
-keyboard-accessible). Double-click resets to the design proportion. Persist to
-`localStorage` — this is per-user view state, not document state, so it must
-not go anywhere near the `.lvl`.
+keyboard-accessible). Double-click resets to the design proportion (removing
+the drag override, not just re-deriving the same number, so the panel goes
+back to tracking the window again). Persist to `localStorage` — this is
+per-user view state, not document state, so it must not go anywhere near the
+`.lvl`.
 
 The splitter's hit area must be larger than its visual width: a 1 px rule with
 a 6–8 px transparent grab zone, and `cursor: col-resize` / `row-resize` -
 the same per-state-cursor mechanism NAT-13 (done — see "Already completed")
-already established for the canvas, extended to a new element. Constrain
-against the min/max from GEO-03.
+already established for the canvas, extended to a new element.
 
 **Risks.** `Grid.resize()` is driven by a `ResizeObserver` on `#wrap`
-(`grid.js:75`), so the canvas follows automatically — but every drag frame
-reallocates the canvas backing store (PERF-04). Fix PERF-04 in the same change
-or dragging a splitter will stutter.
+(`grid.js:75`), so the canvas follows automatically, and the reallocation a
+splitter drag would otherwise trigger on every observed frame is now
+coalesced through `requestAnimationFrame` and skipped when the target pixel
+dimensions haven't changed (PERF-04, done — see "Already completed") - the
+stutter risk this finding's own text originally warned about is closed.
 
 ---
 
@@ -1524,56 +1622,6 @@ the palette takes the remainder, with a splitter and a minimum. The inspector's
 height genuinely varies (the level view has seven controls, the entity view
 has six, the definition view three), so a fixed fraction is wrong for at least
 two of the three states.
-
----
-
-#### GEO-07 — The palette produces fractional cells for 32 px sprites
-
-**Category** Layout / Visual · **Severity** High · **Priority** P1 · **Affects** UI
-
-**Current.** `style.css:163-171` — `grid-template-columns: repeat(4, 1fr)`,
-`gap: 4px`, `padding: 8px`, inside a 212 px panel. `.cell` has
-`aspect-ratio: 1` and `background: … center/contain no-repeat` with
-`image-rendering: pixelated`.
-
-Measured in the running app: `gridTemplateColumns: "42.25px 42.25px 42.25px
-42.25px"`. Every source sprite is **32 × 32** (verified for
-`blocks/bricks.png`, `enemies/chapeleira.png`, `interactives/pizza.png`,
-`icons/placeholder.png`).
-
-**Why it's a problem.** 42.25 / 32 = **1.3203125**. Scaling pixel art by a
-non-integer factor with `image-rendering: pixelated` means each source pixel
-occupies either one or two destination pixels depending on where it falls —
-so the sprites in the palette have visibly uneven pixel widths, and the
-unevenness *shifts* whenever the panel width changes. Worse, `.25` of a pixel
-means the cells do not sit on device-pixel boundaries at all, so the borders
-(`.cell:hover`, `.cell.on`) are drawn at fractional positions and antialias to
-grey. This is precisely the failure the canvas renderer goes to great lengths
-to avoid (`grid.js:238-244` snaps every tile edge to a whole device pixel) —
-the palette undoes it three inches to the right.
-
-**Recommended.** Size the cells at an **integer multiple of the sprite**, and
-let the column count follow from the panel width:
-
-```
---sprite: 32px;                      /* every texture is 32×32 */
---cell:   calc(var(--sprite) * 1);   /* or ×2 for a large palette */
-#palette { grid-template-columns: repeat(auto-fill, var(--cell)); }
-```
-With `auto-fill` the palette gains a column when the panel is widened
-(GEO-04) instead of stretching its cells, which is also the correct
-*behavioural* answer: a palette should show more items when given more room,
-not bigger ones. Add `justify-content: space-between` (or `start` with the
-gap token) so the leftover space is distributed between columns, not inside
-cells.
-
-Offer 1× and 2× cell sizes as a view preference — pixel art at 32 px is small
-on a HiDPI display, and this is the one place where a user-configurable size is
-genuinely warranted (UX-11).
-
-**Depends on.** GEO-01 (tokens, done — see "Already completed"), GEO-03
-(panel min width must accommodate at least three columns plus padding and the
-scrollbar gutter — NAT-20 itself is done, see "Already completed").
 
 ---
 
@@ -1629,38 +1677,6 @@ without a splitter, so the vertical bar has something to reflect.
 
 ---
 
-#### GEO-11 — Canvas magic numbers
-
-**Category** Layout / Code quality · **Severity** Medium · **Priority** P1 · **Affects** UI, Maintainability
-
-`grid.js` is the best-reasoned file in the project, and it still carries six
-unnamed constants (two of the original eight - the wheel's own zoom clamps and
-factor - are already named; see below):
-
-| Literal | Location | What it means / what should determine it |
-|---|---|---|
-| `2 * B` in `Grid.fit()` | `grid.js:163` | One block of margin above and below the level. Name it `FITPAD = B` and write `Grid.h * B + 2 * FITPAD`, which then reads as the sentence it is. |
-| `1` (max fit zoom) in `Grid.fit()` | `grid.js:163` | "Never fit *above* 100 %", which is a real decision worth stating; name it rather than leave it bare - `ZMIN`, the other half of this pair, is already named and shared with the wheel (NAT-11, done, below). |
-| `B * z >= 10` grid-line threshold | `grid.js:257` | "Stop drawing grid lines once tiles are smaller than 10 device px." A legitimate decision; name it `GRIDMIN` and comment *why* (below this the lines outweigh the content). |
-| `sx + 1, sy + 1, s - 2, s - 2` selection inset | `grid.js:277` | Half of `lineWidth: 2`, so the 2 px stroke lands inside the tile. Derive it: `const w = SELW; strokeRect(sx + w/2, …, s - w)`. |
-| `+ .5` offsets | `grid.js:261-262, 287, 292` | Correct and idiomatic — a 1 px canvas stroke centred on a half-pixel. Keep; add a one-line comment, as it is the one magic number here that *should* stay. |
-| `1` px tolerance in `syncbar`/`onbar` | `grid.js:191, 199` | The documented re-entrancy tolerance (`CLAUDE.md` explains the reasoning, which is good). Name it `BARSLOP = 1` so both sites provably use the same value. |
-
-**Already done** (NAT-11, see "Already completed"): `ZMIN = 0.03` and
-`ZMAX = 3` are now named `const`s shared by `Grid.fit()` and `onwheel()`, and
-the old `0.0015` wheel factor is now `Math.LN2 / ZOOM_PX_PER_DOUBLING` with
-`ZOOM_PX_PER_DOUBLING = 462` - the exact algebraic equivalent, so today's feel
-is unchanged. `ZMIN` is still the old floor, not the "level fits the narrowest
-viewport" value this finding originally asked for; deriving it that way is
-still open.
-
-**Recommended.** A `const` block at the top of `grid.js` with a comment per
-entry, in the style the file already uses for `B` and `W` in `catalog.js` -
-`ZMIN`/`ZMAX`/`ZOOM_PX_PER_DOUBLING` already follow it. None of these should
-become a formula; they should become named, explained constants. That is the
-distinction the brief draws, and this is the file where it matters most.
-
----
 
 #### GEO-13 — Design-file proportions that were not carried over
 
@@ -1947,7 +1963,8 @@ screenshot, where the palette's `+` sits low in its cell.
 therefore participate in the state system (VIS-07) for free. Use SVG, not the
 PNGs: `textures/icons/*.png` are 32 px pixel-art assets meant for the *game's*
 UI, and scaling them into a 16 px chrome button will alias (the same fractional
-scaling problem as GEO-07). Where a pixel-art icon is genuinely wanted, size it
+scaling problem GEO-07 fixed for the palette, done - see "Already completed").
+Where a pixel-art icon is genuinely wanted, size it
 at exactly 16 or 32 px with `image-rendering: pixelated`.
 
 Needed icons: new, open, save, save-as, new-script, import, close, play,
@@ -2290,8 +2307,9 @@ undo, it corrupts the next step.
 
 **Current.** The selected palette cell gets `border-color: var(--acc)` and a
 slightly lighter background (`style.css:187`) — a 1 px purple border on a
-42.25 px fractional cell (GEO-07), which the screenshot shows is easy to miss
-among 31 similar cells.
+32 px cell (an integer size now, GEO-07, done - see "Already completed"; the
+border was easy to miss on the old 42.25 px fractional one and still is on
+the new integer one), among 31 similar cells.
 
 **Recommended.** Strengthen the selected state per VIS-07 (accent border **and**
 a filled corner marker **and** a background step), and mirror it in the status
@@ -2377,7 +2395,9 @@ widths, not the last directory, not zoom, not grid visibility.
 
 **Recommended.** Keep it small and justified. A preferences surface is worth
 adding only once there are ≥4 real settings; the credible list is:
-grid overlay on/off, palette cell size 1×/2× (GEO-07), editor font size,
+grid overlay on/off, palette cell size 1×/2× (the `--cell` token this would
+flip between 1x and 2x already exists, GEO-07, done - see "Already
+completed"), editor font size,
 the recovery-snapshot interval (fixed at 30s today - done, see "Already
 completed", UX-10), and confirm-on-destructive-height-change (UX-08).
 
@@ -2827,32 +2847,6 @@ it does.
 
 ---
 
-#### ARCH-08 — Monaco is loaded eagerly and shipped whole
-
-**Category** Architecture / Performance · **Severity** Medium · **Priority** P1 · **Affects** Performance, Architecture
-
-**Current.** `Code.init()` is called unconditionally at `DOMContentLoaded`
-(`app.js:538`), pulling in the AMD loader and `vs/editor/editor.main` — several
-megabytes of JavaScript, plus theme registration and editor construction —
-even though the default and most common tab is the **Level Editor**, which
-never touches it. Packaging would ship the entire `monaco-editor` package
-(including the `esm/` and `dev/` trees, tens of megabytes) unless `files` is
-narrowed (NAT-07).
-
-**Recommended.**
-- **Lazy-load** on the first script-tab activation. `Code.show()` already
-  guards on `Code.ready` (`code.js:78`), so the plumbing is nearly there:
-  make `Code.init()` idempotent and call it from `App.select()` when the target
-  is not `'level'`. Show a brief loading state in the editor area.
-- Narrow the packaged files to `node_modules/monaco-editor/min/vs/**`.
-- Measure the startup delta before and after; if it is under ~150 ms the lazy
-  load is still worth it for the packaged size alone, but say so with numbers.
-
-**Risks.** The `MonacoEnvironment.getWorkerUrl` blob shim (`code.js:35-40`)
-computes `base` from `location.href`; it must still resolve after packaging
-(NAT-07's asar note). Test the lazy path and the packaged path together.
-
----
 
 #### ARCH-09 — Main-process filesystem work is fully synchronous
 
@@ -2929,24 +2923,6 @@ Recorded here so the trade-off is on the record rather than rediscovered.
 
 ---
 
-#### PERF-04 — Canvas resize is uncoalesced
-
-**Category** Performance · **Severity** Medium · **Priority** P2 · **Affects** Performance
-
-**Current.** `Grid.resize()` (`grid.js:84-98`) is the `ResizeObserver`
-callback and unconditionally reallocates the canvas backing store
-(`cv.width = …` discards and reallocates the surface) and then draws
-synchronously. During a window resize — and, once GEO-04 lands, during every
-splitter drag — this runs on every observed frame.
-
-**Recommended.** Coalesce through `requestAnimationFrame` like `Grid.redraw()`
-already does, and **skip the reallocation when the pixel dimensions have not
-changed** (a devicePixelRatio-only change still needs it, so compare the
-computed target dimensions rather than the CSS ones).
-
-**Depends on.** GEO-04 makes this necessary rather than merely tidy.
-
----
 
 #### PERF-05 — Full-subtree rebuilds on every refresh
 
@@ -2997,8 +2973,11 @@ id strings (`const PAD = Array.from({length: 1000}, (_, i) => …)`), turning
 **Current.** `win.once('ready-to-show', () => win.show())` (`main.js:46`) is
 the right pattern and avoids a white flash — but `ready-to-show` fires when the
 renderer has painted, and the renderer paints *before* `api.blank()` resolves
-(`app.js:543`). So the first frame is an empty chrome with no canvas content,
-and Monaco is loading in parallel (ARCH-08).
+(`app.js:543`). So the first frame is an empty chrome with no canvas content.
+Monaco no longer competes with this window for startup time - it loads lazily
+now, on the first script tab a session opens, not at boot (ARCH-08, done, see
+"Already completed") - so this finding's own remaining scope is narrower than
+originally written: only the blank-document race, not a Monaco-load race too.
 
 **Recommended.** Have main create the blank (or restored, per UX-09) document
 **before** the window is shown and hand it to the renderer as part of
@@ -3081,7 +3060,7 @@ chosen deliberately, not as the default the other two inherit.
 | One `chrome.js` for every platform branch; `api.platform` to the renderer — done, see "Already completed" | ARCH-03 |
 | Consistent IPC envelope, one unwrap helper (string verdicts on `ask:discard` already done, BUG-10) | ARCH-06 |
 | electron-builder config, icons, associations, signing | NAT-07 |
-| Lazy Monaco; narrowed packaged files | ARCH-08 |
+| Lazy Monaco - done, see "Already completed"; narrowed packaged files still needs NAT-07 to exist first | ARCH-08 |
 
 ---
 
@@ -3089,33 +3068,27 @@ chosen deliberately, not as the default the other two inherit.
 
 ### 6.1 Every instance of arbitrary geometry
 
-Eight rows from the original 26 are gone rather than resolved onto a token:
+Fourteen rows from the original 26 are gone rather than resolved onto a token:
 `#menu`'s `min-width: 150px`, its click-handler's `2`/`4` px edge clamps, and
 `.dots i`'s `12px`/`gap 8px` all named code that no longer exists (NAT-05,
 NAT-02 — done, see "Already completed"); `--bar`/`--tabs`/`#status`'s band
 heights, the horizontal scrollbar's three mismatched numbers, and
 `backgroundColor`'s duplication are now real token relationships instead of
 bare literals (GEO-01/GEO-02, NAT-20/GEO-09, VIS-04 — all done, see "Already
-completed").
+completed"); `--side`/`--right`, the palette's column definition, and all
+six of `grid.js`'s remaining unnamed constants are done too (GEO-03, GEO-07,
+GEO-11 — see "Already completed").
 
 | # | Value | Where | What should determine it | Finding |
 |---|---|---|---|---|
 | 3 | `.hdr` `24px` (now `--row-sm`, 26px — GEO-02, done) | `style.css:107` | Design says 36 px, still not adopted | GEO-13 |
-| 6 | `--side: 184px` | `style.css:16` | `clamp(min, 10.5%, max)` — the design's ratio | GEO-03 |
-| 7 | `--right: 212px` | `style.css:17` | `clamp(min, 13%, max)` — the design's ratio | GEO-03 |
 | 8 | `#scripts 60%` / `#midis 40%` | `style.css:116-117` | Content height, with a floor and a splitter | GEO-05 |
 | 9 | `#props 46%` | `style.css:191` | Content height, or the design's 47.5 % as a named token | GEO-06 |
-| 10 | `repeat(4, 1fr)` palette | `style.css:170` | `repeat(auto-fill, N × --sprite)` — integer sprite scale | GEO-07 |
 | 11 | `.tab max-width: 260px` | `style.css:79` | `24ch` — a statement about filenames | GEO-08 |
 | 12 | `textarea height: 48px` | `style.css:208` | `calc(var(--line-box) * 3)` | GEO-08 |
 | 13 | Gaps `14px` on `.acts`, `10px` on `#title` | `style.css` passim | `--space-*` scale (the `li`/`.tab`/`#palette`/`#props`/`.grp` gaps that were also here are now tokenised — GEO-01, done) | GEO-08 |
 | 14 | Font sizes `10px`/`13px` | `style.css` passim | `--font-size-sm` covers the `11px` case now (GEO-01, done); `10px`/`13px` remain | GEO-08 |
 | 15 | `li` indent has no icon to hang from | `style.css:123` | `--space-4 + --icon` once rows get a file-type icon (the padding/height itself is `--row` now — GEO-01/GEO-02, done) | A11Y-04, VIS-11 |
-| 17 | `2 * B` fit padding | `grid.js:163` | `FITPAD = B`, named | GEO-11 |
-| 18 | `1` (max fit zoom) | `grid.js:163` | Named, not derived — `ZMIN`, its other half, is already named and shared with the wheel (NAT-11, done) | GEO-11 |
-| 19 | `B * z >= 10` grid threshold | `grid.js:257` | `GRIDMIN`, named and commented | GEO-11 |
-| 20 | `1` px bar tolerance | `grid.js:191, 199` | `BARSLOP`, shared by both sites | GEO-11 |
-| 21 | Selection inset `1`/`2` | `grid.js:275-277` | Derived from `SELW` | GEO-11 |
 
 `0.03`/`3` zoom clamps and the `0.0015` wheel factor, both formerly rows here,
 are done (NAT-11, see "Already completed"): `ZMIN`, `ZMAX` and
@@ -3125,7 +3098,10 @@ are done (NAT-11, see "Already completed"): `ZMIN`, `ZMAX` and
 also done (NAT-10, see "Already completed"): the default is now 80% of the
 display's work area, clamped between the unchanged `960 × 620` floor and the
 `1600 × 950` the UI was designed at, and the actual size and position are
-persisted across launches.
+persisted across launches. `--side: 184px`/`--right: 212px`, the palette's
+`repeat(4, 1fr)`, and `grid.js`'s `2 * B` fit padding / `1` max fit zoom /
+`B * z >= 10` grid threshold / `1` px bar tolerance / `1`,`2` selection inset
+are also done (GEO-03, GEO-07, GEO-11, see "Already completed").
 
 ### 6.2 Design tokens
 
@@ -3148,13 +3124,13 @@ not before.
 Not yet consumed by anything (defined, waiting on the findings that will use
 them): `--radius-*`, `--elev-*` (VIS-09), `--dur-*`/`--ease` (VIS-08),
 `--z-*` (no finding currently needs more than one layer above the surface).
-`--side`/`--right` are unchanged literals, not yet the `clamp()`-based
-percentages GEO-03 asks for.
+`--side`/`--right` are `clamp()`-based percentages now, not fixed literals
+(GEO-03, done — see "Already completed"); `--sprite`/`--cell` were added for
+the same commit that gave the palette integer-sized cells (GEO-07, done).
 
-JavaScript-side constants that still belong in a named block, not inline
-(`grid.js`): `FITPAD`, `GRIDMIN`, `SELW`, `BARSLOP` (GEO-11). `ZMIN`, `ZMAX`
-and `ZOOM_PX_PER_DOUBLING` are already named (NAT-11, done — see "Already
-completed").
+JavaScript-side constants in `grid.js` are now fully named: `FITPAD`,
+`GRIDMIN`, `SELW`, `BARSLOP` (GEO-11, done — see "Already completed") join
+`ZMIN`, `ZMAX` and `ZOOM_PX_PER_DOUBLING` (NAT-11, done).
 
 ### 6.3 Values that must stay fixed, and why
 
@@ -3166,7 +3142,7 @@ Per the brief, each surviving literal is documented rather than removed.
 | `W = 540` | `catalog.js:13` | The on-disk format: every `block_data` row holds exactly 540 entries. | No | No |
 | `H = 12` | `catalog.js` | Rows in a fresh level — a product decision, not a derivation. Moved from `lvl.js` (ARCH-02, done — see "Already completed"). | No | Yes, as a preference |
 | `999` max rows | `grid.js:134` | Bound implied by the three-digit id format's sibling conventions and by memory (999 × 540 × 2 B ≈ 1 MB grid). Name it `HMAX` and state the reason. | No | No |
-| `--sprite: 32px` | `style.css` | Every texture in the library is 32 × 32; verified. It is a fact about the asset library, not a design choice. Defined (GEO-01, done); not yet consumed (GEO-07, open). | No | No |
+| `--sprite: 32px` | `style.css` | Every texture in the library is 32 × 32; verified. It is a fact about the asset library, not a design choice. Defined and consumed by the palette's `--cell` (GEO-01, GEO-07 — both done, see "Already completed"). | No | No |
 | `backgroundColor: '#1c1d20'` | `main.js:38` | Must be known before the page and its CSS load, so it cannot read `--frame`. Duplicated deliberately (VIS-04, done — see "Already completed"), with a comment naming its source and the requirement to change both together. | No | No |
 | `--scrollbar: 12px` | `style.css`, shipped (NAT-20, done — see "Already completed") | Chromium's `::-webkit-scrollbar` needs a concrete length; there is no CSS-side access to the platform's metric. | Effectively — macOS overlay vs classic; mitigated with `scrollbar-gutter: stable` | No |
 | `+ .5` canvas offsets | `grid.js` passim | A 1 px canvas stroke is centred on the coordinate, so a half-pixel offset is what lands it on a whole device pixel. Correct as written; comment it. | No | No |
@@ -3200,7 +3176,7 @@ the finding that resolves it.
 | **Capitalisation** | Four conventions, `midi`/`MIDI` in one interface | Lowercase in-window, platform convention on OS surfaces, proper nouns always (VIS-10) |
 | **Cursor** | Fixed on the canvas — seven states (`crosshair`/`copy`/`grab`/`grabbing`/`not-allowed`) driven by `Grid.cursor()` (NAT-13, done — see "Already completed"); `col-resize` on splitters still needs GEO-04's splitters to exist first | GEO-04 |
 | **Tooltips** | Native `title=` on some controls, absent on tabs, window controls and rows; Title Case among lowercase labels | Keep native `title` (correct choice — it is the platform's tooltip); add the missing ones; include accelerators on toolbar buttons (NAT-04, VIS-10) |
-| **Loading** | None; Monaco loads eagerly so its absence is never visible; long saves block silently | Editor loading state (ARCH-08); progress for long ops (NAT-19) |
+| **Loading** | Fixed for the editor — Monaco now shows a plain "loading editor…" text while it lazy-loads (ARCH-08, done — see "Already completed"); long saves still block silently | Progress for long ops (NAT-19) |
 | **Empty states** | Two blank voids in the file manager on every launch | One line + one action per list (VIS-12) |
 | **Error states** | `var(--danger)` text, colour-only; save failures now reach a native dialog regardless of tab (BUG-07, shipped), and every error is announced to a screen reader (A11Y-05, shipped) — still colour-only visually | Icon (VIS-14, A11Y-08) |
 | **Context menus** | Fixed — native `Menu.popup()`, real keyboard navigation and platform appearance (NAT-05, done — see "Already completed") | — |
@@ -3208,7 +3184,7 @@ the finding that resolves it.
 | **Forms** | Borders now visible via `--control-border` (VIS-02, done); still: a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `appearance: none` on the select control only; one shared `.field` class (NAT-16, VIS-15) |
 | **Buttons** | Text-only, no border except `.act`, no pressed state, `.acts` and `.hdr button` and `#add` all differently sized | One button component with size variants (VIS-07, GEO-08) |
 | **Resizers / splitters** | Do not exist | Four splitters, keyboard-operable (GEO-04) |
-| **Panels** | Flat, no elevation, fixed widths, not collapsible | Elevation, proportional widths, collapsible sections (GEO-03, GEO-05, VIS-09) |
+| **Panels** | Flat, no elevation; widths are proportional and clamped now, not fixed (GEO-03, done — see "Already completed"); not collapsible or user-resizable | Elevation, collapsible sections, resizing (GEO-04, GEO-05, VIS-09) |
 | **Overlays** | NAT-05 (done) removed the app's only `z-index` along with the DOM context menu it belonged to; `--z-*` is defined (GEO-01, done) with nothing to convert yet | — |
 | **Animation** | None at all | Three tokens, applied to states and panels, with `prefers-reduced-motion` (VIS-08) |
 | **Canvas indicators** | Purple-on-purple, no contrast guarantee, unreachable by forced colours | Two-tone strokes (VIS-16) |
@@ -3313,7 +3289,6 @@ four are driven from.
 |---|---|
 | Full innerHTML rebuilds on a drag hot path (done, see "Already completed", PERF-01); an `onchange` commit still destroys the field the user just used; hand-rolled `esc()` | ARCH-04 |
 | Three IPC naming conventions, two response shapes, forgettable `cancel` (the `ask:discard` response is a named string now, BUG-10, done — see "Already completed") | ARCH-06 |
-| Monaco eager and shipped whole | ARCH-08 |
 | Synchronous main-process I/O | ARCH-09, NAT-19 |
 | Two components styling themselves with inline `cssText` | VIS-15 |
 | `App.open_`'s trailing underscore | ARCH-06 |
@@ -3329,26 +3304,25 @@ container. Do not index the entity list until entity counts justify it
 
 ## 11. Performance summary
 
-The renderer is already carefully built. The one measurable hot-path defect is
-done (PERF-01, see "Already completed"); three real problems and three
-non-problems remain, in priority order.
+The renderer is already carefully built. Two of the four real problems this
+section originally listed are done (PERF-01, PERF-04 — see "Already
+completed"); one real problem and three non-problems remain, in priority
+order.
 
 **Fix:**
 1. **PERF-02** — `getBoundingClientRect` and `getElementById` called on every
    frame, with a style write between the read and the next read (layout
    thrash), during every pan and drag.
-2. **PERF-04** — canvas backing store reallocated on every `ResizeObserver`
-   callback; becomes a stutter as soon as splitters exist (GEO-04).
-3. **ARCH-08** — Monaco loaded eagerly at startup for a tab most sessions never
-   open, and packaged whole.
 
 **Also worth doing:**
-4. **PERF-05** — `App.refresh()` rebuilds every view for every undo step; walk
+2. **PERF-05** — `App.refresh()` rebuilds every view for every undo step; walk
    back a long history and the whole UI is rebuilt per step.
-5. **PERF-07** — the window is shown before the document exists.
+3. **PERF-07** — the window is shown before the document exists - narrower
+   now that ARCH-08 (done) removed the Monaco-load race this section
+   originally described alongside it.
 
 **Measure before touching:**
-6. **PERF-06** / **NAT-19** — `Grid.commit()` + `JSON.stringify` + `zipSync` on
+4. **PERF-06** / **NAT-19** — `Grid.commit()` + `JSON.stringify` + `zipSync` on
    a 999-row level. Bounded, save-only, and simple as written. Get a number
    first.
 
@@ -3421,18 +3395,14 @@ at the top of this document. Nothing remains in this tier.
 |---|---|
 | NAT-04 | Hotbar duplicates what belongs in the menu |
 | NAT-07 | No packaging, icons, or file association |
-| GEO-03 | Fixed side panels consume 41 % of the minimum window |
 | GEO-04 | Panels cannot be resized |
-| GEO-07 | Palette produces fractional cells for 32 px sprites |
-| GEO-11 | Canvas magic numbers (partly done - the zoom constants, NAT-11) |
 | VIS-05 | The app has never rendered in its own typeface |
 | VIS-07 | No interaction-state system |
 | UX-04 | Zoom has no controls, indicator, or working fit |
-| ARCH-08 | Monaco eager and shipped whole |
 
-NAT-05, NAT-11, NAT-20, ARCH-02, ARCH-03, BUG-12, GEO-01, NAT-03, NAT-10,
-NAT-13, PERF-01 and VIS-04, the other twelve items that were listed here, are
-done — see "Already completed".
+NAT-05, NAT-11, NAT-20, ARCH-02, ARCH-03, ARCH-08, BUG-12, GEO-01, GEO-03,
+GEO-07, GEO-11, NAT-03, NAT-10, NAT-13, PERF-01 and VIS-04, the other sixteen
+items that were listed here, are done — see "Already completed".
 
 ### Medium — real friction, contained fixes
 
@@ -3452,7 +3422,7 @@ done — see "Already completed".
 | UX-01, UX-03, UX-05, UX-06, UX-08, UX-09, UX-12, UX-15, UX-16 | Editing and navigation friction |
 | A11Y-02, A11Y-03, A11Y-04, A11Y-06 | Semantics, canvas, targets, scaling |
 | ARCH-04, ARCH-06 | Panel rebuilds, IPC shape |
-| PERF-02, PERF-04, PERF-07 | Layout thrash, resize coalescing, startup paint |
+| PERF-02, PERF-07 | Layout thrash, startup paint |
 
 ### Low
 
@@ -3553,21 +3523,25 @@ later than originally scoped.
    treatment across all five containers. **VIS-18** Monaco theme fully
    aligned with the surrounding chrome (its own colour duplication is
    resolved, VIS-04, done) is still open.
-10. **GEO-07** integer palette cells; **GEO-08** the remaining one-offs onto
-    the scale.
+10. **GEO-07** — done, see "Already completed": integer palette cells.
+    **GEO-08** the remaining one-offs onto the scale.
 11. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
     messages, `.field`/`.cell.add` classes, canvas indicators, missing-texture
     treatment.
 
 ### Phase 4 — Layout and interaction
 
-12. **PERF-04** resize coalescing — **before** GEO-04, or splitter drags will
-    stutter.
-13. **GEO-03 / GEO-04** proportional panels and four keyboard-operable
-    splitters; **GEO-05 / GEO-06** content-driven list and inspector heights.
-14. **GEO-11** the remaining unnamed canvas constants (`FITPAD`, `GRIDMIN`,
-    `SELW`, `BARSLOP` — its zoom constants are already named, NAT-11, done);
-    **GEO-10** vertical scrollbar (NAT-11, its prerequisite, is done - the
+**PERF-04** (resize coalescing) and **GEO-03** (proportional, clamped panel
+widths) are both done — see "Already completed"; PERF-04 was scheduled here
+specifically so a splitter drag would not stutter, and now cannot, since it
+shipped ahead of the splitters themselves. **GEO-11** (the remaining unnamed
+canvas constants - `FITPAD`, `GRIDMIN`, `SELW`, `BARSLOP`) is also done.
+
+13. **GEO-04** four keyboard-operable splitters, building directly on
+    GEO-03's `--side`/`--right`/`--side-min`/`--side-max`/`--right-min`/
+    `--right-max` tokens; **GEO-05 / GEO-06** content-driven list and
+    inspector heights.
+14. **GEO-10** vertical scrollbar (NAT-11, its prerequisite, is done - the
     wheel already scrolls); **UX-04** zoom controls and a real fit, including
     the new View menu that also gives Toggle Full Screen a home again (see
     §12, "Full screen").
@@ -3602,8 +3576,8 @@ or fixed every inaccessible subsystem outside the canvas itself.
 warnings) are also done - see "Already completed"; both built directly on
 BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
 
-22. **ARCH-08** lazy Monaco; **PERF-07** show-after-ready; **PERF-05** refresh
-    granularity.
+22. **ARCH-08** — done, see "Already completed": lazy Monaco. **PERF-07**
+    show-after-ready; **PERF-05** refresh granularity.
 23. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
     async I/O *if* measurement justifies it.
 24. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
@@ -3620,7 +3594,8 @@ BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
 
 ```
 VIS-05 (font) ────────► anything depending on type metrics
-PERF-04 ──────────────► GEO-04 (splitters)
+GEO-03 ───────────────► GEO-04 (the min/max/proportion tokens a splitter
+   (done)                drag needs to constrain against already exist)
 
 Done and no longer on this graph: ARCH-07 (checks) unblocked everything below
 it by making every later change verifiable at all; BUG-08 (doc state)
@@ -3644,9 +3619,12 @@ block - spacing, rows, type, radius, elevation, motion, z-index, colour
 consolidation, folding in GEO-02's and GEO-09's asks) is done and unblocked
 exactly what this graph said it would: NAT-20 and A11Y-05 both shipped
 straight off it, PERF-01 shipped independently of it (the drag hot path is a
-pure-JS fix, not a token consumer), and VIS-07/VIS-08/VIS-09/GEO-07/GEO-08/
-VIS-18/NAT-15's forced-colours work remain open, now genuinely unblocked
-rather than waiting on a foundation that does not exist yet.
+pure-JS fix, not a token consumer), and GEO-07 and GEO-03 both then shipped
+straight off the `--sprite`/`--space-*`/`--scrollbar` tokens it provided;
+VIS-07/VIS-08/VIS-09/GEO-08/VIS-18/NAT-15's forced-colours work remain open,
+now genuinely unblocked rather than waiting on a foundation that does not
+exist yet; PERF-04 and GEO-11 (grid.js's own remaining unnamed constants)
+each shipped independently, needing nothing from this graph.
 ```
 
 ---
@@ -3695,16 +3673,25 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 - [ ] No pixel literal exists in `style.css` outside the `:root` token block,
       except values documented in §6.3 with a stated reason.
-- [ ] No unnamed numeric constant exists in `grid.js`'s camera, zoom or render
-      paths.
+- [x] No unnamed numeric constant exists in `grid.js`'s camera, zoom or render
+      paths. (GEO-11 — `FITPAD`, `GRIDMIN`, `SELW`, `BARSLOP` join the
+      already-named `ZMIN`/`ZMAX`/`ZOOM_PX_PER_DOUBLING`; verified with the
+      probe harness: all four reachable in the shared global scope with the
+      expected values)
 - [x] Every band height derives from the line box. (GEO-01/GEO-02 — `--row-sm`/
       `--row`/`--row-lg`, computed from `--line-box`, now drive the title bar,
       tab strip, section headers, status bar and file-manager rows; verified
       with the probe harness: `#tabs` 34px, `#status`/`.hdr` 26px, `li` 30px)
 - [ ] Side panels are proportional, clamped, user-resizable, and their sizes
-      persist.
-- [ ] Palette cells are an integer multiple of 32 px, and the column count —
-      not the cell size — changes with the panel width.
+      persist. (GEO-03 — proportional and clamped, done: `--side`/`--right`
+      are `clamp()`s of the design's own SVG ratios with content-driven
+      minimums and an ultrawide-safe maximum, verified with the probe
+      harness against this machine's window width. User-resizable and
+      persisted is GEO-04, still open, so the box stays unchecked)
+- [x] Palette cells are an integer multiple of 32 px, and the column count —
+      not the cell size — changes with the panel width. (GEO-07 — `--cell`
+      and `repeat(auto-fill, var(--cell))`; verified with the probe harness:
+      `gridTemplateColumns` resolves to whole `32px` tracks, not `42.25px`)
 - [ ] The layout is coherent and usable at the minimum window size, at
       1366 × 768, at 2560 × 1440, and maximised on an ultrawide.
 - [x] The canvas is pixel-crisp at 1×, 2× and fractional scaling, and stays
@@ -3807,8 +3794,11 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 - [ ] Dragging an entity across a level holds 60 fps with the inspector open.
 - [ ] Panning and zooming perform no forced synchronous layout per frame.
-- [ ] Dragging a splitter does not stutter.
+- [ ] Dragging a splitter does not stutter. (Not yet testable - GEO-04's
+      splitters do not exist; PERF-04's coalescing they would need is done)
 - [ ] Cold start to an interactive Level Editor is under one second on a
-      mid-range machine, with Monaco loaded lazily.
+      mid-range machine, with Monaco loaded lazily. (Monaco loaded lazily is
+      done, ARCH-08; the under-one-second cold-start figure itself has not
+      been measured with a timer, so the box stays unchecked)
 - [ ] Saving a 999-row level completes without the window becoming
       unresponsive, or shows honest progress if it cannot.
