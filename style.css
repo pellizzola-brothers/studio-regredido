@@ -1,11 +1,31 @@
 /* Colours sampled from the design file: dark neutral frame, near-black violet
-   chrome, one purple accent. */
+   chrome, one purple accent.
+
+   GEO-01/VIS-04: this block is Studio's one design-token definition -
+   spacing, row heights, radius, elevation, motion and z-index alongside the
+   colours - consumed by grid.js and code.js through tokens.js rather than
+   each restating its own copy (POLISH.md). Not every token here has a
+   consumer yet (VIS-07's interaction states, VIS-08's motion, VIS-09's
+   radius/elevation and GEO-03/04's resizable panels are still open); they
+   are defined now so the components that need them later have a scale to
+   join instead of inventing their own. */
 :root {
+	/* ---- surfaces ---- */
 	--frame: #1c1d20;
 	--chrome: #100b1b;
 	--tab: #1a122c;
 	--panel: #100a1a;
 	--hdr: #161026;
+	--surface-raised: #17102a;		/* cells, inputs, popovers - was a literal x4 */
+	--surface-selected: #251a3a;		/* the palette's selected-cell fill */
+	--canvas-bg: #0b0813;			/* was a literal in grid.js */
+	--checker-a: #1d1530;			/* the palette's air/eraser checkerboard */
+	--checker-b: #120d1f;
+	--missing-tex: #4a3a6a;		/* blit(), grid.js: a known id whose sprite hasn't decoded */
+	--missing-def: #803050;		/* blit(), grid.js: an entity def the catalog doesn't know */
+	--scroll-thumb: #3b285b;		/* shared by all five scroll containers, NAT-20 */
+
+	/* ---- text and lines ---- */
 	--line: #241938;			/* decorative separators only - 1.18:1, WCAG exempts them */
 	--fg: #b9a6d6;
 	/* #6a4ba2 measured 2.52-2.91:1 against the surfaces it sits on - below
@@ -15,12 +35,54 @@
 	   having to reassign which token each rule uses. */
 	--dim: #9b7fd4;
 	--acc: #7b56ba;				/* non-text only: borders, rings, grid lines - 3:1 use */
+	--acc-rgb: 123, 86, 186;		/* --acc as a decimal triple: canvas composes its own
+						   alpha from this rather than restating a second
+						   rgba() literal that could drift from --acc (VIS-04) */
 	--acc-text: #9a74e0;			/* text coloured with the accent - 4.5:1 use */
 	--control-border: var(--acc);		/* input/select/textarea/button boundaries - 3:1 */
-	--bar: 34px;
-	--tabs: 32px;
+	--danger: #ff8f8f;			/* was a literal x3: .err, .warn, #msg.bad */
+
+	/* ---- type ---- */
+	--font-size: 12px;			/* the design's body size */
+	--font-size-sm: 11px;			/* status bar */
+	--line-box: 18px;			/* font-size x 1.5; every row height derives from this.
+						   Named --line-box, not --line, because --line above
+						   is already the separator-colour token (POLISH.md's
+						   own proposed name collides with it). */
+
+	/* ---- spacing: a 2/4/6/8/12/16/24 progression, the steps the design
+	   actually uses, deduplicated - not a geometric series for its own sake */
+	--space-1: 2px;  --space-2: 4px;  --space-3: 6px;
+	--space-4: 8px;  --space-5: 12px; --space-6: 16px; --space-7: 24px;
+
+	/* ---- rows, derived from the line box rather than chosen ---- */
+	--row-sm: calc(var(--line-box) + var(--space-2) * 2);	/* 26px */
+	--row:    calc(var(--line-box) + var(--space-3) * 2);	/* 30px */
+	--row-lg: calc(var(--line-box) + var(--space-4) * 2);	/* 34px - the title bar and tab strip */
+
+	/* ---- panels: unchanged geometry (GEO-03/04, still open) ---- */
 	--side: 184px;
 	--right: 212px;
+
+	/* ---- borders, radius, elevation: defined, not yet consumed (VIS-09) ---- */
+	--border: 1px;
+	--border-strong: 2px;
+	--radius-1: 2px; --radius-2: 4px; --radius-3: 8px;
+	--elev-1: 0 1px 2px rgba(0, 0, 0, .4);
+	--elev-2: 0 6px 20px rgba(0, 0, 0, .55);
+
+	/* ---- scrollbars: one treatment for all five containers (NAT-20) ---- */
+	--scrollbar: 12px;
+	--scrollbar-pad: 3px;
+	--scrollbar-thumb: calc(var(--scrollbar) - var(--scrollbar-pad) * 2);
+
+	/* ---- motion: defined, not yet consumed - zero transitions exist (VIS-08) ---- */
+	--dur-fast: 90ms; --dur: 140ms; --ease: cubic-bezier(.2, 0, 0, 1);
+
+	/* ---- layering: defined, not yet consumed (NAT-05 removed the app's only
+	   z-index along with the DOM context menu it belonged to, so there is
+	   currently nothing left to convert) ---- */
+	--z-panel: 1; --z-splitter: 5; --z-overlay: 10; --z-modal: 20;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,7 +94,7 @@ body {
 	overflow: hidden;
 	background: var(--frame);
 	color: var(--fg);
-	font: 12px/1.5 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
+	font: var(--font-size)/1.5 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
 	user-select: none;
 	cursor: default;
 }
@@ -62,9 +124,9 @@ button:disabled { opacity: .35; cursor: default; }
 #title {
 	display: flex;
 	align-items: center;
-	flex: 0 0 var(--bar);
+	flex: 0 0 var(--row-lg);
 	gap: 10px;
-	padding: 0 12px;
+	padding: 0 var(--space-5);
 	background: var(--frame);
 }
 #name { flex: 1; color: var(--dim); overflow: hidden; white-space: nowrap; }
@@ -80,14 +142,14 @@ html[data-platform="win32"] #title { padding-right: 138px; }	/* titleBarOverlay 
 #tabs {
 	display: flex;
 	align-items: stretch;
-	flex: 0 0 var(--tabs);
+	flex: 0 0 var(--row-lg);
 	background: var(--chrome);
 }
 #tablist { display: flex; overflow: hidden; }
 .tab {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: var(--space-4);
 	max-width: 260px;
 	padding: 0 14px;
 	color: var(--dim);
@@ -99,8 +161,8 @@ html[data-platform="win32"] #title { padding-right: 138px; }	/* titleBarOverlay 
 .tab b { overflow: hidden; font-weight: normal; text-overflow: ellipsis; }
 .tab .tabclose { font-style: normal; opacity: .6; }
 .tab .tabclose:hover { opacity: 1; }
-#add { padding: 0 12px; }
-.run { padding: 0 16px; color: var(--acc-text); font-size: 13px; }
+#add { padding: 0 var(--space-5); }
+.run { padding: 0 var(--space-6); color: var(--acc-text); font-size: 13px; }
 
 /* body */
 #body { display: flex; flex: 1; min-height: 0; }
@@ -116,7 +178,7 @@ html[data-platform="win32"] #title { padding-right: 138px; }	/* titleBarOverlay 
 .hdr {
 	display: flex;
 	align-items: center;
-	flex: 0 0 24px;
+	flex: 0 0 var(--row-sm);
 	padding: 0 10px;
 	background: var(--hdr);
 	color: var(--acc-text);
@@ -124,14 +186,18 @@ html[data-platform="win32"] #title { padding-right: 138px; }	/* titleBarOverlay 
 .hdr.r { justify-content: flex-end; }
 .hdr button { margin-left: auto; line-height: 1; }
 
-#scripts, #midis { overflow: auto; padding: 8px 0; list-style: none; }
+#scripts, #midis { overflow: auto; padding: var(--space-4) 0; list-style: none; }
 #scripts { flex: 1 1 60%; }
 #midis { flex: 1 1 40%; }
+/* GEO-01/GEO-02: --space-3 top/bottom padding, on the same 18px line box
+   every other row height derives from, gives exactly --row (30px) - the same
+   relationship --row-lg and --row-sm state, applied here instead of the old
+   1px/18px pair that landed the row 10px short of it. */
 li {
 	display: flex;
 	align-items: center;
-	gap: 6px;
-	padding: 1px 10px 1px 18px;
+	gap: var(--space-3);
+	padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6);
 	color: var(--dim);
 	white-space: nowrap;
 	cursor: pointer;
@@ -157,15 +223,43 @@ canvas { display: block; }
 #hbar {
 	overflow-x: auto;
 	overflow-y: hidden;
-	flex: 0 0 13px;
+	flex: 0 0 calc(var(--scrollbar) + var(--border));
 	background: var(--chrome);
 	border-top: 1px solid var(--line);
 }
 #hspace { height: 1px; }
-#hbar::-webkit-scrollbar { height: 12px; }
-#hbar::-webkit-scrollbar-track { background: var(--chrome); }
-#hbar::-webkit-scrollbar-thumb { border: 3px solid var(--chrome); border-radius: 6px; background: #3b285b; }
-#hbar::-webkit-scrollbar-thumb:hover { background: var(--acc); }
+
+/* NAT-20: one scrollbar treatment for every container that scrolls, not just
+   #hbar - #scripts, #midis, #palette and #props used to fall back to
+   whatever the platform draws by default (invisible-until-hovered on macOS's
+   overlay setting, permanently visible and width-consuming on Windows/Linux
+   and on macOS's "always show" setting).  scrollbar-gutter: stable reserves
+   the same content width either way, so the vertical panels no longer size
+   differently by platform or by that OS setting (GEO-09's track/thumb/radius
+   relationship is folded in here too: radius = thumb-thickness / 2, a
+   capsule stated as such rather than landing on one by the coincidence of a
+   too-large radius CSS silently clamps). */
+#scripts, #midis, #palette, #props { scrollbar-gutter: stable; }
+#scripts::-webkit-scrollbar, #midis::-webkit-scrollbar, #palette::-webkit-scrollbar,
+#props::-webkit-scrollbar, #hbar::-webkit-scrollbar {
+	width: var(--scrollbar);
+	height: var(--scrollbar);
+}
+#scripts::-webkit-scrollbar-track, #midis::-webkit-scrollbar-track, #palette::-webkit-scrollbar-track,
+#props::-webkit-scrollbar-track, #hbar::-webkit-scrollbar-track {
+	background: var(--chrome);
+}
+#scripts::-webkit-scrollbar-thumb, #midis::-webkit-scrollbar-thumb, #palette::-webkit-scrollbar-thumb,
+#props::-webkit-scrollbar-thumb, #hbar::-webkit-scrollbar-thumb {
+	border: var(--scrollbar-pad) solid var(--chrome);
+	border-radius: calc(var(--scrollbar-thumb) / 2);
+	background: var(--scroll-thumb);
+}
+#scripts::-webkit-scrollbar-thumb:hover, #midis::-webkit-scrollbar-thumb:hover,
+#palette::-webkit-scrollbar-thumb:hover, #props::-webkit-scrollbar-thumb:hover,
+#hbar::-webkit-scrollbar-thumb:hover {
+	background: var(--acc);
+}
 
 body.text #wrap, body.text #hbar { display: none; }
 body.text #code { display: block; }
@@ -177,12 +271,12 @@ body.text #right { display: none; }
 	overflow: auto;
 	flex: 1 1 auto;
 	align-content: start;
-	gap: 4px;
-	padding: 8px;
+	gap: var(--space-2);
+	padding: var(--space-4);
 	grid-template-columns: repeat(4, 1fr);
 }
 .grp {
-	padding: 6px 2px 2px;
+	padding: var(--space-3) var(--space-1) var(--space-1);
 	color: var(--dim);
 	font-size: 10px;
 	grid-column: 1 / -1;
@@ -196,26 +290,26 @@ body.text #right { display: none; }
 	width: 100%;
 	border: 1px solid transparent;
 	aspect-ratio: 1;
-	background: #17102a center/contain no-repeat;
+	background: var(--surface-raised) center/contain no-repeat;
 	cursor: pointer;
 	image-rendering: pixelated;
 }
 .cell:hover { border-color: var(--dim); }
-.cell.on { border-color: var(--acc); background-color: #251a3a; }
-.cell.air { background: repeating-conic-gradient(#1d1530 0 25%, #120d1f 0 50%) 0/12px 12px; }
+.cell.on { border-color: var(--acc); background-color: var(--surface-selected); }
+.cell.air { background: repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 0/12px 12px; }
 .cell.add { display: grid; place-items: center; color: var(--dim); }
 
 /* inspector */
 #props { overflow: auto; flex: 0 1 46%; padding: 10px; }
 #props h4 { margin: 10px 0 4px; color: var(--dim); font: inherit; font-size: 10px; }
 #props h4:first-child { margin-top: 0; }
-#props label { display: block; margin-bottom: 6px; color: var(--dim); }
+#props label { display: block; margin-bottom: var(--space-3); color: var(--dim); }
 #props input, #props select, #props textarea {
 	display: block;
 	width: 100%;
 	padding: 3px 5px;
 	border: 1px solid var(--control-border);
-	background: #17102a;
+	background: var(--surface-raised);
 	color: var(--fg);
 	font: inherit;
 }
@@ -223,34 +317,34 @@ body.text #right { display: none; }
 	border-color: var(--acc);
 }
 #props textarea { height: 48px; resize: vertical; }
-#props .row { display: flex; gap: 6px; }
+#props .row { display: flex; gap: var(--space-3); }
 #props .row > * { flex: 1; }
 #props .act {
 	width: 100%;
-	margin-top: 8px;
-	padding: 4px;
+	margin-top: var(--space-4);
+	padding: var(--space-2);
 	border: 1px solid var(--control-border);
 	color: var(--dim);
 }
 #props .act:hover { border-color: var(--acc); color: var(--fg); }
-#props .err { color: #ff8f8f; white-space: pre-wrap; }
-#props .warn { margin: 0 0 8px 16px; padding: 0; color: #ff8f8f; font-size: 11px; }
-#props .warn li { margin-bottom: 2px; }
-#props .hint { margin-top: 4px; color: var(--dim); font-size: 10px; }
+#props .err { color: var(--danger); white-space: pre-wrap; }
+#props .warn { margin: 0 0 var(--space-4) var(--space-6); padding: 0; color: var(--danger); font-size: 11px; }
+#props .warn li { margin-bottom: var(--space-1); }
+#props .hint { margin-top: var(--space-2); color: var(--dim); font-size: 10px; }
 
 /* status */
 #status {
 	display: flex;
-	flex: 0 0 22px;
+	flex: 0 0 var(--row-sm);
 	align-items: center;
 	gap: 18px;
-	padding: 0 12px;
+	padding: 0 var(--space-5);
 	background: var(--chrome);
 	border-top: 1px solid var(--line);
 	color: var(--dim);
-	font-size: 11px;
+	font-size: var(--font-size-sm);
 }
 #msg { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-#msg.bad { color: #ff8f8f; }
+#msg.bad { color: var(--danger); }
 #warnings:empty { display: none; }
-#warnings { color: #ff8f8f; cursor: pointer; }
+#warnings { color: var(--danger); cursor: pointer; }

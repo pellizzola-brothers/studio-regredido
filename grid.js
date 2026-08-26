@@ -264,7 +264,7 @@ Grid.draw = function ()
 
 	g.setTransform(1, 0, 0, 1, 0, 0);
 	g.imageSmoothingEnabled = false;
-	g.fillStyle = '#0b0813';
+	g.fillStyle = Tokens.canvasBg;
 	g.fillRect(0, 0, cw, ch);
 
 	drawbg(g, cw);
@@ -294,7 +294,7 @@ Grid.draw = function ()
 	}
 
 	if (B * z >= 10) {
-		g.strokeStyle = 'rgba(123,86,186,.14)';
+		g.strokeStyle = Tokens.gridLine;
 		g.lineWidth = 1;
 		g.beginPath();
 		for (const x of ex) { g.moveTo(x + .5, ey[0]); g.lineTo(x + .5, ey[ey.length - 1]); }
@@ -311,7 +311,7 @@ Grid.draw = function ()
 			continue;
 		blit(g, entdefs.get(e.def) || {file: PLACEHOLDER}, sx, sy, s, s);
 		if (i === Grid.sel) {
-			g.strokeStyle = '#7b56ba';
+			g.strokeStyle = Tokens.acc;
 			g.lineWidth = 2;
 			g.strokeRect(sx + 1, sy + 1, s - 2, s - 2);
 		}
@@ -321,12 +321,12 @@ Grid.draw = function ()
 		const sx = Math.round(Grid.hov.x * B * z - ox);
 		const sy = Math.round(Grid.hov.y * B * z - oy);
 		const s = Math.round(B * z);
-		g.strokeStyle = 'rgba(200,170,255,.75)';
+		g.strokeStyle = Tokens.hoverCell;
 		g.lineWidth = 1;
 		g.strokeRect(sx + .5, sy + .5, s - 1, s - 1);
 	}
 
-	g.strokeStyle = 'rgba(123,86,186,.5)';
+	g.strokeStyle = Tokens.bounds;
 	g.lineWidth = 1;
 	g.strokeRect(Math.round(-ox) + .5, Math.round(-oy) + .5,
 		Math.round(W * B * z), Math.round(Grid.h * B * z));
@@ -340,7 +340,7 @@ function blit(g, t, x, y, w, h)
 	if (ready(im))
 		g.drawImage(im, x, y, w, h);
 	else {
-		g.fillStyle = t ? '#4a3a6a' : '#803050';
+		g.fillStyle = t ? Tokens.missingTex : Tokens.missingDef;
 		g.fillRect(x, y, w, h);
 	}
 }
@@ -527,7 +527,12 @@ function onmove(ev)
 		e.pos[1] = c.y * B;
 		setblock(c.x, c.y, 0);		/* the block under it gives way */
 		App.touch();
-		App.inspect();
+		/* PERF-01: write the moved fields in place rather than rebuilding the
+		 * whole inspector on every cell crossed; Panel.update() falls back to
+		 * false if the inspector isn't already showing this entity, which
+		 * ondown() guarantees it is the moment a drag can begin. */
+		if (!Panel.update(e))
+			App.inspect();
 		Grid.redraw();
 		return;
 	}
@@ -540,10 +545,17 @@ function onmove(ev)
 
 function onup()
 {
+	const moved = Grid.moving;
+
 	Grid.pan = null;
 	Grid.paint = -1;
 	Grid.last = null;
 	Grid.moving = false;
 	Grid.cursor(Grid.hov);
 	Undo.end();
+	/* PERF-01: the drag itself only kept Panel.update()'s three fields in
+	 * step; run the real Panel.inspect() once now that the gesture is done,
+	 * as the finding asks, rather than on every cell crossed. */
+	if (moved)
+		App.inspect();
 }

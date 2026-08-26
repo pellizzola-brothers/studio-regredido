@@ -101,6 +101,14 @@ App.fail = function (err)
 	Panel.inspect();
 	const d = document.createElement('div');
 	d.className = 'err';
+	/* A11Y-05: role="alert" carries its own implicit assertive live region
+	 * and - unlike a plain aria-live attribute - is defined to announce even
+	 * though this element is created and inserted after the fact rather than
+	 * sitting empty in the DOM from load, which is what makes it the right
+	 * choice for a block that Panel.inspect() (just above) tears down and
+	 * this function recreates on every failure. */
+	d.setAttribute('role', 'alert');
+	d.setAttribute('aria-atomic', 'true');
 	d.textContent = err;
 	$('props').prepend(d);
 	App.say(err.split('\n')[0], true);
@@ -291,7 +299,7 @@ function edit(li, b, old, isscript)
 	const inp = document.createElement('input');
 
 	inp.value = b.textContent;
-	inp.style.cssText = 'width:100%;border:1px solid var(--acc);background:#17102a;color:var(--fg);font:inherit';
+	inp.style.cssText = 'width:100%;border:1px solid var(--acc);background:var(--surface-raised);color:var(--fg);font:inherit';
 	li.replaceChild(inp, b);
 	inp.focus();
 	inp.select();

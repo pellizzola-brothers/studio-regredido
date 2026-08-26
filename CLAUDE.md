@@ -41,6 +41,8 @@ preload.js    contextBridge surface — the renderer's entire view outward.
 lvl.js        .lvl read/write plus the level.json validator (main process).
 catalog.js    Block ids, entity definitions, backgrounds, texture loading.
               Shared: the renderer loads it as a script, lvl.js requires it.
+tokens.js     Reads style.css's :root design tokens into a plain object, for
+              grid.js's canvas and code.js's Monaco theme to consume.
 undo.js       The level document's undo/redo history.
 grid.js       The level canvas: rendering, panning, every edit gesture.
 panel.js      Palette (top right) and property inspector (bottom right).
@@ -202,6 +204,20 @@ descriptions of the art — renaming them is a schema change affecting the game.
 pointing at it, its Monaco model and its open tab. Deleting a script that a
 definition still uses is refused.
 
+**Design tokens live once, in `style.css`'s `:root`.** Spacing, row heights,
+type, colour, radius, elevation, motion and z-index are each defined there
+and nowhere else. `tokens.js` reads the colour custom properties once, at
+load, into a plain object (`Tokens`) for the two consumers that cannot
+resolve a CSS `var(...)` reference themselves: `grid.js`'s canvas 2D context
+(`fillStyle`/`strokeStyle` want a plain string) and `code.js`'s Monaco theme
+(`defineTheme()` wants a plain object literal). `main.js`'s
+`BrowserWindow`'s `backgroundColor` and `chrome.js`'s `BAR` are the two
+sanctioned exceptions — each must be known before any CSS has loaded, so each
+duplicates a token's value with a comment naming which one and the rule to
+change both together. Not every token has a consumer yet; introduce them
+before the components that need them, not after, per the pattern this file's
+own row/spacing tokens already set (`--row`, `--row-sm`, `--row-lg`).
+
 ## Deviations from the design file
 
 `Pellizzola Brothers.svg` is the reference for layout and colour. Three
@@ -252,7 +268,7 @@ one in `panel.js` collide, and the later file silently wins. `grid.js` uses
 `cell()`. Check for collisions when adding top-level names:
 
 ```bash
-grep -hoE '^(function [a-z_]+|const [A-Z_a-z]+ =)' catalog.js grid.js panel.js code.js app.js | sort | uniq -d
+grep -hoE '^(function [a-z_]+|const [A-Z_a-z]+ =)' catalog.js tokens.js grid.js panel.js code.js app.js | sort | uniq -d
 ```
 
 `npm run check` (`tools/check.js`) runs the same check on every invocation, so

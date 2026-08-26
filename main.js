@@ -169,6 +169,10 @@ function createwin()
 
 	win = new BrowserWindow({
 		...geometry, minWidth: MINW, minHeight: MINH,
+		/* Duplicates style.css's --frame (VIS-04's one sanctioned exception,
+		 * documented at tokens.js): the window must be told its background
+		 * before any CSS has loaded, so it cannot read the token itself.
+		 * Change both together. */
 		backgroundColor: '#1c1d20', show: false,
 		...chrome.windowoptions(),
 		webPreferences: {

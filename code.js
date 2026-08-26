@@ -7,20 +7,27 @@
 
 const Code = {ed: null, models: new Map(), path: null, ready: false, quiet: false};
 
+/* VIS-04: four of these eleven colours used to be transcribed by hand from
+ * style.css's tokens - a copy that could silently drift, and once already
+ * had (b9a6d6/7b56ba were --fg/--acc restated, not read).  They now read
+ * Tokens (tokens.js) instead.  The rest - 150f24, 2e2049, 1e1633 - are not
+ * duplicates of anything else in the app, so there is nothing here for them
+ * to drift out of sync with; giving the editor's own palette a considered
+ * relationship to the surrounding chrome is VIS-18, not this finding. */
 const THEME = {
 	base: 'vs-dark',
 	inherit: true,
-	rules: [{token: '', foreground: 'b9a6d6', background: '150f24'}],
+	rules: [{token: '', foreground: Tokens.fg.replace('#', ''), background: '150f24'}],
 	colors: {
 		'editor.background': '#150f24',
-		'editor.foreground': '#b9a6d6',
-		'editor.lineHighlightBackground': '#1a122c',
+		'editor.foreground': Tokens.fg,
+		'editor.lineHighlightBackground': Tokens.tab,
 		'editor.selectionBackground': '#2e2049',
-		'editorCursor.foreground': '#7b56ba',
-		'editorLineNumber.foreground': '#3b285b',
-		'editorLineNumber.activeForeground': '#7b56ba',
+		'editorCursor.foreground': Tokens.acc,
+		'editorLineNumber.foreground': Tokens.scrollThumb,
+		'editorLineNumber.activeForeground': Tokens.acc,
 		'editorGutter.background': '#150f24',
-		'editorWidget.background': '#1a122c',
+		'editorWidget.background': Tokens.tab,
 		'editorIndentGuide.background1': '#1e1633'
 	}
 };

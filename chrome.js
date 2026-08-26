@@ -15,10 +15,11 @@
 const mac = process.platform === 'darwin';
 const win32 = process.platform === 'win32';
 
-/* --bar in style.css: the height every platform's native window controls
+/* --row-lg in style.css: the height every platform's native window controls
  * must line up with.  Duplicated here for the same reason main.js's
- * `backgroundColor` duplicates --frame (VIS-04, unshipped) - real window
- * chrome has to be described to the OS before any CSS has loaded. */
+ * `backgroundColor` duplicates --frame (VIS-04, done - see "Already
+ * completed" in POLISH.md) - real window chrome has to be described to the
+ * OS before any CSS has loaded. */
 const BAR = 34;
 
 /* Real per-platform window controls (NAT-02) in place of the hand-drawn

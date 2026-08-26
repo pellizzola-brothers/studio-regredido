@@ -155,6 +155,25 @@ function newdef()
 	Panel.inspect();
 }
 
+/* PERF-01: onmove()'s entity-drag branch used to call the full Panel.inspect()
+ * on every cell the entity crossed - a fresh ~1KB innerHTML string, plus two
+ * rebuilt <select> elements, several dozen times a second.  While the shape
+ * of the entity view is unchanged (still the same entity, still selected),
+ * only its position fields actually move, so a drag can write straight into
+ * the three fields that hold it instead.  Returns false, doing nothing, if
+ * the inspector is not currently showing an entityview() for this drag - the
+ * caller falls back to a full Panel.inspect() in that case (ARCH-04). */
+Panel.update = function (e)
+{
+	const x = $('p_x'), y = $('p_y'), cell = $('p_cell');
+	if (!x || !y || !cell)
+		return false;
+	x.value = e.pos[0];
+	y.value = e.pos[1];
+	cell.value = Math.floor(e.pos[0] / B) + ', ' + Math.floor(e.pos[1] / B);
+	return true;
+};
+
 Panel.inspect = function ()
 {
 	const p = $('props');
@@ -225,7 +244,7 @@ function entityview(p, e)
 			'<label>x<input id="p_x" type="number" step="' + B + '" value="' + e.pos[0] + '"></label>' +
 			'<label>y<input id="p_y" type="number" step="' + B + '" value="' + e.pos[1] + '"></label>' +
 		'</div>' +
-		'<label>cell<input value="' + Math.floor(e.pos[0] / B) + ', ' +
+		'<label>cell<input id="p_cell" value="' + Math.floor(e.pos[0] / B) + ', ' +
 			Math.floor(e.pos[1] / B) + '" disabled></label>' +
 		'<h4>script</h4>' +
 		'<select id="p_script">' + scripts(e.def).map(v =>
