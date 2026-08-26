@@ -153,7 +153,7 @@ function tab(id, label, closable)
 	t.className = 'tab' + (App.tab === id ? ' on' : '');
 	t.setAttribute('role', 'tab');
 	t.setAttribute('aria-selected', App.tab === id ? 'true' : 'false');
-	t.innerHTML = '<b></b>';
+	t.innerHTML = '<span></span>';
 	t.firstChild.textContent = label;
 	t.onclick = () => App.select(id);
 	t.onkeydown = e => {
@@ -226,7 +226,7 @@ function list(ul, keys, isscript)
 	const items = [];
 	for (const k of keys) {
 		const li = document.createElement('li');
-		const b = document.createElement('b');
+		const b = document.createElement('span');
 
 		b.textContent = k.replace(/^[^/]+\//, '');
 		li.className = App.tab === k ? 'on' : '';
@@ -254,7 +254,7 @@ function rowkeys(ev, li, k, isscript)
 		App.opentab(k);
 	} else if (ev.key === 'F2') {
 		ev.preventDefault();
-		edit(li, li.querySelector('b'), k, isscript);
+		edit(li, li.querySelector('span'), k, isscript);
 	} else if (ev.key === 'Delete' || ev.key === 'Backspace') {
 		ev.preventDefault();
 		(isscript ? delscript : delmidi)(k);
@@ -360,7 +360,7 @@ function addscript()
 {
 	const ul = $('scripts');
 	const li = document.createElement('li');
-	const b = document.createElement('b');
+	const b = document.createElement('span');
 
 	b.textContent = '';
 	li.appendChild(b);
@@ -656,7 +656,7 @@ addEventListener('DOMContentLoaded', () => {
 		else if (a.action === 'rename') {
 			const li = rowbykey(a.key, a.kind === 'script');
 			if (li)
-				edit(li, li.querySelector('b'), a.key, a.kind === 'script');
+				edit(li, li.querySelector('span'), a.key, a.kind === 'script');
 		} else if (a.action === 'delete')
 			(a.kind === 'script' ? delscript : delmidi)(a.key);
 		else if (a.action === 'newscript')

@@ -105,6 +105,24 @@
 	--z-panel: 1; --z-splitter: 5; --z-overlay: 10; --z-modal: 20;
 }
 
+/* VIS-05: bundled so the app is finally seen in its own design-file typeface,
+   identically on all three platforms, instead of silently falling through to
+   whatever the OS substitutes for a family it does not have (measured:
+   "JetBrains Mono", the fallback stack, and a deliberately bogus family name
+   all rendered at the exact same metrics). font-display: block, not swap - a
+   reflow of the whole chrome after first paint is worse than a few
+   milliseconds of invisible text in a local app with a local font. Only the
+   400 weight ships: nothing in the app requests a heavier one (the two
+   font-weight: normal overrides that used to fight a <b> used for layout are
+   gone along with the <b>s themselves, below). */
+@font-face {
+	font-family: 'JetBrains Mono';
+	src: url('fonts/JetBrainsMono-Regular.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -178,7 +196,7 @@ html[data-platform="win32"] #title { padding-right: 138px; }	/* titleBarOverlay 
 }
 .tab:hover { color: var(--fg); }
 .tab.on { background: var(--tab); color: var(--acc-text); }
-.tab b { overflow: hidden; font-weight: normal; text-overflow: ellipsis; }
+.tab span { overflow: hidden; text-overflow: ellipsis; }
 .tab .tabclose { font-style: normal; opacity: .6; }
 .tab .tabclose:hover { opacity: 1; }
 #add { padding: 0 var(--space-5); }
@@ -230,7 +248,7 @@ li {
 }
 li:hover { color: var(--fg); }
 li.on { color: var(--acc-text); }
-li b { overflow: hidden; font-weight: normal; text-overflow: ellipsis; }
+li span { overflow: hidden; text-overflow: ellipsis; }
 
 /* stage */
 #stage {
