@@ -777,11 +777,14 @@ function ondown(ev)
 
 	/* NAT-12: a right press no longer erases on its own - only a genuine
 	 * right-*drag* does (onmove() converts it once the pointer actually
-	 * moves). A press that never moves is a click, resolved on mouseup into
-	 * the canvas context menu instead. On macOS, Ctrl+click arrives as this
-	 * same button-2 event - the single-button-mouse convention for reaching
-	 * a context menu - so it must never erase regardless of any subsequent
-	 * movement. */
+	 * moves). A press that never moves is a click, resolved on mouseup
+	 * (onup(), below) into an instant delete of whatever is under the
+	 * original press cell - or the canvas menu, the one place left with
+	 * nothing to delete. On macOS, Ctrl+click arrives as this same button-2
+	 * event - the single-button-mouse convention for reaching a context
+	 * menu - so it must never erase regardless of any subsequent movement;
+	 * onup() then resolves it exactly like any other right click, at the
+	 * cell the press itself was over. */
 	if (ev.button === 2) {
 		Grid.rdown = {x: ev.clientX, y: ev.clientY, c: c, hit: hit,
 			noerase: ev.ctrlKey && api.platform === 'darwin'};
@@ -890,17 +893,13 @@ function onmove(ev)
 	}
 }
 
-/* NAT-12: a right press that reaches mouseup without ever converting into an
- * erase-drag (onmove(), above) was a plain click - the operation the audit
- * says the canvas has never offered a menu for. Only what already has a real
- * implementation is on it: deleting the entity under the click, and fitting
- * the view. `hit` is the entity index at *press* time, sent along so the
- * main-process handler can act on it directly - the same "capture now, act
- * later" shape NAT-05's row menus already use, for the same reason (the
- * popup is asynchronous and the selection could in principle change first). */
-function canvasmenu(rdown)
+/* A right click with nothing under it (out past the level's own bounds, the
+ * one place a right click can never delete anything) still gets a menu -
+ * just "fit view", the one action that actually applies there. No `hit` to
+ * send along: only a cell inside the level can ever hold an entity. */
+function canvasmenu()
 {
-	api.rowmenu({kind: 'canvas', hit: rdown.hit});
+	api.rowmenu({kind: 'canvas'});
 }
 
 function onup()
@@ -908,7 +907,30 @@ function onup()
 	const moved = Grid.moving;
 
 	if (Grid.rdown) {
-		canvasmenu(Grid.rdown);
+		const c = Grid.rdown.c, hit = Grid.rdown.hit;
+
+		/* A right press that reaches mouseup without ever converting into an
+		 * erase-drag (onmove(), above) was a plain click. Inside the level,
+		 * that deletes whatever is under it directly - the same thing a
+		 * right-drag already does along its path - rather than asking first
+		 * through a menu. Outside the level there is nothing to delete, so
+		 * that is the one case still worth a menu (canvasmenu(), above). */
+		if (c.x >= 0 && c.y >= 0 && c.x < W && c.y < Grid.h) {
+			Undo.act(() => {
+				if (hit >= 0) {
+					elist().splice(hit, 1);
+					if (Grid.sel === hit)
+						Grid.sel = -1;
+					else if (Grid.sel > hit)
+						Grid.sel--;
+				} else
+					setblock(c.x, c.y, 0);
+				App.touch();
+			});
+			Panel.inspect();
+			Grid.redraw();
+		} else
+			canvasmenu();
 		Grid.rdown = null;
 	}
 	Grid.pan = null;

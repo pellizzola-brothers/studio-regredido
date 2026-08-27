@@ -993,22 +993,30 @@ it only records the press (position, cell, whatever entity was under it); a
 right **drag** past a 3px threshold (`onmove()`) converts it into the same
 erase gesture as before, so "keep right-drag-to-erase" (the finding's own
 first bullet) is unchanged. A press that reaches mouseup without ever
-converting was a click, resolved into a new canvas context menu instead
-(`canvasmenu()`/`onup()`, `grid.js`; `main.js`'s `menu:row` handler grows a
-`kind === 'canvas'` branch) carrying the two actions that already have a real
-implementation - delete the clicked entity, fit the view - rather than the
-finding's fuller wish list (duplicate, toggle grid), which are features that
-do not exist yet and are out of this finding's own scope. On macOS, Ctrl+click
-arrives as this same button-2 event; it is marked `noerase` at press time and
-never converts into an erase regardless of any subsequent movement, per the
-finding's own "do not treat Ctrl+click as erase" instruction. Verified with the
-probe harness: a plain right click with no movement erased nothing (previously
-erased one cell) and built a menu template reading `delete entity` (disabled),
-`fit view`; painting then right-dragging across the same cells still erased
-all of them, confirming the drag gesture is unchanged; placing an entity and
-right-clicking it (no drag) built the menu with `delete entity` **enabled**,
-and invoking it removed exactly that entity; a Ctrl+click drag across painted
-cells erased nothing despite the movement.
+converting was a click, resolved (`onup()`, `grid.js`) into an instant delete
+of whatever is under the original press cell when that cell is inside the
+level's own bounds - the same action a right-drag already applies along its
+path, just without needing to ask first - or into the canvas context menu
+(`canvasmenu()`; `main.js`'s `menu:row` handler grows a `kind === 'canvas'`
+branch) when it is not, the one place left with nothing to delete. The menu
+itself now carries only `fit view`; a follow-up request narrowed the click
+case from "open a menu with a delete-entity item" to "just delete, no menu"
+directly, which made the menu's own `delete entity` item permanently dead
+(no cell outside the level can ever hold an entity) and it was removed along
+with the `canvasdelete` IPC round trip it drove. On macOS, Ctrl+click arrives
+as this same button-2 event; it is marked `noerase` at press time and never
+converts into an erase-drag regardless of any subsequent movement, per the
+finding's own "do not treat Ctrl+click as erase" instruction, and resolves on
+release exactly like any other right click, at the cell the press itself was
+over. Verified with the probe harness: a plain right click on a painted cell
+with no movement deleted it directly with no menu call; the same on a placed
+entity removed exactly that entity; right-dragging across painted cells still
+erased all of them, confirming the drag gesture is unchanged; a right click
+outside the level's own bounds called `canvasmenu()` (confirmed via a
+temporary global stub - `api`'s own surface is frozen by `contextBridge` and
+not reassignable from a test) and left the grid untouched; a Ctrl+click drag
+across painted cells erased nothing despite the movement, then deleted the
+press cell on release, matching a real right click's own behaviour exactly.
 
 ---
 
@@ -3238,7 +3246,7 @@ relitigated.
 | Default window size | ✅ shipped - 80% of the display's work area, clamped (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | — |
 | Mixed-DPI / scaling | ✅ shipped (BUG-12) | ✅ shipped, not run on real per-monitor-DPI hardware (BUG-12) | ✅ shipped, not run on real Wayland hardware (BUG-12) | — |
 | Trackpad scroll vs pinch | ✅ shipped (NAT-11) | ✅ shipped (NAT-11) | ✅ shipped (NAT-11) | — |
-| Right-click semantics | ✅ shipped - Ctrl+click no longer erases, and a right click that never dragged opens the canvas's own menu (NAT-12) | ✅ shipped (NAT-12) | ✅ shipped (NAT-12) | — |
+| Right-click semantics | ✅ shipped - Ctrl+click no longer erases on a drag, and a right click that never dragged deletes directly, or opens the canvas's own menu when there is nothing under it to delete (NAT-12) | ✅ shipped (NAT-12) | ✅ shipped (NAT-12) | — |
 | Keyboard shortcuts | ⚠️ conflicts with default menu; layout-dependent | ⚠️ same | ⚠️ same | NAT-14 |
 | Scrollbars | ✅ shipped - one tokenised treatment, `scrollbar-gutter: stable` (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | — |
 | Fonts | ✅ shipped - bundled, identically on all three platforms (VIS-05) | ✅ shipped (VIS-05) | ✅ shipped (VIS-05) | — |

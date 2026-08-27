@@ -293,14 +293,17 @@ additions were needed for the app to be usable:
   bare click.
 - Inline renaming, since Electron does not implement `window.prompt`.
 - A horizontal scrollbar under the canvas.
-- A context menu on the canvas itself, opened by a right click that never
-  dragged — the same `menu:row`/`rowcmd` round trip as the file manager's,
-  under `kind: 'canvas'`. A right press that *does* drag still erases, as
-  before; on macOS, Ctrl+click arrives as the same button-2 event and never
-  erases regardless of movement, since it is the platform's own reflex for
-  reaching a context menu. The menu itself only carries actions that already
-  exist (delete the clicked entity, fit the view) — see `grid.js`'s
-  `canvasmenu()`.
+- A right click on the canvas that never dragged deletes whatever is under it
+  directly — the same thing a right-*drag* already applies along its path —
+  rather than asking first. Only a click with nothing under it to delete (one
+  outside the level's own bounds) still opens a menu, the same `menu:row`/
+  `rowcmd` round trip as the file manager's, under `kind: 'canvas'`, carrying
+  the one action that still applies out there: fit the view. See `grid.js`'s
+  `onup()` for the bounds check and `canvasmenu()` for the menu itself. On
+  macOS, Ctrl+click arrives as the same button-2 event and never erases
+  during a drag regardless of movement, since it is the platform's own reflex
+  for reaching a context menu; on release it resolves exactly like any other
+  right click, at the cell the press itself was over.
 
 The design draws the active tab's own corner flare at a 26px radius - at the
 scale the window itself was drawn at. This tab strip is 34px tall
