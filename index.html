@@ -3,7 +3,7 @@
 <title>Pellizzola Brothers Studio</title>
 <link rel="stylesheet" href="style.css">
 
-<div id="title">
+<header id="title">
 	<div id="name" class="drag"></div>
 	<div class="acts" role="toolbar" aria-label="File" aria-orientation="horizontal">
 		<button data-act="new">new</button>
@@ -11,7 +11,7 @@
 		<button data-act="save">save</button>
 		<button data-act="saveas">save as</button>
 	</div>
-</div>
+</header>
 
 <div id="tabs">
 	<div id="tablist"></div>
@@ -23,11 +23,11 @@
 
 <div id="body">
 	<aside id="side">
-		<div class="hdr">scripts</div>
+		<h2 class="hdr" id="hdr-scripts">scripts</h2>
 		<ul id="scripts"></ul>
 		<div id="splitter-scripts" class="splitter h" role="separator" tabindex="0"
 			aria-orientation="horizontal" aria-label="Resize scripts list"></div>
-		<div class="hdr">midi<button id="addmidi" title="Import MIDI">+</button></div>
+		<h2 class="hdr" id="hdr-midi">midi<button id="addmidi" title="Import MIDI">+</button></h2>
 		<ul id="midis"></ul>
 	</aside>
 
@@ -44,12 +44,12 @@
 		aria-orientation="vertical" aria-label="Resize inspector"></div>
 
 	<aside id="right">
-		<div class="hdr r">items</div>
+		<h2 class="hdr r" id="hdr-items">items</h2>
 		<div id="palette"></div>
 		<div id="splitter-props" class="splitter h" role="separator" tabindex="0"
 			aria-orientation="horizontal" aria-label="Resize palette"></div>
-		<div class="hdr r">properties</div>
-		<div id="props"></div>
+		<h2 class="hdr r" id="hdr-props">properties</h2>
+		<div id="props" role="region" aria-label="Properties"></div>
 	</aside>
 </div>
 

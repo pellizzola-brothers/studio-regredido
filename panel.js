@@ -72,7 +72,9 @@ Panel.palette = function ()
 	const el = $('palette');
 	el.innerHTML = '';
 	el.setAttribute('role', 'group');
-	el.setAttribute('aria-label', 'palette');
+	/* A11Y-02: the "items" <h2> (index.html) is the visible label; pointing
+	 * at it beats a second string ("palette") nobody sees. */
+	el.setAttribute('aria-labelledby', 'hdr-items');
 	const items = [];
 
 	group(el, 'blocks');

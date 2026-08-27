@@ -251,7 +251,9 @@ function list(ul, keys, isscript)
 {
 	ul.innerHTML = '';
 	ul.setAttribute('role', 'listbox');
-	ul.setAttribute('aria-label', isscript ? 'scripts' : 'midi files');
+	/* A11Y-02: the section's own <h2> (index.html) is the list's real label
+	 * now, not a second, parallel string naming the same thing. */
+	ul.setAttribute('aria-labelledby', isscript ? 'hdr-scripts' : 'hdr-midi');
 	if (!keys.length) {
 		empty(ul, isscript);
 		return;
