@@ -95,6 +95,16 @@ level.lvl
 them `i * 100`, so `B = 100` in `catalog.js` keeps entity `pos` aligned to the
 grid. Changing it here alone desynchronises the studio from the game.
 
+**A level divides into 9 scenes.** `textures/README.md` documents this - each
+scene gets its own backdrop once the schema grows a field for it, which it
+does not yet (`level.backgrounds` is still one id for the whole level, see
+"Backgrounds" below). `SCENES`/`SCENECOLS` in `grid.js` (9 and `W / SCENES` =
+60 columns) exist today only for `Grid.fit()`/`Grid.fitW()`: "zoom to fit"
+targets the scene nearest the camera rather than the level's full 540-column
+width, which no viewport can usefully show at once. Changing the scene count
+here alone would disagree with the game and the texture library the same way
+changing `B` or `W` alone would.
+
 **Block ids are a cross-repo contract.** The table in `textures/README.md` is
 the authority; the game reads the same ids. `catalog.js` deliberately omits
 `blocks/lucky_block.png` and the six `interactives/*_flag.png` sprites: they

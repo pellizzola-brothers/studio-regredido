@@ -225,10 +225,10 @@ Grid.setheight = function (h)
 
 /* Never fit *above* 100% - a small level should not be blown up past its
  * native pixel size just because the window is large. */
-function fitset(z)
+function fitset(z, x)
 {
 	Grid.cam.z = Math.max(ZMIN, Math.min(1, z));
-	Grid.cam.x = 0;
+	Grid.cam.x = x;
 	Grid.cam.y = -B / 2;
 	Grid.redraw();
 }
@@ -237,29 +237,63 @@ function fitset(z)
  * column level, only ~4% of its width - there was no view that ever showed
  * the whole thing.  Kept as an explicit command (it is the useful one while
  * editing a tall level), alongside its width counterpart and Grid.fit()
- * itself, which now takes whichever of the two is smaller. */
+ * itself. Height isn't divided into scenes (below), so this one still fits
+ * the level's actual full height and resets x to the level's own start. */
 Grid.fitH = function ()
 {
 	const r = Grid.cv.getBoundingClientRect();
 	if (!r.height)			/* not laid out yet; the resize does it */
 		return;
-	fitset(r.height / (Grid.h * B + 2 * FITPAD));
+	fitset(r.height / (Grid.h * B + 2 * FITPAD), 0);
 };
+
+/* A level divides into a fixed 9 scenes (textures/README.md: "9 scenes in a
+ * level", each with its own backdrop) - 540 / 9 = 60 columns per scene, an
+ * exact division rather than a guessed one. Fitting the level's *actual*
+ * full width is never a useful "fit": a level is 54 000 world px wide, and
+ * even ZMIN's floor only shows a fraction of that, so "fit width" and
+ * "fit view" both target one scene - the one the camera is already over -
+ * instead of the whole level. */
+const SCENES = 9;
+const SCENECOLS = W / SCENES;
+
+/* The scene under the centre of the current view - "closest" to what the
+ * user is actually looking at, not to column 0. */
+function curscene()
+{
+	const r = Grid.cv.getBoundingClientRect();
+	const cx = Grid.cam.x + r.width / Grid.cam.z / 2;
+	return Math.max(0, Math.min(SCENES - 1, Math.floor(cx / (SCENECOLS * B))));
+}
+
+/* Fits z, then centres the closest scene horizontally in the resulting
+ * viewport - the natural anchor for a fit with no pointer of its own to
+ * anchor to, and what keeps a height-constrained fit from flushing the
+ * scene against the left edge instead of showing it in the middle of the
+ * frame. */
+function fitscene(z)
+{
+	const r = Grid.cv.getBoundingClientRect();
+	const cz = Math.max(ZMIN, Math.min(1, z));
+	const left = curscene() * SCENECOLS * B;
+
+	fitset(z, left - (r.width / cz - SCENECOLS * B) / 2);
+}
 
 Grid.fitW = function ()
 {
 	const r = Grid.cv.getBoundingClientRect();
 	if (!r.height)
 		return;
-	fitset(r.width / (W * B + 2 * FITPAD));
+	fitscene(r.width / (SCENECOLS * B + 2 * FITPAD));
 };
 
-Grid.fit = function ()		/* fit the level, not one axis */
+Grid.fit = function ()		/* fit the closest scene, not the whole level */
 {
 	const r = Grid.cv.getBoundingClientRect();
 	if (!r.height)
 		return;
-	fitset(Math.min(r.height / (Grid.h * B + 2 * FITPAD), r.width / (W * B + 2 * FITPAD)));
+	fitscene(Math.min(r.height / (Grid.h * B + 2 * FITPAD), r.width / (SCENECOLS * B + 2 * FITPAD)));
 };
 
 /* UX-04: c.z *= 2 every two presses - the same "zoom doubles per N units of

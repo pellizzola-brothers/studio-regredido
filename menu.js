@@ -61,8 +61,8 @@ function template(win, state)
 			{label: 'Actual Size', accelerator: 'CmdOrCtrl+0', enabled: onlevel, click: send('zoom100')},
 			{type: 'separator'},
 			{label: 'Fit Height', enabled: onlevel, click: send('fitheight')},
-			{label: 'Fit Width', enabled: onlevel, click: send('fitwidth')},
-			{label: 'Fit All', accelerator: 'CmdOrCtrl+9', enabled: onlevel, click: send('fitall')},
+			{label: 'Fit Scene Width', enabled: onlevel, click: send('fitwidth')},
+			{label: 'Fit Scene', accelerator: 'CmdOrCtrl+9', enabled: onlevel, click: send('fitall')},
 			{type: 'separator'},
 			{role: 'togglefullscreen'}
 		]
