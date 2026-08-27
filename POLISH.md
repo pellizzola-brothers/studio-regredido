@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The fifty-eight items below have shipped and are removed from the findings
+The sixty-three items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -715,8 +715,9 @@ failure. The audit's literal recommendation to give the *whole* `#status` bar
 `role="status"` was not followed - it would also make every mouse-driven
 cursor-position update (`#cursor`, updated on almost every `mousemove`) a
 live-region announcement, which is noise no user asked for; A11Y-03's own
-keyboard-cursor case is where position genuinely needs announcing, and it now
-has `#msg`'s live region to speak through when it lands. Verified with the
+keyboard-cursor case is where position genuinely needs announcing, and it has
+since shipped through exactly this live region (done — see "Already
+completed"). Verified with the
 probe harness: `#msg`'s `role` reads `"status"`; calling `App.fail()` produces
 a `.err` element with `role="alert"`, `aria-atomic="true"` and the failure
 text.
@@ -942,8 +943,8 @@ since a `calc()`-based custom property's own computed value does not resolve
 to a px number the way a real layout box's does); `#scripts | #midis` and
 `#palette | #props` (new `--scripts-h`/`--props-h` tokens) drag a plain
 percentage within a 15-85% floor and ceiling, since neither split had a
-content-driven min/max of its own yet (GEO-05, since done - see "Already
-completed", below; GEO-06 still open). Each
+content-driven min/max of its own yet (GEO-05 and GEO-06, both since done -
+see "Already completed", below). Each
 splitter is `role="separator"`, drags via Pointer Events with the OS cursor
 locked to the whole document for the gesture's duration, and double-click or
 Enter removes the override so the panel goes back to tracking the window
@@ -1173,6 +1174,110 @@ import, tab switching) showed no behavioural change.
 
 ---
 
+#### GEO-06 — `#props { flex: 0 1 46% }` is an unexplained fraction
+
+Shipped: `#props` defaults to `flex: 0 1 auto` with a three-row floor and a
+70% ceiling - the inspector is as tall as its own fields, exactly the
+`flex: 0 1 auto`/`min-height`/`max-height` pattern GEO-05 already gave
+`#scripts`, with `#palette` (the DOM's first child of the pair, taking the
+role `#midis` played there) as the one that absorbs the remainder. A user's
+own drag still overrides the default: `layout.js`'s `pctsplitter()` call for
+the props splitter grew the same `cls`/`target` pair GEO-05 introduced,
+toggling `.split-props` on `#right` for exactly as long as `--props-h` is
+actually overridden. Verified with the probe harness, in a clean
+`--user-data-dir` (a stale drag from an earlier test run otherwise persists
+`--props-h` across separate probe launches and silently defeats the
+content-driven default - the first read gave a false failure here): the
+level view (seven fields) computed to 479px, matching its own 467px
+`scrollHeight` almost exactly; switching to a definition view (three fields,
+via `newdef()`) reflowed it down to exactly 175px, matching that view's own
+175px `scrollHeight` precisely; no `.split-props` class present in either
+case.
+
+---
+
+#### UX-06 — The active tool is barely indicated
+
+Shipped: `Panel.palette()` now calls a new `App.tool()` with the newly
+selected tool's own display name - the same name each cell already shows as
+its own tooltip/`aria-label` (`toolname()`, `panel.js`) - writing `tool:
+brick` / `tool: air (eraser)` / `tool: chapeleira` into a new `#tool` status
+field. `.cell.on` also gains a filled corner-triangle marker on top of
+VIS-07's existing accent border + fill, the same "a border alone is easy to
+miss" reasoning `li.on`/`.tab.on`'s own edge markers were built for. Verified
+with the probe harness: `#tool`'s text read `"tool: brick"` for the default
+tool, updated to `"tool: air (eraser)"` and `"tool: chapeleira"` after
+switching; `getComputedStyle(cell, '::after')` on the selected cell reported
+the expected triangle border.
+
+---
+
+#### VIS-14 — Status messages are transient information rendered permanently
+
+Shipped: `App.say()` now clears a transient (non-error) message after ~4s,
+using a single tracked timer so an overlapping call cannot have its message
+wiped early by a stale one; an error (`bad: true`) never auto-clears, per the
+finding's own text, and now carries an aria-hidden `⚠` glyph plus its
+existing `--danger` colour rather than colour alone - `App.fail()`'s `.err`
+block gets the same glyph. Three new persistent status fields - `#dims`
+(`W×Grid.h`) and `#entcount` (the entity count) - are updated once per frame
+from `Grid.draw()`, the same place `App.zoom()` already got its own readout,
+so they stay correct without hunting down every one of the several places
+that add or remove an entity; the fourth persistent field the finding asked
+for, the active tool, is UX-06 (done, same batch). `#msg` gained a
+`border-left`/`padding-left` divider so the persistent group and the
+transient message read as two different kinds of field, not one long run of
+five. Verified with the probe harness: a success message's `textContent`
+was empty after a 4.3s wait; an error message's was not; the error message's
+own `<span aria-hidden>` held the glyph; `#dims`/`#entcount` read `"540×12"`/
+`"0 entities"` on a fresh document.
+
+---
+
+#### A11Y-08 — Disabled and error states are communicated by colour alone
+
+Shipped: `aria-disabled="true"` now sits alongside the native `disabled`
+attribute on all three disabled controls (`#run`, the level view's read-only
+width field, the entity view's read-only cell field). The error-icon half of
+this finding shipped together with VIS-14 (same batch, same `⚠` glyph on
+`#msg.bad` and `App.fail()`'s `.err` block), since both findings asked for
+exactly the same fix on the same element. Verified with the probe harness:
+`getAttribute('aria-disabled')` on `#run` and on the disabled width field
+both read `"true"`.
+
+---
+
+#### A11Y-03 — The canvas is inaccessible and unnamed
+
+Shipped, all four parts of the finding's own "Recommended" section. (1)
+`#cv` carries `role="application"`, `aria-label="Level canvas"`, and
+`aria-describedby` pointing at a new visually-hidden (`.sr-only`) paragraph
+naming the four keys. (2) A new `Grid.kcur` (`grid.js`) is a second cursor,
+independent of the mouse-driven `Grid.hov`, that the arrow keys move one
+cell at a time (`Grid.kmove()`); Return/Space applies `Grid.tool` at it
+through `Grid.kpaint()`, mirroring `ondown()`'s own precedence exactly - an
+existing entity is always grabbed first, regardless of which tool is
+active; Delete/Backspace erases under it through `Grid.kerase()`, but only
+when nothing is already selected via `Grid.sel`, which still deletes the
+selection as before. Both wrap their single edit in `Undo.act()` directly,
+since a keypress is a discrete action with no drag to bracket. (3) Every
+cursor move announces `column N, row M — <content>` through `#msg`'s live
+region (A11Y-05, done — see "Already completed"); focusing the canvas (by
+Tab, or the first time a key moves it) does the same. (4) The pointer
+gestures are untouched. Depended on UX-06 (done, same batch) for the active
+tool to be nameable in the announcement's context, and on VIS-06/A11Y-05
+(both done already) for the ring and the live region the finding's own
+steps 2 and 3 need. Verified with the probe harness: a synthetic focus
+event set a keyboard cursor centred in the viewport and announced it;
+`ArrowRight` moved it and re-announced; `Enter` painted the selected block
+at the cursor, `Delete` erased it, `Space` placed an entity and selected it,
+`Backspace` (nothing mouse-selected) removed it; the paint was independently
+confirmed undoable and redoable through `Undo.undo()`/`Undo.redo()`; a full
+regression pass (paint, undo/redo, save/open, script rename/delete, MIDI
+import, tab switching, UX-12's gesture-cancel) showed no behavioural change.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -1314,13 +1419,17 @@ for all five. The shell's remaining problems are below.
    `--radius-2` distinguishes a standalone action button from an inline
    control, and both side panels carry the design's own drop-shadow
    (VIS-08, VIS-09, GEO-13, all done — see "Already completed").
-3. **Geometry's remaining loose ends are small but still arbitrary.** The
-   spacing/row/type scale, proportional and clamped side panels, integer
-   palette cells, user-resizable splitters and the file manager's own default
-   split are all real now (GEO-01, GEO-03, GEO-07, GEO-04, GEO-05, all done —
-   see "Already completed"). What is left is smaller still: `#props { flex: 0
-   0 var(--props-h) }` still *defaults* to the same unexplained 46% fraction
-   as before a splitter existed to drag it from (GEO-06).
+3. **The Monaco editor is still a fifth, drifting copy of the design.** Four
+   of its eleven colour keys read from the shared token object now
+   (`tokens.js`, VIS-04, done), but the rest - the editor's own background,
+   the scrollbar, the suggestion list, the bracket-match highlight - are
+   still VS Code's own defaults, a blue that has nothing to do with the rest
+   of this application (VIS-18). Geometry's own remaining loose ends are
+   closed now: the spacing/row/type scale, proportional and clamped side
+   panels, integer palette cells, user-resizable splitters, and both
+   in-panel splits' own content-driven defaults are all real (GEO-01,
+   GEO-03, GEO-04, GEO-05, GEO-06, GEO-07, all done — see "Already
+   completed").
 
 ### The highest-impact improvements
 
@@ -1761,7 +1870,7 @@ screen reader still sees a combobox. That is the correct trade.
 
 **Implementation.** Add an inline SVG chevron as a `background-image` data URI
 positioned from the spacing token, with `padding-right` reserving room for it.
-Ensure the focus ring (A11Y-03) applies.
+Ensure the focus ring (VIS-06, done — see "Already completed") applies.
 
 ---
 
@@ -1815,33 +1924,6 @@ something the user just watched happen is noise.
 The brief asks that arbitrary geometry be eliminated. This section identifies
 every instance and states what should determine the value instead. The design
 tokens that come out of it are collected in §6.
-
----
-
-#### GEO-06 — `#props { flex: 0 1 46% }` is an unexplained fraction
-
-**Category** Layout · **Severity** Low · **Priority** P2 · **Affects** UI
-
-**Current.** `style.css` — `#props { flex: 0 0 var(--props-h) }`,
-`--props-h: 46%`. User-draggable now (GEO-04, done - see "Already
-completed"), but the default is the same unreconciled 46 % as before, now a
-token instead of a literal.
-
-**Evidence of intent.** The design splits the right panel at y = 486 within a
-body running 122 → 815: items 364 px (52.5 %), properties 329 px (47.5 %).
-So 46 % is an approximation of a design value that was never written down.
-
-**Recommended.** Either state the design ratio as `--props-h`'s new default
-value directly (`47.5%`, with a comment pointing at the SVG), or — better —
-make it content-driven the way `#scripts`/`#midis`' own split now is (GEO-05,
-done — see "Already completed", the same `flex: 0 1 auto` /
-`min-height`/`max-height` pattern, and the same `.split-*` class toggle so a
-user's own drag still overrides it): the inspector is as tall as its fields,
-the palette takes the remainder, with a minimum - the splitter itself no
-longer needs building, GEO-04 already did that part. The inspector's height
-genuinely varies (the level view has seven controls, the entity view has six,
-the definition view three), so a fixed fraction is wrong for at least two of
-the three states.
 
 ---
 
@@ -2025,39 +2107,14 @@ step 3.1, minizip + jansson).
    `View → Playtest` menu item that is disabled with an explanatory
    `toolTip` — native menus support disabled items with tooltips and are the
    right home for a not-yet-implemented command.
-2. `aria-disabled` plus `aria-describedby` pointing at the explanation, so the
-   reason reaches a screen reader (A11Y-08).
+2. `aria-disabled` is done (A11Y-08, see "Already completed"); still open is
+   `aria-describedby` pointing at the explanation, so the reason itself - not
+   just the fact of being disabled - reaches a screen reader.
 3. Disabled contrast ≥3:1 is done (VIS-07, see "Already completed").
 4. When the game does gain `.lvl` support, the implementation is: write the
    document to `app.getPath('temp')`, spawn the game binary with it, and stream
    its stderr into the status bar. Worth recording in `CLAUDE.md` next to the
    existing note so the eventual implementer does not have to rediscover it.
-
----
-
-#### VIS-14 — Status messages are transient information rendered permanently
-
-**Category** Visual / UX · **Severity** Low · **Priority** P2 · **Affects** UX
-
-**Current.** `App.say()` (`app.js:19-24`) writes to `#msg` and nothing ever
-clears it. `saved /Users/…/level.lvl` stays on screen for the rest of the
-session. Errors and successes use the same slot, distinguished only by
-`#msg.bad` turning the text `var(--danger)` (VIS-04, done — see "Already
-completed"). `#msg` carries `role="status"` and `App.fail()`'s `.err` block
-carries `role="alert"` now (A11Y-05, done — see "Already completed"), so both
-are already announced; what A11Y-05 did not add is any expiry.
-
-**Recommended.**
-- Transient confirmations ("saved", "imported 3 files", "undo") auto-clear
-  after ~4 s, with the colour transition `#msg` already has (VIS-08, done —
-  see "Already completed").
-- **Errors do not auto-clear** — they persist until the next action, and they
-  get an icon plus the `--danger` colour, not colour alone (a colour-only
-  distinction fails WCAG 1.4.1).
-- The status bar should also carry **persistent** information that currently
-  has nowhere to live: zoom percentage, level dimensions, entity count, and the
-  active tool (UX-06). Separate the persistent fields from the transient
-  message slot with a divider so they do not compete.
 
 ---
 
@@ -2278,26 +2335,6 @@ undo, it corrupts the next step.
 
 ---
 
-#### UX-06 — The active tool is barely indicated
-
-**Category** UX · **Severity** Low · **Priority** P2 · **Affects** UX
-
-**Current.** The selected palette cell gets `border-color: var(--acc)` and a
-slightly lighter background (`style.css:187`) — a 1 px purple border on a
-32 px cell (an integer size now, GEO-07, done - see "Already completed"; the
-border was easy to miss on the old 42.25 px fractional one and still is on
-the new integer one), among 31 similar cells.
-
-**Recommended.** Strengthen the selected state further still (VIS-07, done -
-see "Already completed", already gave `.cell.on` the accent border + fill
-background it now shares with `li.on`/`.tab.on`; a filled corner marker on
-top of that is this finding's own remaining scope), and mirror it in the status
-bar: `tool: brick` / `tool: air (eraser)` / `tool: chapeleira`. The status bar
-is already the right place and is currently carrying only a cursor position and
-a stale message.
-
----
-
 #### UX-07 — The palette has no search or filter
 
 **Category** UX · **Severity** Low · **Priority** P3 · **Affects** UX
@@ -2502,41 +2539,6 @@ already shipped (see "Already completed") and are not repeated here.
 
 ---
 
-#### A11Y-03 — The canvas is inaccessible and unnamed
-
-**Category** Accessibility · **Severity** High · **Priority** P2 · **Affects** UI, UX
-
-**Current.** `<canvas id="cv" tabindex="0">` (`index.html:36`) — focusable, so
-it appears in the tab order and (since VIS-06, shipped) now shows a visible
-focus ring, but still has no accessible name, no description, and **no
-keyboard interaction whatsoever**. A keyboard user can focus the level editor
-and then do nothing with it.
-
-**Recommended.** A canvas-based editor cannot be made fully screen-reader
-navigable without an enormous parallel DOM, and that is not a reasonable ask
-here. What *is* reasonable, and is what comparable tools do:
-
-1. **Name and describe it**: `role="application"` (justified — it is a custom
-   interaction surface), `aria-label="Level canvas"`,
-   `aria-describedby` pointing at a visually-hidden paragraph describing the
-   available keys.
-2. **Keyboard editing**: arrows move a **keyboard cursor** cell (drawn like the
-   hover cell); Return/Space paints the current tool; Delete erases; Tab-into
-   announces the cursor position. This makes the core verb — place a tile —
-   keyboard-operable, which is the meaningful bar.
-3. **Announce position and content** through `#msg`'s live region as the
-   cursor moves: `column 14, row 2 — brick`. The region itself already exists
-   and already carries the right role (A11Y-05, done — see "Already
-   completed"); what's missing is this step's own content, writing a position
-   string to it as the keyboard cursor moves.
-4. Keep the pointer gestures exactly as they are.
-
-**Depends on.** UX-06 (a tool indicator); VIS-06's focus ring, which step 2
-needs to be usable, is already shipped; A11Y-05's live region, which step 3
-needs to announce into, is already shipped too.
-
----
-
 #### A11Y-06 — Everything is in absolute pixels and ignores OS text scaling
 
 **Category** Accessibility · **Severity** Medium · **Priority** P2 · **Affects** UI
@@ -2590,23 +2592,6 @@ the canvas-drawn selection ring (VIS-16) would become invisible.
   (`Canvas`, `CanvasText`, `Highlight`, `ButtonBorder`) everywhere else, and
   ensure every state that currently relies on colour alone also has a
   non-colour cue (border, icon, or weight).
-
----
-
-#### A11Y-08 — Disabled and error states are communicated by colour alone
-
-**Category** Accessibility · **Severity** Low · **Priority** P2 · **Affects** UI
-
-**Current.** Error = the text turns `#ff8f8f` - still colour-only, still
-invisible under forced colours. Disabled and selected are no longer colour-
-alone (VIS-07, done - see "Already completed"): disabled gets `--fg-disabled`
-plus `cursor: default` (still no `aria-disabled` attribute, this finding's
-own remaining scope for that state), and selected rows/tabs get a
-leading-edge marker alongside their colour and fill change.
-
-**Recommended.** Pair every remaining colour-only state with a non-colour cue:
-disabled gets `aria-disabled`; errors get an icon and a prefix. None of these
-costs layout.
 
 ---
 
@@ -2874,7 +2859,7 @@ window and menu layers.
 | Scrollbars | Respect the overlay/classic setting; `scrollbar-gutter: stable` so layout does not depend on it — done, see "Already completed" | NAT-20 |
 | Dialogs | "Don't Save", not "Discard"; sheet-parented; `detail` added — done, see "Already completed" | NAT-21 |
 | Distribution | `hardenedRuntime`, code signing, notarisation — without these an unsigned build is blocked by Gatekeeper. | NAT-07 |
-| Accessibility | Native menus (NAT-05), real controls in the palette/file lists/tabs (A11Y-01), the status bar's live region (A11Y-05), and headings/landmarks for the title bar, section headers and inspector (A11Y-02) are all done — see "Already completed". VoiceOver was reaching almost nothing before any of this; the canvas itself is what remains (A11Y-03). | A11Y-03 |
+| Accessibility | Native menus (NAT-05), real controls in the palette/file lists/tabs (A11Y-01), the status bar's live region (A11Y-05), headings/landmarks for the title bar, section headers and inspector (A11Y-02), and the canvas's own keyboard editing and naming (A11Y-03) are all done — see "Already completed". What VoiceOver still reaches nothing of is system-preference handling (A11Y-06, A11Y-07) and OS text scaling. | A11Y-06, A11Y-07 |
 
 ### 5.2 Windows
 
@@ -2948,9 +2933,14 @@ drives it - this table's own note that GEO-02 had already moved it to 26px
 (`--row-sm`) was itself out of date by the time this row was last touched, an
 inaccuracy corrected in the same pass that closed the row.
 
+Row 9 (`--props-h: 46%`'s own unreconciled default) is done too - see
+"Already completed", GEO-06: `#props` is content-driven, the same
+`flex: 0 1 auto`/min-height/max-height pattern GEO-05 already gave
+`#scripts`, with the same `.split-props` class toggle so a user's own drag
+still overrides it.
+
 | # | Value | Where | What should determine it | Finding |
 |---|---|---|---|---|
-| 9 | `--props-h: 46%` | `style.css` | Content height, or the design's 47.5 % as the token's default - the splitter itself is done (GEO-04) | GEO-06 |
 | 11 | `.tab max-width: 260px` | `style.css:79` | `24ch` — a statement about filenames | GEO-08 |
 | 12 | `textarea height: 48px` | `style.css:208` | `calc(var(--line-box) * 3)` | GEO-08 |
 | 13 | Gaps `14px` on `.acts`, `10px` on `#title` | `style.css` passim | `--space-*` scale (the `li`/`.tab`/`#palette`/`#props`/`.grp` gaps that were also here are now tokenised — GEO-01, done) | GEO-08 |
@@ -3045,7 +3035,7 @@ the finding that resolves it.
 | **Hover** | Fixed — every button, row and tab gets a `--surface-hover` tint, text unchanged (VIS-07, done — see "Already completed") | — |
 | **Active / pressed** | Fixed — a deeper `--surface-active` tint on `:active` (VIS-07, done — see "Already completed") | — |
 | **Focus** | Fixed — a global `:focus-visible` ring, 2 px + 2 px offset, now applies everywhere including the canvas (VIS-06, done — see "Already completed") | — |
-| **Disabled** | Fixed — `--fg-disabled` at ≥3:1 replaces `opacity: .35` everywhere, including `#props`'s read-only fields (VIS-07, done — see "Already completed"); `aria-disabled` on top of the native `disabled` attribute remains open | VIS-13, A11Y-08 |
+| **Disabled** | Fixed — `--fg-disabled` at ≥3:1 replaces `opacity: .35` everywhere, including `#props`'s read-only fields (VIS-07, done — see "Already completed"); `aria-disabled` now sits alongside the native `disabled` attribute on all three disabled controls too (A11Y-08, done — see "Already completed") | VIS-13 |
 | **Selected** | Fixed — one treatment across `li.on`/`.tab.on`/`.cell.on`: accent text (or border, for the palette's icon swatches) + surface fill + a leading-edge marker (VIS-07, done — see "Already completed") | — |
 | **Icons** | Five text glyphs at four effective sizes, three of them `+`; an unused icon set exists in `textures/icons/` | Inline-SVG set, `currentColor`, one `--icon` token (VIS-11) |
 | **Text alignment** | `.hdr` left in the file manager, right in the inspector — deliberate mirroring per the design; keep | — |
@@ -3054,7 +3044,7 @@ the finding that resolves it.
 | **Tooltips** | Native `title=` on some controls, absent on tabs and rows; Windows/Linux's hotbar carries accelerators now (NAT-04, done — see "Already completed"); Title Case among lowercase labels elsewhere | Add the missing ones; VIS-10 for capitalisation |
 | **Loading** | Fixed for the editor — Monaco now shows a plain "loading editor…" text while it lazy-loads (ARCH-08, done — see "Already completed"); long saves still block silently | Progress for long ops (NAT-19) |
 | **Empty states** | Fixed — one line of secondary text plus one affordance per list, replacing the two blank voids every fresh launch used to show (VIS-12, done — see "Already completed") | — |
-| **Error states** | `var(--danger)` text, colour-only; save failures now reach a native dialog regardless of tab (BUG-07, shipped), and every error is announced to a screen reader (A11Y-05, shipped) — still colour-only visually | Icon (VIS-14, A11Y-08) |
+| **Error states** | Fixed — an aria-hidden `⚠` glyph now sits alongside `var(--danger)` on both `#msg.bad` and `App.fail()`'s `.err` block, so neither relies on colour alone; save failures reach a native dialog regardless of tab (BUG-07, shipped), and every error is announced to a screen reader (A11Y-05, shipped) (VIS-14, A11Y-08, done — see "Already completed") | — |
 | **Context menus** | Fixed — native `Menu.popup()`, real keyboard navigation and platform appearance (NAT-05, done — see "Already completed") | — |
 | **Dialogs** | The unsaved-changes prompt now has a per-platform template, `detail`, `noLink`, and string verdicts (NAT-21, BUG-10, done — see "Already completed") | — |
 | **Forms** | Borders now visible via `--control-border` (VIS-02, done); still: a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `appearance: none` on the select control only; one shared `.field` class (NAT-16, VIS-15) |
@@ -3079,15 +3069,18 @@ with Recent (UX-09); recent documents in the menu and the Dock/JumpList
 `.lvl` in the file manager (NAT-07).
 
 **Editing** — rectangle fill, flood fill, duplicate, arrow-key nudge (UX-05);
-a visible active tool (UX-06); trackpad scroll now pans instead of zooming,
-and pinch/Ctrl+wheel zooms (NAT-11, shipped, see "Already completed"); the
-canvas now shows a cursor for every gesture - crosshair, copy, grab, grabbing,
-not-allowed (NAT-13, shipped, see "Already completed"); zoom now has
-controls, an indicator, and a fit that targets the scene nearest the camera
-instead of an unfittable whole level (UX-04, shipped, see "Already
-completed"); Escape cancelling and reverting a gesture, and a right click
-that never dragged opening the canvas's own context menu instead of erasing,
-are shipped too (UX-12, NAT-12, see "Already completed").
+trackpad scroll now pans instead of zooming, and pinch/Ctrl+wheel zooms
+(NAT-11, shipped, see "Already completed"); the canvas now shows a cursor for
+every gesture - crosshair, copy, grab, grabbing, not-allowed (NAT-13, shipped,
+see "Already completed"); zoom now has controls, an indicator, and a fit that
+targets the scene nearest the camera instead of an unfittable whole level
+(UX-04, shipped, see "Already completed"); Escape cancelling and reverting a
+gesture, and a right click that never dragged opening the canvas's own
+context menu instead of erasing, are shipped too (UX-12, NAT-12, see "Already
+completed"); the canvas is keyboard-operable now too - arrow keys move a
+cursor cell, Return/Space paints the current tool, Delete erases, and the
+tool itself is finally named somewhere - the status bar (A11Y-03, UX-06, see
+"Already completed").
 
 **Navigating** — a vertical scrollbar (GEO-10); resizable panels that remember
 their size are shipped (GEO-04, see "Already completed"); tabs that overflow
@@ -3105,35 +3098,36 @@ playability warnings before the game rejects the level, and destructive
 actions that report what they did are all shipped (BUG-02, BUG-03, BUG-07,
 UX-10, BUG-11, UX-08 — see "Already completed").
 
-**Feedback** — status messages that expire, errors that do not, plus
-persistent size/entity-count/tool fields (VIS-14, UX-06 — the zoom field
-itself is shipped, UX-04, see "Already completed"); progress for long
-operations (NAT-19); undo and redo are visible in the Edit menu now (NAT-01,
-shipped) but still need to say what they undid rather than how many steps
-remain (UX-03).
+**Feedback** — status messages that auto-clear, errors that persist with a
+non-colour cue, and persistent zoom/dimensions/entity-count/tool fields
+separated from the transient message by a divider are all shipped (VIS-14,
+UX-06, UX-04 — see "Already completed"); progress for long operations
+(NAT-19); undo and redo are visible in the Edit menu now (NAT-01, shipped)
+but still need to say what they undid rather than how many steps remain
+(UX-03).
 
 ---
 
 ## 9. Accessibility summary
 
 Studio was previously **not operable without a pointer at all**. Contrast and
-focus visibility (VIS-01, VIS-02, VIS-06) and keyboard reachability for the
-palette, file manager and tab strip (A11Y-01) are fixed — see "Already
-completed" for all four. The canvas itself, where the actual editing happens,
-still requires a pointer (A11Y-03).
+focus visibility (VIS-01, VIS-02, VIS-06), keyboard reachability for the
+palette, file manager and tab strip (A11Y-01), and now the canvas itself -
+where the actual editing happens - are all fixed. See "Already completed" for
+all five.
 
 | Requirement | Status | Fix |
 |---|---|---|
-| 1.4.1 Use of Colour | Partial — disabled and selected are no longer colour-only (VIS-07, done); error still is | A11Y-08 |
+| 1.4.1 Use of Colour | Fixed — disabled, selected and error are all non-colour-only now (VIS-07, A11Y-08) | VIS-07, A11Y-08, done |
 | 1.4.3 Contrast (Minimum) | Fixed — was 2.5–2.9:1, now 4.77–5.91:1 for the affected text | VIS-01, done |
 | 1.4.11 Non-text Contrast | Fixed — was 1.18:1, now 3.12–3.59:1 for control borders | VIS-02, done |
 | 1.4.12 Text Spacing | Fail — all-`px` layout, no response to OS text size | A11Y-06 |
-| 2.1.1 Keyboard | Partial — the palette, file rows and tabs are operable now (A11Y-01, done); the canvas itself still is not | A11Y-03 |
+| 2.1.1 Keyboard | Fixed — the palette, file rows and tabs are operable (A11Y-01); arrow keys, Return/Space and Delete now drive the canvas itself too, the one surface that used to require a pointer (A11Y-03) | A11Y-01, A11Y-03, done |
 | 2.4.3 Focus Order | Fixed — roving tabindex gives the palette, file lists and tab strip one Tab stop each, in a defined title-bar-to-status-bar order | A11Y-01, done |
 | 2.4.7 Focus Visible | Fixed — global `:focus-visible` rule, nothing left to suppress it | VIS-06, done |
 | 2.5.8 Target Size | Fixed — `li` rows are 30 px (GEO-01, done); window controls are the OS's own (NAT-02, done); the `.tab` close glyph and `.hdr button` are padded to a 24px hit area too (A11Y-04, done) | A11Y-04, done |
-| 4.1.2 Name, Role, Value | Fixed — the palette, file lists and tab strip carry `role`/`aria-*` (A11Y-01); the title bar is a `<header>`, section headers are real `<h2>`s their lists point back to with `aria-labelledby`, and `#props` is a labelled region (A11Y-02) | A11Y-01, A11Y-02, done |
-| 4.1.3 Status Messages | Fixed — `#msg` carries `role="status"`, `App.fail()`'s error block carries `role="alert"` | A11Y-05, done |
+| 4.1.2 Name, Role, Value | Fixed — the palette, file lists and tab strip carry `role`/`aria-*` (A11Y-01); the title bar is a `<header>`, section headers are real `<h2>`s their lists point back to with `aria-labelledby`, `#props` is a labelled region (A11Y-02), and the canvas itself carries `role="application"` with a name and description (A11Y-03) | A11Y-01, A11Y-02, A11Y-03, done |
+| 4.1.3 Status Messages | Fixed — `#msg` carries `role="status"`, `App.fail()`'s error block carries `role="alert"`, and both now announce the keyboard cursor's own position as it moves (A11Y-03) | A11Y-05, A11Y-03, done |
 | 2.3.3 Animation from Interactions | Fixed — `prefers-reduced-motion: reduce` collapses every transition/animation to 1ms, shipped in the same commit as the first one | VIS-08, done |
 | System high contrast | Untested; will break canvas indicators | A11Y-07, VIS-16 |
 
@@ -3146,8 +3140,11 @@ reaching a screen reader (A11Y-05, done — see "Already completed") closed
 the announcements gap the same way, and giving the rest of the DOM real
 semantics - a `<header>`, real headings, a labelled inspector region
 (A11Y-02, done — see "Already completed") - closed the semantics gap outside
-the canvas. What is left is the canvas itself (A11Y-03, the one surface a
-parallel-DOM approach genuinely cannot cover) and system preferences
+the canvas. The canvas itself - the one surface a parallel-DOM approach
+genuinely could not cover - is keyboard-operable now too (A11Y-03, done — see
+"Already completed"): a keyboard cursor, moved by the arrow keys, that Return/
+Space paints and Delete erases, announced through the same live region
+A11Y-05 already gave the status bar. What is left is system preferences
 (A11Y-06, A11Y-07).
 
 ---
@@ -3246,7 +3243,7 @@ relitigated.
 | Fonts | ✅ shipped - bundled, identically on all three platforms (VIS-05) | ✅ shipped (VIS-05) | ✅ shipped (VIS-05) | — |
 | High contrast / forced colours | ⚠️ Increase Contrast ignored | ❌ untested, will break | ⚠️ | A11Y-07 |
 | Reduced motion | ✅ shipped - `prefers-reduced-motion: reduce` collapses every transition/animation, landed in the same commit as the first one (VIS-08) | ✅ shipped (VIS-08) | ✅ shipped (VIS-08) | — |
-| Screen reader | ⚠️ the palette, file lists and tab strip are named and role-bearing (A11Y-01), status/error messages are announced (A11Y-05), and the title bar, section headers and inspector carry real semantics now too (A11Y-02, shipped — see "Already completed" for all three); the canvas itself is what VoiceOver still reaches nothing of | ⚠️ same for Narrator | ⚠️ same for Orca | A11Y-03 |
+| Screen reader | ✅ shipped - the palette, file lists and tab strip are named and role-bearing (A11Y-01), status/error messages are announced (A11Y-05), the title bar, section headers and inspector carry real semantics (A11Y-02), and the canvas itself is named, described and keyboard-operable with its cursor announced (A11Y-03) — see "Already completed" for all four. What is left is system-preference handling, not VoiceOver reaching the app at all. | ✅ same for Narrator | ✅ same for Orca | A11Y-07 |
 | Notifications | ❌ | ❌ | ❌ | NAT-19 |
 | Full screen | ✅ shipped - a new View menu carries `role: 'togglefullscreen'`, closing the regression NAT-01's own menu opened by shipping without a View menu (UX-04) | ✅ shipped (UX-04) | ✅ shipped (UX-04) | — |
 | Quit / lifecycle | ✅ ⌘Q works (`role: 'appMenu'`, NAT-01); a hung/dirty renderer no longer wedges close (BUG-09, shipped) | ✅ shipped (BUG-09) | ✅ shipped (BUG-09) | — |
@@ -3295,12 +3292,12 @@ complete or verify - is the only item remaining in this tier.
 | NAT-09 | No drag and drop (the navigation-loses-work hole itself is shipped, NAT-18) |
 | NAT-14 | Command set is thin: zoom, tab switching, region operations (Escape's own gesture-cancel case is shipped, UX-12) |
 | NAT-16 | Native `<select>` among custom fields |
-| GEO-06, GEO-08 | List splits, one-offs (GEO-05 is shipped) |
+| GEO-08 | One-offs onto the scale (GEO-05, GEO-06 are both shipped) |
 | GEO-10 | No vertical scrollbar |
 | VIS-03, VIS-10, VIS-11 | Design divergence, capitalisation, icons |
-| VIS-14, VIS-15, VIS-16, VIS-18 | Status messages, inline `cssText`, canvas indicators, Monaco theme |
-| UX-01, UX-03, UX-05, UX-06, UX-09, UX-15, UX-16 | Editing and navigation friction |
-| A11Y-03, A11Y-06 | Canvas, scaling |
+| VIS-15, VIS-16, VIS-18 | Inline `cssText`, canvas indicators, Monaco theme (VIS-14 is shipped) |
+| UX-01, UX-03, UX-05, UX-09, UX-15, UX-16 | Editing and navigation friction |
+| A11Y-06 | OS text scaling (A11Y-03 is shipped) |
 | ARCH-04, ARCH-06 | Panel rebuilds, IPC shape |
 | PERF-02, PERF-07 | Layout thrash, startup paint |
 
@@ -3313,7 +3310,7 @@ complete or verify - is the only item remaining in this tier.
 | NAT-19 | Feedback for long operations |
 | VIS-13, VIS-17 | Playtest button communication; missing-texture swatches |
 | UX-02, UX-11, UX-13, UX-14, UX-17, UX-18 | Menu contents, preferences, in-use script deletion, silent script creation, numeric rounding, MIDI opacity |
-| A11Y-07, A11Y-08 | System accessibility preferences; colour-only states |
+| A11Y-07 | System accessibility preferences (A11Y-08 is shipped) |
 | ARCH-05, ARCH-09 | Global scope hygiene; synchronous I/O |
 | PERF-05, PERF-06 | Refresh granularity; commit allocation |
 
@@ -3407,9 +3404,10 @@ see "Already completed" for both.
    resolved, VIS-04, done) is still open.
 10. **GEO-07** — done, see "Already completed": integer palette cells.
     **GEO-08** the remaining one-offs onto the scale.
-11. **VIS-14 / VIS-15 / VIS-16 / VIS-17** status messages, `.field`/`.cell.add`
-    classes, canvas indicators, missing-texture treatment. **VIS-12** empty
-    states is done — see "Already completed".
+11. **VIS-15 / VIS-16 / VIS-17** `.field`/`.cell.add` classes, canvas
+    indicators, missing-texture treatment. **VIS-12** empty states and
+    **VIS-14** status-message expiry/persistent fields are both done — see
+    "Already completed".
 
 ### Phase 4 — Layout and interaction
 
@@ -3424,9 +3422,9 @@ tokens) and **UX-04** (zoom controls and a real fit, including the new View
 menu that also gives Toggle Full Screen a home again - see §12, "Full
 screen") are also done — see "Already completed" for both.
 
-13. **GEO-06** content-driven inspector height - the splitter itself no
-    longer needs building. **GEO-05**, the same treatment for the script/MIDI
-    list, is done — see "Already completed".
+13. **GEO-05** (content-driven script/MIDI list height) and **GEO-06** (the
+    same treatment for the inspector) are both done — see "Already
+    completed".
 14. **GEO-10** vertical scrollbar (NAT-11, its prerequisite, is done - the
     wheel already scrolls).
 15. **NAT-12** canvas context menu and Ctrl+click, and **UX-12** gesture
@@ -3444,16 +3442,17 @@ screen") are also done — see "Already completed" for both.
 
 **A11Y-01** (real controls with roving tabindex — palette, rows, tabs) is
 done — see "Already completed"; it was the largest single piece of work in
-this phase, now that native menus (NAT-05) and A11Y-01 together have deleted
-or fixed every inaccessible subsystem outside the canvas itself.
+this phase, and native menus (NAT-05) and A11Y-01 together deleted or fixed
+every inaccessible subsystem outside the canvas itself, which has since been
+fixed too (A11Y-03, below).
 
 19. **A11Y-05** live regions, **A11Y-04** hit targets - the `li` row height
     piece (GEO-01) and the `.tab` close glyph/`.hdr button` padding both
-    shipped - and **A11Y-02** semantics and landmarks are all done, see
+    shipped - **A11Y-02** semantics and landmarks, **A11Y-03** the canvas's
+    own keyboard cursor (its UX-06 and focus-ring/VIS-06 dependencies were
+    both already in place) and **A11Y-08** non-colour cues are all done, see
     "Already completed".
-20. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
-    already in place); **A11Y-06** scaling; **A11Y-07** system preferences;
-    **A11Y-08** non-colour cues.
+20. **A11Y-06** scaling; **A11Y-07** system preferences.
 
 ### Phase 6 — Reliability and remaining QOL
 
@@ -3465,13 +3464,13 @@ BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
     show-after-ready; **PERF-05** refresh granularity.
 22. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
     async I/O *if* measurement justifies it.
-23. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-09 / UX-13 / UX-14 /
+23. **UX-01 / UX-02 / UX-03 / UX-05 / UX-09 / UX-13 / UX-14 /
     UX-15 / UX-17** — the remaining workflow items, each independent. UX-03 is
     narrower than originally scoped: the menu items themselves already exist
     (NAT-01), only per-action labelling is left. UX-15 is also narrower: the
     contrast and MIDI-collision problems it cited are already fixed (VIS-01,
-    BUG-06). **UX-08** destructive-action reporting is done - see "Already
-    completed".
+    BUG-06). **UX-06** active-tool indicator and **UX-08**
+    destructive-action reporting are both done - see "Already completed".
 24. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
     NAT-17 is narrower too: the About panel already shipped (NAT-01), only the
     Dock menu and JumpList tasks are left.
@@ -3498,10 +3497,10 @@ unblocked NAT-03 and NAT-04 (both now done); NAT-05 deleted an entire
 inaccessible subsystem rather than fixing it in place, independently of the
 rest of this graph; NAT-11 unblocked GEO-10 (the wheel now scrolls) and named
 two of GEO-11's eight constants; A11Y-01 (also done, needing nothing from
-this graph) unblocked A11Y-02, A11Y-04 (both also since done, needing nothing
-further from this graph) and A11Y-03, none of which depended on tokens
-either;
-BUG-12 and NAT-13 each shipped independently, needing nothing
+this graph) unblocked A11Y-02 and A11Y-04 (both also since done, needing
+nothing further from this graph), and A11Y-03 (also since done - its own
+UX-06 dependency shipped independently of this graph too); BUG-12 and NAT-13
+each shipped independently, needing nothing
 from this graph and unblocking nothing on it; **GEO-01 + VIS-04** (the token
 block - spacing, rows, type, radius, elevation, motion, z-index, colour
 consolidation, folding in GEO-02's and GEO-09's asks) is done and unblocked
@@ -3636,11 +3635,15 @@ demonstrably true. Each is checkable, not a matter of opinion.
       the same commit, collapsing every duration to 1ms. Verified with the
       probe harness: `getComputedStyle()` on a button and a tab both report a
       `0.09s` transition duration)
-- [ ] Every list has an empty state; every error has an icon, a colour and a
-      message that persists until acted on. (The empty-state half is done —
-      VIS-12, see "Already completed" — a `no scripts yet · new script` /
-      `no midi files · import…` row replaces each blank void; the error-icon
-      half is still open, VIS-14/A11Y-08, so the box stays unchecked)
+- [x] Every list has an empty state; every error has an icon, a colour and a
+      message that persists until acted on. (VIS-12 — a `no scripts yet ·
+      new script` / `no midi files · import…` row replaces each blank void.
+      VIS-14/A11Y-08 — an aria-hidden `⚠` glyph sits alongside `--danger` on
+      both `#msg.bad` and `App.fail()`'s `.err` block, and only a transient
+      success auto-clears; an error persists until the next action. All
+      three done, see "Already completed"; verified with the probe harness:
+      a success message cleared itself after 4.3s, an error message did not,
+      and both empty-state rows render with the expected text)
 - [ ] The Monaco editor's palette matches the surrounding chrome, including
       scrollbars, widgets and lists.
 - [ ] `CLAUDE.md`'s "Deviations from the design file" section records every
@@ -3648,8 +3651,16 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 ### Accessibility
 
-- [ ] Every function of the application is reachable and operable with the
-      keyboard alone, including placing and erasing tiles.
+- [x] Every function of the application is reachable and operable with the
+      keyboard alone, including placing and erasing tiles. (A11Y-03 —
+      `Grid.kcur`, moved by the arrow keys, is a second cursor independent
+      of the mouse-driven `Grid.hov`; Return/Space applies the current tool
+      through `Grid.kpaint()`, Delete/Backspace erases through
+      `Grid.kerase()` when nothing is already mouse-selected. Verified with
+      the probe harness: a synthetic Enter painted the selected block at the
+      keyboard cursor, a synthetic Delete erased it, Space placed an entity
+      and selected it, and Backspace with nothing mouse-selected removed
+      it - each going through `Undo.act()` and confirmed undoable/redoable)
 - [x] A visible focus indicator appears on every focusable element, and focus
       order is logical. (VIS-06 for the ring; A11Y-01 gives the palette, file
       lists and tab strip roving tabindex in a defined title-bar-to-status-bar
