@@ -18,7 +18,8 @@ const Grid = {
 	kcur: null,			/* A11Y-03: the keyboard cursor cell, or null before
 					   the canvas has ever been driven from the keyboard */
 	pan: null, paint: -1, last: null, moving: false, rdown: null,
-	need: false, rsz: false, fitted: false, dpr: 1
+	need: false, rsz: false, fitted: false, dpr: 1,
+	hc: false			/* VIS-16: prefers-contrast: more, kept live */
 };
 
 /* Zoom bounds, shared by Grid.fit() and the wheel handler so the two can
@@ -31,10 +32,63 @@ const FITPAD = B;	/* Grid.fit(): one block of margin above and below the level *
 const GRIDMIN = 10;	/* Grid.draw(): stop drawing grid lines once a tile is smaller
 			   than this many device px - below it the lines outweigh
 			   the content */
-const SELW = 2;		/* Grid.draw(): the selection ring's stroke width; the inset
-			   that keeps the stroke inside the tile is derived from it */
 const BARSLOP = 1;	/* Grid.syncbar()/onbar(): the re-entrancy tolerance CLAUDE.md
 			   documents - both sites must agree on the same value */
+
+/* VIS-16: the selection ring and the level bounds are drawn over the level's
+ * own art, which can be any colour - a single accent-coloured stroke can
+ * (and, over a purple sprite, did) vanish entirely. A dark-then-light
+ * two-tone stroke, the standard technique image editors use for exactly
+ * this, guarantees a visible edge regardless of content: both strokes share
+ * one centreline, so the wider dark one reads as a soft halo around the
+ * crisp light line drawn on top of it. Deliberately not accent-coloured -
+ * the whole point is a pair that cannot itself blend into the content the
+ * old single colour did. SELW is the *outer* (dark) stroke's width, since
+ * that is the one that has to fit inside the tile; prefers-contrast: more
+ * widens it further (Grid.hc, kept live by watchcontrast() below). */
+const SELW = 3, SELW_HC = 5;
+const OUTLINE_DARK = '#000', OUTLINE_LIGHT = '#fff';
+
+/* Both strokes share (x, y, w, h) - drawing the narrow light one on top of
+ * the wide dark one is what leaves a dark halo showing on each side. */
+function outline(g, x, y, w, h)
+{
+	g.strokeStyle = OUTLINE_DARK;
+	g.lineWidth = Grid.hc ? SELW_HC : SELW;
+	g.strokeRect(x, y, w, h);
+	g.strokeStyle = OUTLINE_LIGHT;
+	g.lineWidth = 1;
+	g.strokeRect(x, y, w, h);
+}
+
+/* The hover cell and keyboard cursor redraw on almost every pointer/key
+ * event, so a two-tone stroke (heavier, and static regardless of content)
+ * would read as busier than the lightweight "here" mark this is meant to
+ * be. 'difference' composites the stroke against whatever is already
+ * drawn, so a plain white line always comes out visibly unlike whatever
+ * colour sits under it - the same guarantee, cheaper, for a mark this
+ * transient. */
+function diffRect(g, x, y, w, h)
+{
+	g.save();
+	g.globalCompositeOperation = 'difference';
+	g.strokeStyle = '#fff';
+	g.lineWidth = 1;
+	g.strokeRect(x, y, w, h);
+	g.restore();
+}
+
+/* prefers-contrast: more cannot be read once and cached - the OS setting can
+ * change while the app is open. Unlike watchdpr()'s resolution query, below,
+ * this one query stays valid for every future toggle (it names a preference,
+ * not a specific value the way a dppx figure does), so one persistent
+ * listener is enough - no need to re-arm a fresh query on each change. */
+function watchcontrast()
+{
+	const mq = matchMedia('(prefers-contrast: more)');
+	Grid.hc = mq.matches;
+	mq.addEventListener('change', e => { Grid.hc = e.matches; Grid.redraw(); });
+}
 
 function elist() { return App.doc.json.level.entities; }
 
@@ -110,6 +164,7 @@ Grid.init = function (cv)
 		Grid.redraw();
 	});
 	watchdpr();
+	watchcontrast();
 };
 
 /* BUG-12: Grid.dpr is only re-read inside Grid.resize(), which only runs from
@@ -463,21 +518,23 @@ Grid.draw = function ()
 			continue;
 		blit(g, entdefs.get(e.def) || {file: PLACEHOLDER}, sx, sy, s, s);
 		if (i === Grid.sel) {
-			g.strokeStyle = Tokens.acc;
-			g.lineWidth = SELW;
-			/* Half the stroke width insets the rect so the stroke itself
-			 * lands inside the tile rather than straddling its edge. */
-			g.strokeRect(sx + SELW / 2, sy + SELW / 2, s - SELW, s - SELW);
+			/* VIS-16: inset by the *widest* the stroke can ever be
+			 * (prefers-contrast: more, SELW_HC) so the dark halo never
+			 * bleeds past the tile regardless of Grid.hc. */
+			const inset = SELW_HC / 2;
+			outline(g, sx + inset, sy + inset, s - inset * 2, s - inset * 2);
 		}
 	}
 
+	/* VIS-16: 'difference' compositing, not the two-tone stroke above - this
+	 * redraws on almost every pointer/key event, so a plain line that always
+	 * reads against whatever is underneath stays lightweight instead of
+	 * competing with the selection ring's own, heavier mark. */
 	if (Grid.hov.x >= 0 && !Grid.pan) {
 		const sx = Math.round(Grid.hov.x * B * z - ox);
 		const sy = Math.round(Grid.hov.y * B * z - oy);
 		const s = Math.round(B * z);
-		g.strokeStyle = Tokens.hoverCell;
-		g.lineWidth = 1;
-		g.strokeRect(sx + .5, sy + .5, s - 1, s - 1);
+		diffRect(g, sx + .5, sy + .5, s - 1, s - 1);
 	}
 
 	/* A11Y-03: the keyboard cursor - drawn like the hover cell above, since
@@ -489,14 +546,12 @@ Grid.draw = function ()
 		const sx = Math.round(Grid.kcur.x * B * z - ox);
 		const sy = Math.round(Grid.kcur.y * B * z - oy);
 		const s = Math.round(B * z);
-		g.strokeStyle = Tokens.hoverCell;
-		g.lineWidth = 1;
-		g.strokeRect(sx + .5, sy + .5, s - 1, s - 1);
+		diffRect(g, sx + .5, sy + .5, s - 1, s - 1);
 	}
 
-	g.strokeStyle = Tokens.bounds;
-	g.lineWidth = 1;
-	g.strokeRect(Math.round(-ox) + .5, Math.round(-oy) + .5,
+	/* VIS-16: the level bounds get the same two-tone treatment as the
+	 * selection ring - it is drawn over the level's own art too. */
+	outline(g, Math.round(-ox) + .5, Math.round(-oy) + .5,
 		Math.round(W * B * z), Math.round(Grid.h * B * z));
 };
 
