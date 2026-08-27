@@ -207,6 +207,19 @@ to whole device pixels via the precomputed `ex`/`ey` arrays, which is what
 keeps pixel art seamless at arbitrary zoom. Redraws are coalesced through
 `Grid.redraw()` onto one animation frame.
 
+**Canvas-drawn indicators guarantee contrast against arbitrary content.** The
+selection ring, level bounds, hover cell and keyboard cursor are drawn over
+the level's own art, which can be any colour a single-tone stroke could
+vanish into. `outline()` (a two-tone dark/light stroke) and `diffRect()`
+(`globalCompositeOperation: 'difference'`) in `grid.js` are what guarantee
+each stays visible regardless — the former for the persistent indicators,
+the latter for the ones redrawn every frame, where a second stroke would
+cost more than a composite op. `watchcontrast()` mirrors `watchdpr()`'s
+`matchMedia` pattern for `prefers-contrast: more`, but *without*
+`watchdpr()`'s `{once: true}` self-rearming: a boolean preference query
+stays valid indefinitely, unlike a `resolution: Xdppx` query tied to one
+exact value, so re-arming it on every change would only leak listeners.
+
 **The level scrollbar is a real overflow container.** `#hbar` holds a spacer
 as wide as the level at the current zoom; the browser draws and drives the
 thumb, and `Grid.syncbar()` keeps it and `Grid.cam.x` in step. Neither side

@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The sixty-three items below have shipped and are removed from the findings
+The sixty-eight items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -614,9 +614,10 @@ completed"; VIS-07 consumed the colour tokens this same commit added,
 token is named `--line-box`, not `--line` as the audit's own draft proposed,
 because `--line` already names the separator-colour token shipped with VIS-01
 and the two would otherwise silently overwrite each other in `:root`. GEO-02
-(band heights) and part of GEO-08 (the gaps and font sizes that exactly
-matched a new scale step) are resolved as a side effect - see their own
-entries. Verified with the probe harness: `#tabs` computes to `34px` and
+(band heights) is resolved as a side effect, below; GEO-08 (the remaining
+one-offs, including the gaps and font sizes that exactly matched a new scale
+step) is done too, in a later round — see "Already completed" above.
+Verified with the probe harness: `#tabs` computes to `34px` and
 `#status` to `26px` (`--row-lg`/`--row-sm`; `.hdr` itself has since moved to
 `--row-hdr`, 36px, GEO-13, done); after adding a script row, `li` computes to
 `30px` (`--row`) where it previously measured 20px.
@@ -644,8 +645,10 @@ and missing-texture swatches all read `Tokens` instead of restating the
 literal; `code.js`'s `THEME` generates its `--fg`/`--acc`/`--tab`/
 `--scroll-thumb`-derived keys from the same object rather than transcribing
 them by hand (the three keys with no existing token to duplicate - `#150f24`,
-`#2e2049`, `#1e1633` - are untouched; giving them a considered relationship to
-the surrounding chrome is VIS-18, not this). `main.js`'s `backgroundColor`
+`#2e2049`, `#1e1633` - were untouched at the time; giving them a considered
+relationship to the surrounding chrome was VIS-18's own remaining scope,
+done in a later round — see "Already completed" above). `main.js`'s
+`backgroundColor`
 remains the one documented, necessary duplicate, now with a comment naming
 `--frame` as its source. Verified with the probe harness: `Tokens` matches
 every `:root` colour value it names exactly; `THEME.colors['editorCursor.
@@ -666,8 +669,9 @@ coincidence of a too-large radius CSS silently clamps) are now shared by
 `scrollbar-gutter: stable` on the four vertical containers so their content
 width no longer depends on the platform's overlay-vs-classic scrollbar
 convention or the user's "always show scrollbars" setting. Monaco's own
-scrollbar theme keys are untouched - that is VIS-18's scope, not this one's.
-Verified with the probe harness: `getComputedStyle(...).scrollbarGutter` reads
+scrollbar theme keys were untouched at the time - that was VIS-18's own
+scope, done in a later round (see "Already completed" above). Verified with
+the probe harness: `getComputedStyle(...).scrollbarGutter` reads
 `"stable"` on all four vertical containers and `"auto"` on `#hbar` (by design -
 a horizontal-only container has no vertical gutter to reserve); a screenshot
 of the running app shows no unstyled system scrollbar in the palette.
@@ -1096,9 +1100,10 @@ base selector, is what makes every state under it animate without a rule per
 state); the focus ring's `outline-color` transitions the same way; `#msg`'s
 colour transitions at `--dur` for the less-frequent error/success swap; the
 inline rename field (`edit()`, `app.js`) fades in via a new `pb-fade-in`
-keyframe referenced from its own inline style, since the field is still
-styled inline (VIS-15, still open) rather than through a class this could
-attach to structurally. Canvas drawing, tab content swapping and the save
+keyframe, referenced at the time from its own inline style since the field
+was still styled inline; it is a real `.rename` class now (VIS-15, done in a
+later round — see "Already completed" above), and the animation moved onto
+that class with it. Canvas drawing, tab content swapping and the save
 path are untouched, per the finding's own "do not animate" list. The
 mandatory `@media (prefers-reduced-motion: reduce)` companion landed in the
 same commit, collapsing every transition and animation to 1ms. Verified with
@@ -1278,6 +1283,135 @@ import, tab switching, UX-12's gesture-cancel) showed no behavioural change.
 
 ---
 
+#### VIS-11 — There is no icon system
+
+Shipped, for the five sites the finding's own "Current"/"Why it's a problem"
+text names as broken: a `--icon: 16px` token and `.icon`/`.icon.fill` classes
+now live in `style.css`, and a new `svgicon(fill, d)` helper (`panel.js`)
+builds a `currentColor` inline `<svg>` from a path - `fill` picks between the
+stroke-only outline style (`.icon`) and the solid-fill style (`.icon.fill`).
+The three "+"s - `new script` and `import midi` (`index.html`) and the
+palette's add-definition cell (`panel.js`) - now render the same plus icon
+through the same mechanism instead of three different text glyphs at three
+different sizes and alignments; tab-close (`app.js`) is a stroke X and
+playtest (`index.html`) a filled triangle, each its own SVG. Icons take
+`currentColor`, so they participate in VIS-07's hover/active/disabled state
+system for free, same as the text they replaced. Deliberately not
+retrofitted: the hotbar (already a deliberate text-based design, NAT-04,
+done - see above), file-manager rows, and block/entity/warning/error - the
+finding's own text does not demonstrate any of those as currently broken, and
+building icons with no consumer would repeat the mistake GEO-01 already
+avoided for `--radius-3`/`--elev-2`/`--z-*`. Verified with the probe harness:
+`#add`, `.run`, `#addmidi` each report a child `<svg>` (`querySelector('...
+svg')` true for all three); `npm run lint`/`npm run check` pass.
+
+---
+
+#### VIS-18 — The Monaco theme is a fifth, drifting copy of the design
+
+Shipped: `Tokens` (`tokens.js`) gained the five entries VIS-04 didn't already
+cover - `accRgb` (the raw `--acc-rgb` triple, for accent-tinted overlays, the
+same composition `gridLine` already used), `line`, `danger`, `surfaceHover`,
+`surfaceSelected` - plus `fontSize`/`lineHeight` read as plain numbers, since
+`monaco.editor.create()`'s options can no more resolve a CSS `var(...)` than
+its colours can. `code.js`'s `THEME.colors` grew from four keys sourced from
+`Tokens` to nineteen: `editor.background` now sits at `Tokens.canvasBg`
+(Monaco visually replaces the canvas on screen, not a side panel), and every
+key the finding named as leaking VS Code's own blue -
+`scrollbarSlider.*`, `editorWidget.border`, `editorSuggestWidget.*`,
+`list.hoverBackground`, `list.activeSelectionBackground`,
+`editorBracketMatch.*`, `editor.selectionHighlightBackground`,
+`editorError`/`editorWarning.foreground`, `focusBorder` - is now built from
+`Tokens.accRgb`/`Tokens.danger`/`Tokens.surfaceHover`/`Tokens.surfaceSelected`
+instead of falling through to `vs-dark`'s own defaults.
+`monaco.editor.create()` also now passes `fontSize: Tokens.fontSize`,
+`lineHeight: Tokens.lineHeight`, and an explicit `renderLineHighlight: 'line'`
+- the same "this row" fill treatment a selected `li`/`.tab` already give
+(VIS-07, done). Verified with the probe harness, a script tab opened and
+Monaco loaded: `THEME.colors['editor.background']` read `"#0b0813"`, matching
+`--canvas-bg` exactly; `editorError.foreground`/`editorWarning.foreground`
+both read `Tokens.danger`; `scrollbarSlider.background` read an
+`accRgb`-tinted `rgba(123, 86, 186, .2)`, not VS Code's default blue; the
+live editor's own `fontSize`/`lineHeight` options read `12`/`18`, matching
+`--font-size`/`--line-box`.
+
+---
+
+#### VIS-16 — Canvas-drawn indicators have no contrast guarantee
+
+Shipped, both recommended techniques, applied to exactly the indicators the
+finding names. New `outline(g, x, y, w, h)` (`grid.js`) draws the two-tone
+dark-3px/light-1px stroke the finding asks for; `diffRect(g, x, y, w, h)`
+draws a `globalCompositeOperation: 'difference'` rectangle for the transient,
+per-frame indicators. The selection ring and the level-bounds outline (both
+persistent) now go through `outline()`; the hover cell and the new keyboard
+cursor (A11Y-03, done - see above) now go through `diffRect()`, so an
+indicator is guaranteed visible over any content underneath it regardless of
+that content's own colour. `prefers-contrast: more` is honoured too: a new
+`watchcontrast()` (`grid.js`), called from `Grid.init()`, sets `Grid.hc` from
+a persistent `matchMedia('(prefers-contrast: more)')` listener - persistent,
+not the `{once:true}` self-rearming pattern `watchdpr()` uses for
+`resolution: Xdppx`, because a boolean preference query stays valid
+indefinitely and re-arming it on every change would only leak listeners - and
+thickens the selection ring's outer stroke from `SELW` (3px) to `SELW_HC`
+(5px) when set. Grid lines stay single-tone, per the finding's own scope.
+Verified with the probe harness by sampling raw canvas pixels
+(`getImageData`) at the selection ring's edge, anchored to the current
+camera position rather than a guessed absolute coordinate: the expected
+`[0,0,0]` (dark) / `[255,255,255]` (light) / `[0,0,0]` (dark) three-band
+pattern was present at the ring's border in both directions; a full
+regression pass (paint, undo/redo, save/open, tab switching) showed no
+behavioural change.
+
+---
+
+#### GEO-08 — Assorted one-off dimensions
+
+Shipped all four remaining rows. `.tab`'s `max-width: 260px` is now
+`max-width: 24ch` with a new `min-width: 6ch` floor - a character count,
+since tabs hold filenames, rather than an unexplained pixel width; `#props
+textarea`'s `height: 48px` (2.67 lines) is now `calc(var(--line-box) * 3)` -
+"three lines," a decision, rather than a number close to one. `.acts`'s
+`gap: 14px` and `#title`'s `gap: 10px` are both now `var(--space-5)` (12px),
+the nearest step on GEO-01's own 2/4/6/8/12/16/24 scale. `.grp`, `#props h4`
+and `#props .hint`'s `font-size: 10px` are now `var(--font-size-sm)` (11px,
+the same token `#status` already used) rather than a third, sub-legibility
+size token; `.run`'s own `font-size: 13px` was already dead by the time this
+finding was reached - VIS-11 (done, same round) made it an icon-only button
+with no text to size. Verified with the probe harness: `getComputedStyle()`
+on `.tab` reported the `ch`-derived max-width; on `#props textarea` reported
+`54px` (three `18px` line-boxes); on `.acts`/`#title` reported `12px` gaps;
+on `.grp`/`#props h4`/`#props .hint` reported `11px` font-size; `npm run
+lint`/`npm run check` pass.
+
+---
+
+#### VIS-15 — Two components style themselves with inline `cssText`
+
+Shipped the one site still open - `.cell.add` (`panel.js`) was already a real
+class by the time this finding was reached, in an earlier round. A new
+`.field` class (`style.css`) is the same declaration block `#props input,
+#props select, #props textarea` already used - one comma-separated selector
+list, so the two are one component with zero duplicated declarations, not
+two rules that happen to agree today - and a `.rename` class carries the one
+thing genuinely specific to the inline rename input: the `pb-fade-in`
+animation (VIS-08) that marks the moment it replaces a row's static label.
+`edit()`'s (`app.js`) rename `<input>` now gets `className = 'field rename'`
+in place of a hand-written `style.cssText` that duplicated half of
+`#props input`'s rule and disagreed with the other half (no padding, no
+radius, no focus transition, a hardcoded `#17102a` instead of
+`var(--surface-raised)`). `--border`/`--control-border` already evaluate to
+the same `1px solid var(--acc)` the old inline style hardcoded, so the
+rename field's focused appearance is pixel-identical to before; unfocused, it
+now gets the padding/radius/transition it never had. Verified with the probe
+harness: the rename input's `className` reads `"field rename"` with an empty
+`style.cssText`; its computed border (`1px rgb(123, 86, 186)`), background,
+and `border-radius: 2px` match `#props input`'s own computed values exactly;
+`animationName` reads `"pb-fade-in"`; a full regression pass (paint,
+undo/redo, save/open, tab switching) showed no behavioural change.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -1410,25 +1544,32 @@ for all five. The shell's remaining problems are below.
    `nativeTheme` (NAT-06 through NAT-09, NAT-15, NAT-17). Most of the
    Electron APIs that exist precisely to make this application feel native
    are still unreferenced anywhere in the tree (verified by grep).
-2. **There is still no icon system.** Five text glyphs stand in for icons at
-   four different effective sizes, three of them a bare "+" rendered three
-   different ways by three different mechanisms, while a real icon set sits
-   unused in `textures/icons/` (VIS-11). The slot this used to describe -
-   motion, radius and elevation, tokens defined but with nothing consuming
-   them - is closed now: every hover/active/selected tint transitions,
-   `--radius-2` distinguishes a standalone action button from an inline
-   control, and both side panels carry the design's own drop-shadow
-   (VIS-08, VIS-09, GEO-13, all done — see "Already completed").
-3. **The Monaco editor is still a fifth, drifting copy of the design.** Four
-   of its eleven colour keys read from the shared token object now
-   (`tokens.js`, VIS-04, done), but the rest - the editor's own background,
-   the scrollbar, the suggestion list, the bracket-match highlight - are
-   still VS Code's own defaults, a blue that has nothing to do with the rest
-   of this application (VIS-18). Geometry's own remaining loose ends are
-   closed now: the spacing/row/type scale, proportional and clamped side
+2. **The level has a scrollbar on only one of its two axes.** `#hbar` gives
+   horizontal navigation a real scrollbar with a position indicator; vertical
+   navigation - middle-drag, Alt-drag, or the wheel, which now scrolls
+   (NAT-11, done) - has neither, even though `Grid.setheight()` permits up to
+   999 rows (GEO-10). An asymmetry the user cannot explain: one axis shows
+   where the viewport is, the other never does. The slot this used to
+   describe - no icon system, five text glyphs standing in at four different
+   effective sizes while a real icon set sat unused in `textures/icons/` - is
+   closed now: a small inline-SVG set with one `--icon` token replaces every
+   one of them (VIS-11, done — see "Already completed").
+3. **The design file and the running app still disagree on colour and
+   capitalisation.** The accent is `#7b56ba`, the design's is `#7E58BE`, and
+   nobody has recorded why, nor is there any implementation of the design's
+   second, lighter fill accent `#815AC1` (VIS-03); four different
+   capitalisation conventions coexist across the UI with no stated rule
+   governing which surface gets which (VIS-10). The slot this used to
+   describe - the Monaco editor as a fifth, drifting copy of the design,
+   defaulting to VS Code's own blue wherever a theme key was unset - is
+   closed now: every one of `code.js`'s colour keys reads from the shared
+   token object, and the editor's own background, scrollbar, suggestion list
+   and bracket-match highlight all agree with the rest of the app (VIS-18,
+   done — see "Already completed"). Geometry's own remaining loose ends are
+   closed too: the spacing/row/type scale, proportional and clamped side
    panels, integer palette cells, user-resizable splitters, and both
    in-panel splits' own content-driven defaults are all real (GEO-01,
-   GEO-03, GEO-04, GEO-05, GEO-06, GEO-07, all done — see "Already
+   GEO-03, GEO-04, GEO-05, GEO-06, GEO-07, GEO-08, all done — see "Already
    completed").
 
 ### The highest-impact improvements
@@ -1557,9 +1698,10 @@ line box, radius, elevation, motion and z-index each have exactly one
 definition. `tokens.js` reads the colour custom properties once into a plain
 object; `grid.js`'s canvas draw calls and `code.js`'s Monaco `THEME` both
 consume it instead of restating their own copies of the same values (the
-Monaco keys that are not a restatement of an existing token - `code.js`'s own
-`#150f24`/`#2e2049`/`#1e1633` - are unaffected; giving them a considered
-relationship to the surrounding chrome is VIS-18, not this). `main.js`'s
+Monaco keys that were not a restatement of an existing token - `code.js`'s own
+`#150f24`/`#2e2049`/`#1e1633` - were unaffected at the time; giving them a
+considered relationship to the surrounding chrome was VIS-18's own remaining
+scope, done in a later round - see "Already completed"). `main.js`'s
 `backgroundColor` and `chrome.js`'s `BAR` remain the two documented, necessary
 duplicates (each must be known before any CSS has loaded). Radius, elevation
 and motion now have real consumers too (VIS-08/VIS-09, done - see "Already
@@ -1902,7 +2044,9 @@ icon exists yet (NAT-07). None of `app.dock.setMenu`, `app.setUserTasks`,
 (`fs.readFileSync`, `unzipSync`, `zipSync`, `fs.writeFileSync`). While they
 run, the main process is blocked, which means the window does not repaint and
 menus do not open. There is no spinner, no progress, no cursor change, and no
-completion feedback beyond a status-bar line that never expires (VIS-16).
+completion feedback beyond the status bar's own message (mislabelled VIS-16
+in an earlier draft of this finding; the transient-message mechanism it
+refers to is VIS-14, done — see "Already completed").
 
 **Assessment.** For a 12-row level this is imperceptible and the synchronous
 code is simpler — the suckless-correct choice today. It stops being correct at
@@ -1924,31 +2068,6 @@ something the user just watched happen is noise.
 The brief asks that arbitrary geometry be eliminated. This section identifies
 every instance and states what should determine the value instead. The design
 tokens that come out of it are collected in §6.
-
----
-
-#### GEO-08 — Assorted one-off dimensions
-
-**Category** Layout · **Severity** Low · **Priority** P2 · **Affects** UI
-
-Each of these is a single literal with no stated origin. Collected rather than
-given its own finding.
-
-Two rows are gone rather than resolved onto a token: `#menu`'s `min-width:
-150px`, the `2`/`4` px clamps in `menu()`, and the `.dots i` dimensions and
-gap no longer exist in the codebase (NAT-05, NAT-02 — done, see "Already
-completed"); and `li`'s padding, gap and row height are now `--space-3
---space-4 --space-3 --space-6` and `--row` (GEO-01/GEO-02, done — see
-"Already completed", which also tokenised `.tab`'s gap and `#status`'s
-`font-size` to the exact values below, unchanged visually but no longer bare
-literals).
-
-| Value | Location | What should determine it |
-|---|---|---|
-| `max-width: 260px` on `.tab` | `style.css:79` | A character count (`ch` units) — tabs hold filenames, so `max-width: 24ch` is a statement about content; 260 px is not. Add `min-width` too, so a one-character name is not a sliver. |
-| `height: 48px` on `#props textarea` | `style.css:208` | `calc(var(--line-box) * 3)` — "three lines of description", which is a decision; 48 px is 2.67 lines, which is not. |
-| `gap: 14px` on `.acts`, `gap: 10px` on `#title` | `style.css` passim | Neither is on the 2/4/6/8/12/16/24 scale GEO-01 introduced (12 or 16 is the nearest step); become spacing tokens once a value is chosen. |
-| `font-size: 10px` on `.grp`, `.hint`, `#props h4`; `13px` on `.run` | `style.css` passim | Two ad-hoc sizes remain (`#status`'s 11 px is now `--font-size-sm`, done). `--font-size-sm` covers the 11 px case; 10 px is below the practical legibility floor for a UI face and should go rather than gain a third size token. |
 
 ---
 
@@ -2047,44 +2166,6 @@ someone wrote a tooltip.
 
 ---
 
-#### VIS-11 — There is no icon system
-
-**Category** Visual · **Severity** Medium · **Priority** P2 · **Affects** UI
-
-**Current.** Every "icon" in the application is a text glyph at an ad-hoc size:
-`+` for new script (`index.html:21`, inherits 12 px), a second `+` for import
-MIDI (`index.html:31`, also 12 px but with `line-height: 1`), a third `+` as
-the palette's add-definition cell (`panel.js:46`, styled with an inline
-`style.cssText`), `×` for tab close (`app.js:88`, `opacity: .6`), and
-`&#9654;` (▶) for playtest at 13 px (`style.css:91`).
-
-Three different `+` buttons, rendered by three different mechanisms, at
-different effective sizes and alignments. Meanwhile the project **has an icon
-set**: `textures/icons/` contains `gear.png`, `hammer.png`, `plus_sign.png`,
-`minus_sign.png`, `three_dee.png`, `placeholder.png`.
-
-**Why it's a problem.** Text glyphs inherit the text font - no longer a moving
-target across platforms now that the font itself is bundled (VIS-05, done —
-see "Already completed"), but still not an icon: they do not align optically
-with adjacent labels, cannot be sized independently of the text, and centre
-inconsistently — visible in the screenshot, where the palette's `+` sits low
-in its cell.
-
-**Recommended.** A small inline-SVG icon set with one size token
-(`--icon: 16px`) and `currentColor` fill, so icons take the text colour and
-therefore participate in the state system (VIS-07, done — see "Already
-completed") for free. Use SVG, not the
-PNGs: `textures/icons/*.png` are 32 px pixel-art assets meant for the *game's*
-UI, and scaling them into a 16 px chrome button will alias (the same fractional
-scaling problem GEO-07 fixed for the palette, done - see "Already completed").
-Where a pixel-art icon is genuinely wanted, size it
-at exactly 16 or 32 px with `image-rendering: pixelated`.
-
-Needed icons: new, open, save, save-as, new-script, import, close, play,
-script-file, midi-file, block, entity, warning, error.
-
----
-
 #### VIS-13 — The playtest button is permanently disabled and explains itself only in a tooltip
 
 **Category** Visual / UX · **Severity** Low · **Priority** P2 · **Affects** UI, UX
@@ -2118,58 +2199,6 @@ step 3.1, minizip + jansson).
 
 ---
 
-#### VIS-15 — Two components style themselves with inline `cssText`
-
-**Category** Visual / Code quality · **Severity** Low · **Priority** P2 · **Affects** UI, Maintainability
-
-**Current.**
-- `app.js:217` — the inline rename input:
-  `'width:100%;border:1px solid var(--acc);background:#17102a;color:var(--fg);font:inherit'`.
-  Half tokens, half literal, and it does not match `#props input`
-  (`style.css:195-203`), which has `padding: 3px 5px` and a `--line` border.
-  So the app has two visually different text inputs.
-- `panel.js:47` — the add-definition palette cell:
-  `'display:grid;place-items:center;color:var(--dim)'`.
-
-**Recommended.** Two classes, `.rename` and `.cell.add`, in `style.css`. The
-rename field should be the *same* component as `#props input` — extract a
-`.field` class both use. Zero behaviour change; removes a whole category of
-future drift.
-
----
-
-#### VIS-16 — Canvas-drawn indicators have no contrast guarantee
-
-**Category** Visual · **Severity** Medium · **Priority** P2 · **Affects** UI
-
-**Current.** Four things are drawn over arbitrary artwork with fixed colours:
-
-| Indicator | Colour | Location |
-|---|---|---|
-| Selection ring | `#7b56ba`, 2 px | `grid.js:275-277` |
-| Hover cell | `rgba(200,170,255,.75)`, 1 px | `grid.js:285-287` |
-| Grid lines | `rgba(123,86,186,.14)` | `grid.js:258` |
-| Level bounds | `rgba(123,86,186,.5)` | `grid.js:290` |
-
-**Why it's a problem.** The canvas shows the level's own art — a purple enemy
-sprite, a violet backdrop — so a single purple ring can vanish entirely. The
-selection ring in particular is the app's only indication of *what is
-selected*, and there is no fallback. This also cannot be fixed by
-`forced-colors` (NAT-15), because Chromium's forced-colours override does not
-reach canvas pixels.
-
-**Recommended.** Draw indicators as **two-tone** strokes: a dark 3 px outer
-stroke and a light 1 px inner stroke (or `globalCompositeOperation =
-'difference'` for the hover cell). This is the standard technique in
-image editors precisely because it guarantees visibility over any content, and
-it costs one extra `strokeRect` per indicator. Same treatment for the level
-bounds. Grid lines are decorative and can stay single-tone.
-
-Additionally: honour `prefers-contrast: more` by thickening the selection
-stroke, since the canvas cannot inherit a system high-contrast palette.
-
----
-
 #### VIS-17 — Missing-texture swatches are indistinguishable from content
 
 **Category** Visual · **Severity** Low · **Priority** P3 · **Affects** UI
@@ -2194,41 +2223,6 @@ purple tile and a maroon tile, not an error.
   `review()`/`App.warnings` plumbing rather than inventing a second channel.
 
 Name both colours as tokens if they survive.
-
----
-
-#### VIS-18 — The Monaco theme is a fifth, drifting copy of the design
-
-**Category** Visual · **Severity** Medium · **Priority** P2 · **Affects** UI, Maintainability
-
-**Current.** Four of `code.js`'s eleven colour keys (`editor.foreground`,
-`editor.lineHighlightBackground`, `editorCursor.foreground`,
-`editorLineNumber.foreground`/`activeForeground`, `editorWidget.background`)
-are generated from `Tokens` (`tokens.js`) rather than transcribed by hand
-(VIS-04, done — see "Already completed"). The rest — `#150f24`, `#2e2049`,
-`#1e1633` — are values that exist nowhere else in the app, so the editor's
-background is still a *different* dark violet from every panel around it;
-VIS-04's own scope stopped at removing the duplication, not at giving these
-three a considered relationship to the surrounding chrome, which is this
-finding's remaining scope.
-
-Unset keys fall through to `vs-dark`'s defaults, which is why the editor's
-scrollbars (NAT-20's own gap here is done — see "Already completed"; Monaco's
-scrollbar theme keys below are not), find widget, suggestion list,
-bracket-match highlights, error squiggles and selection-match highlights are
-all VS Code blue inside a purple application.
-
-**Recommended.**
-1. Set the keys that currently leak VS Code's defaults into a themed app:
-   `scrollbarSlider.*`, `editorWidget.border`, `editorSuggestWidget.*`,
-   `list.hoverBackground`, `list.activeSelectionBackground`,
-   `editorBracketMatch.*`, `editor.selectionHighlightBackground`,
-   `editorError.foreground`, `editorWarning.foreground`, `focusBorder`.
-2. Align `editor.background` with the surface it sits in — currently `#150f24`
-   floats between `--panel` `#100a1a` and `--tab` `#1a122c` for no reason.
-3. Set Monaco's own options to match the chrome: `lineHeight` from
-   `--line-box`, `fontSize` from `--font-size`, and `renderLineHighlight`
-   consistent with the app's selection treatment.
 
 ---
 
@@ -2578,15 +2572,20 @@ response to OS text-size settings — is unaffected by either change.
 
 **Current.** `prefers-reduced-motion: reduce` is done - it shipped in the same
 commit as the first transition, as VIS-08 itself required (done — see
-"Already completed"). Still missing: `prefers-contrast`, `forced-colors`.
-Windows High Contrast mode is untested and will produce a broken result:
-Chromium force-overrides CSS colours but cannot touch canvas pixels, so the
-chrome would flip to the system palette while the canvas stays purple, and
-the canvas-drawn selection ring (VIS-16) would become invisible.
+"Already completed"). `prefers-contrast: more` is done too, for the canvas's
+own indicators - the selection ring's stroke thickens under it (VIS-16, done
+— see "Already completed") - but not yet for the chrome's own controls; still
+fully missing: `forced-colors`. Windows High Contrast mode is untested and
+will produce a broken result: Chromium force-overrides CSS colours but cannot
+touch canvas pixels, so the chrome would flip to the system palette while the
+canvas stays purple - the canvas-drawn selection ring itself is no longer
+part of that gap (VIS-16, done), but nothing else on the canvas or in the
+chrome would follow the system palette either.
 
-**Recommended.** Two media queries remain, each small:
-- `prefers-contrast: more` → `--control-border` to `--fg`, focus ring to 3 px,
-  disabled text to ≥4.5:1, canvas selection stroke thickened (VIS-16).
+**Recommended.** Two things remain, each small:
+- `prefers-contrast: more` on the chrome itself → `--control-border` to
+  `--fg`, focus ring to 3 px, disabled text to ≥4.5:1. The canvas's own
+  response to this query is done (VIS-16).
 - `forced-colors: active` → `forced-color-adjust: none` on the canvas and the
   palette swatches (so they keep showing the artwork), system colours
   (`Canvas`, `CanvasText`, `Highlight`, `ButtonBorder`) everywhere else, and
@@ -2873,7 +2872,7 @@ window and menu layers.
 | JumpList | `setUserTasks` ("New Level") plus automatic recent documents once the association exists. | NAT-06, NAT-17 |
 | Dialogs | Button order Save / Don't Save / Cancel; `noLink: true` so they are push buttons, not command links; `title` set — done, see "Already completed" | NAT-21 |
 | Scrollbars | Classic scrollbars consume layout width — this is where NAT-20's `scrollbar-gutter: stable` fix (done, see "Already completed") matters most, though not yet exercised on real Windows hardware. | NAT-20 |
-| High contrast | `forced-colors: active` is a real, commonly-enabled Windows mode; currently untested and certain to break the canvas indicators. | A11Y-07, VIS-16 |
+| High contrast | `forced-colors: active` is a real, commonly-enabled Windows mode; the chrome does not yet adopt the system palette under it. The canvas's own indicators are no longer part of this gap: their two-tone strokes (VIS-16, done — see "Already completed") guarantee visibility over any artwork regardless of palette, which is what stands in for `forced-colors` there, since Chromium's override cannot reach canvas pixels at all. | A11Y-07 |
 | Mixed DPI | Per-monitor scaling is common; the canvas goes soft when the window moves between displays — done, see "Already completed" (implemented against the documented `matchMedia`/`devicePixelRatio` mechanism; not yet run on real per-monitor-DPI Windows hardware) | BUG-12 |
 | Distribution | Authenticode signing; NSIS or MSI. | NAT-07 |
 
@@ -2939,13 +2938,16 @@ Row 9 (`--props-h: 46%`'s own unreconciled default) is done too - see
 `#scripts`, with the same `.split-props` class toggle so a user's own drag
 still overrides it.
 
+Rows 11-14 are done too - see "Already completed", GEO-08: `.tab`'s
+`max-width` is `24ch` with a `min-width: 6ch` floor; `#props textarea`'s
+height is `calc(var(--line-box) * 3)`; `.acts`'/`#title`'s two gaps are both
+`var(--space-5)`; `.grp`/`#props h4`/`#props .hint`'s `10px` font-size is
+`var(--font-size-sm)` (`.run`'s own `13px` was already dead by the time this
+row was reached, VIS-11 having made it icon-only).
+
 | # | Value | Where | What should determine it | Finding |
 |---|---|---|---|---|
-| 11 | `.tab max-width: 260px` | `style.css:79` | `24ch` — a statement about filenames | GEO-08 |
-| 12 | `textarea height: 48px` | `style.css:208` | `calc(var(--line-box) * 3)` | GEO-08 |
-| 13 | Gaps `14px` on `.acts`, `10px` on `#title` | `style.css` passim | `--space-*` scale (the `li`/`.tab`/`#palette`/`#props`/`.grp` gaps that were also here are now tokenised — GEO-01, done) | GEO-08 |
-| 14 | Font sizes `10px`/`13px` | `style.css` passim | `--font-size-sm` covers the `11px` case now (GEO-01, done); `10px`/`13px` remain | GEO-08 |
-| 15 | `li` indent has no icon to hang from | `style.css:123` | `--space-4 + --icon` once rows get a file-type icon (the padding/height itself is `--row` now — GEO-01/GEO-02, done; the row's own hit area is done too, A11Y-04) | VIS-11 |
+| 15 | `li` indent has no icon to hang from | `style.css:123` | `--space-4 + --icon` once rows get a file-type icon (the padding/height itself is `--row` now — GEO-01/GEO-02, done; the row's own hit area is done too, A11Y-04; the `--icon` token itself now exists too, VIS-11, done — but giving file-manager rows their own icon was explicitly out of VIS-11's shipped scope, so this row is still open) | — |
 
 Row 8 (`--scripts-h`'s unexplained 60/40 default) is done too - see "Already
 completed", GEO-05. `0.03`/`3` zoom clamps and the `0.0015` wheel factor, both
@@ -3023,21 +3025,21 @@ the finding that resolves it.
 
 | Area | Current state | Resolution |
 |---|---|---|
-| **Typography** | Fixed — the app renders in its own bundled font now, identically on all three platforms, and the two `<b>`-plus-`font-weight: normal` layout hacks are `<span>`s instead (VIS-05, done — see "Already completed"); font sizes down to two (GEO-01, done), `10px`/`13px` remain | GEO-08 |
-| **Spacing** | Fixed — a 7-step scale now covers most of the stylesheet (GEO-01, done — see "Already completed"); `.acts`'/`#title`'s two gaps and a few `10px`/`13px` one-offs remain | GEO-08 |
-| **Rows / heights** | Fixed — `--row-sm`/`--row`/`--row-lg`, derived from the 18px line box, now cover the title bar, tab strip, section headers, status bar and file-manager rows (GEO-01, GEO-02, done — see "Already completed"); every hit area below the 24 px platform minimum is padded up to it too (A11Y-04, done — see "Already completed") | VIS-11's row icon is the remaining, unrelated piece |
+| **Typography** | Fixed — the app renders in its own bundled font now, identically on all three platforms, and the two `<b>`-plus-`font-weight: normal` layout hacks are `<span>`s instead (VIS-05, done — see "Already completed"); font sizes down to one scale, `10px`/`13px` gone too (GEO-01, GEO-08, done — see "Already completed") | — |
+| **Spacing** | Fixed — a 7-step scale now covers the whole stylesheet, `.acts`'/`#title`'s two gaps included (GEO-01, GEO-08, done — see "Already completed") | — |
+| **Rows / heights** | Fixed — `--row-sm`/`--row`/`--row-lg`, derived from the 18px line box, now cover the title bar, tab strip, section headers, status bar and file-manager rows (GEO-01, GEO-02, done — see "Already completed"); every hit area below the 24 px platform minimum is padded up to it too (A11Y-04, done — see "Already completed") | A file-type icon per row is the remaining, unrelated piece (row 15, §6.1) |
 | **Colour** | Fixed — one `:root` definition, consumed by `grid.js`'s canvas and `code.js`'s Monaco theme through `tokens.js` instead of each restating it (VIS-04, done — see "Already completed") | — |
 | **Contrast** | Fixed — resting and accent text, control borders, and disabled text (VIS-01, VIS-02, VIS-07, all done — see "Already completed"); `.mi.off` is moot, its `<div>` menu deleted by NAT-05 | — |
 | **Borders** | `--line` is now split from `--control-border` (VIS-02, done); still one width only, no distinct strong/emphasis weight | Add `--border-strong` |
 | **Radius** | Fixed — `--radius-1` (inputs, palette cells, inline controls) and `--radius-2` (standalone action buttons, and the active tab's own corner flare) both have real consumers now; `--radius-3` stays unconsumed, deliberately, until a dialog or popover exists (VIS-09, GEO-13, done — see "Already completed") | — |
 | **Shadows** | Fixed — both side panels carry `--elev-1`, per the design's own drop-shadow filters; `--elev-2` stays unconsumed, deliberately, for the same reason as `--radius-3` (VIS-09, GEO-13, done — see "Already completed") | — |
-| **Scrollbars** | Fixed — all five containers now share one tokenised treatment with `scrollbar-gutter: stable` (NAT-20/GEO-09, done — see "Already completed"); Monaco's own scrollbar keys are still VS Code's defaults | Monaco keys set (VIS-18) |
+| **Scrollbars** | Fixed — all five containers now share one tokenised treatment with `scrollbar-gutter: stable` (NAT-20/GEO-09, done — see "Already completed"); Monaco's own scrollbar keys now agree too (VIS-18, done — see "Already completed") | — |
 | **Hover** | Fixed — every button, row and tab gets a `--surface-hover` tint, text unchanged (VIS-07, done — see "Already completed") | — |
 | **Active / pressed** | Fixed — a deeper `--surface-active` tint on `:active` (VIS-07, done — see "Already completed") | — |
 | **Focus** | Fixed — a global `:focus-visible` ring, 2 px + 2 px offset, now applies everywhere including the canvas (VIS-06, done — see "Already completed") | — |
 | **Disabled** | Fixed — `--fg-disabled` at ≥3:1 replaces `opacity: .35` everywhere, including `#props`'s read-only fields (VIS-07, done — see "Already completed"); `aria-disabled` now sits alongside the native `disabled` attribute on all three disabled controls too (A11Y-08, done — see "Already completed") | VIS-13 |
 | **Selected** | Fixed — one treatment across `li.on`/`.tab.on`/`.cell.on`: accent text (or border, for the palette's icon swatches) + surface fill + a leading-edge marker (VIS-07, done — see "Already completed") | — |
-| **Icons** | Five text glyphs at four effective sizes, three of them `+`; an unused icon set exists in `textures/icons/` | Inline-SVG set, `currentColor`, one `--icon` token (VIS-11) |
+| **Icons** | Fixed, for the five sites that were broken — an inline-SVG set, `currentColor`, one `--icon` token replaces the three `+`s, the `×` and the `▶` (VIS-11, done — see "Already completed"); file-manager rows and block/entity/warning/error remain text/colour-only, deliberately, for lack of a demonstrated consumer | — |
 | **Text alignment** | `.hdr` left in the file manager, right in the inspector — deliberate mirroring per the design; keep | — |
 | **Capitalisation** | Four conventions, `midi`/`MIDI` in one interface | Lowercase in-window, platform convention on OS surfaces, proper nouns always (VIS-10) |
 | **Cursor** | Fixed — seven states on the canvas (`crosshair`/`copy`/`grab`/`grabbing`/`not-allowed`) driven by `Grid.cursor()` (NAT-13, done — see "Already completed"), and `col-resize`/`row-resize` on the four splitters (GEO-04, done — see "Already completed") | — |
@@ -3047,15 +3049,15 @@ the finding that resolves it.
 | **Error states** | Fixed — an aria-hidden `⚠` glyph now sits alongside `var(--danger)` on both `#msg.bad` and `App.fail()`'s `.err` block, so neither relies on colour alone; save failures reach a native dialog regardless of tab (BUG-07, shipped), and every error is announced to a screen reader (A11Y-05, shipped) (VIS-14, A11Y-08, done — see "Already completed") | — |
 | **Context menus** | Fixed — native `Menu.popup()`, real keyboard navigation and platform appearance (NAT-05, done — see "Already completed") | — |
 | **Dialogs** | The unsaved-changes prompt now has a per-platform template, `detail`, `noLink`, and string verdicts (NAT-21, BUG-10, done — see "Already completed") | — |
-| **Forms** | Borders now visible via `--control-border` (VIS-02, done); still: a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `appearance: none` on the select control only; one shared `.field` class (NAT-16, VIS-15) |
-| **Buttons** | One shared hover/active/disabled treatment now (VIS-07, done — see "Already completed"); still no border except `.act`, and `.acts`/`.hdr button`/`#add` remain differently sized | One button component with size variants (GEO-08) |
+| **Forms** | Borders now visible via `--control-border` (VIS-02, done); the inline rename input is the same `.field` component `#props input` uses now, not a second, different text field (VIS-15, done — see "Already completed"); still a native `<select>` among flat custom fields | `appearance: none` on the select control only (NAT-16) |
+| **Buttons** | One shared hover/active/disabled treatment now (VIS-07, done — see "Already completed"); one-off dimensions are onto the scale too (GEO-08, done — see "Already completed"); still no border except `.act`, and `.acts`/`.hdr button`/`#add` remain differently sized | One button component with size variants |
 | **Resizers / splitters** | Fixed — four keyboard-operable splitters (GEO-04, done — see "Already completed") | — |
 | **Panels** | Widths are proportional, clamped and user-resizable now, the file manager's own split is content-driven by default, and both carry the design's own drop-shadow now too (GEO-03/GEO-04/GEO-05, VIS-09/GEO-13, done — see "Already completed"); still not collapsible | Collapsible sections |
 | **Overlays** | NAT-05 (done) removed the app's only `z-index` along with the DOM context menu it belonged to; `--z-*` is defined (GEO-01, done) with nothing to convert yet | — |
 | **Animation** | Fixed — hover/active/selected tints, the focus ring and the inline rename field all transition now, with the mandatory `prefers-reduced-motion` companion in the same commit (VIS-08, done — see "Already completed") | — |
-| **Canvas indicators** | Purple-on-purple, no contrast guarantee, unreachable by forced colours | Two-tone strokes (VIS-16) |
+| **Canvas indicators** | Fixed — the selection ring, level bounds, hover cell and keyboard cursor are all two-tone or difference-composited now, guaranteeing visibility over any content, and `prefers-contrast: more` thickens the selection stroke (VIS-16, done — see "Already completed") | — |
 | **Missing assets** | Flat purple and maroon rectangles that read as blocks | Empty while loading; hatch + warning when genuinely missing (VIS-17) |
-| **Editor (Monaco)** | A fifth colour definition; unset keys leak VS Code blue into a purple app | Generate from tokens; set the leaking keys (VIS-18) |
+| **Editor (Monaco)** | Fixed — every colour key now reads from the shared token object, and the keys that used to leak VS Code's own blue (scrollbar, suggestion list, bracket-match, selection-match, errors/warnings, focus) are all themed (VIS-18, done — see "Already completed") | — |
 
 ---
 
@@ -3129,7 +3131,7 @@ all five.
 | 4.1.2 Name, Role, Value | Fixed — the palette, file lists and tab strip carry `role`/`aria-*` (A11Y-01); the title bar is a `<header>`, section headers are real `<h2>`s their lists point back to with `aria-labelledby`, `#props` is a labelled region (A11Y-02), and the canvas itself carries `role="application"` with a name and description (A11Y-03) | A11Y-01, A11Y-02, A11Y-03, done |
 | 4.1.3 Status Messages | Fixed — `#msg` carries `role="status"`, `App.fail()`'s error block carries `role="alert"`, and both now announce the keyboard cursor's own position as it moves (A11Y-03) | A11Y-05, A11Y-03, done |
 | 2.3.3 Animation from Interactions | Fixed — `prefers-reduced-motion: reduce` collapses every transition/animation to 1ms, shipped in the same commit as the first one | VIS-08, done |
-| System high contrast | Untested; will break canvas indicators | A11Y-07, VIS-16 |
+| System high contrast | `forced-colors` untested, chrome will not adopt the system palette; `prefers-contrast: more` is honoured on the canvas now (VIS-16, done) | A11Y-07 |
 
 Native menus (NAT-05, done — see "Already completed") already deleted one
 entire inaccessible subsystem rather than fixing it in place, and replacing
@@ -3169,7 +3171,6 @@ four are driven from.
 | Full innerHTML rebuilds on a drag hot path (done, see "Already completed", PERF-01); an `onchange` commit still destroys the field the user just used; hand-rolled `esc()` | ARCH-04 |
 | Three IPC naming conventions, two response shapes, forgettable `cancel` (the `ask:discard` response is a named string now, BUG-10, done — see "Already completed") | ARCH-06 |
 | Synchronous main-process I/O | ARCH-09, NAT-19 |
-| Two components styling themselves with inline `cssText` | VIS-15 |
 | `App.open_`'s trailing underscore | ARCH-06 |
 | Prefix-only path containment in the protocol handler | BUG-13 |
 
@@ -3292,10 +3293,8 @@ complete or verify - is the only item remaining in this tier.
 | NAT-09 | No drag and drop (the navigation-loses-work hole itself is shipped, NAT-18) |
 | NAT-14 | Command set is thin: zoom, tab switching, region operations (Escape's own gesture-cancel case is shipped, UX-12) |
 | NAT-16 | Native `<select>` among custom fields |
-| GEO-08 | One-offs onto the scale (GEO-05, GEO-06 are both shipped) |
 | GEO-10 | No vertical scrollbar |
-| VIS-03, VIS-10, VIS-11 | Design divergence, capitalisation, icons |
-| VIS-15, VIS-16, VIS-18 | Inline `cssText`, canvas indicators, Monaco theme (VIS-14 is shipped) |
+| VIS-03, VIS-10 | Design divergence, capitalisation (VIS-11 is shipped) |
 | UX-01, UX-03, UX-05, UX-09, UX-15, UX-16 | Editing and navigation friction |
 | A11Y-06 | OS text scaling (A11Y-03 is shipped) |
 | ARCH-04, ARCH-06 | Panel rebuilds, IPC shape |
@@ -3394,18 +3393,24 @@ VIS-06) is done — see "Already completed". **VIS-05** (bundle JetBrains Mono
 five-state contract, applied to every interactive surface) are also done —
 see "Already completed" for both.
 
-8. **VIS-11 / VIS-10** icons, capitalisation. **VIS-09** (radius and
-   elevation) and **VIS-08** (motion, with its mandatory
+8. **VIS-11** icons is done — see "Already completed": one inline-SVG set,
+   `currentColor`, one `--icon` token, for the five sites that were
+   demonstrably broken. **VIS-10** capitalisation is still open. **VIS-09**
+   (radius and elevation) and **VIS-08** (motion, with its mandatory
    `prefers-reduced-motion` companion) are done — see "Already completed" for
    both.
 9. **NAT-20 / GEO-09** — done, see "Already completed": one scrollbar
    treatment across all five containers. **VIS-18** Monaco theme fully
    aligned with the surrounding chrome (its own colour duplication is
-   resolved, VIS-04, done) is still open.
+   resolved, VIS-04, done) is done too — see "Already completed".
 10. **GEO-07** — done, see "Already completed": integer palette cells.
-    **GEO-08** the remaining one-offs onto the scale.
-11. **VIS-15 / VIS-16 / VIS-17** `.field`/`.cell.add` classes, canvas
-    indicators, missing-texture treatment. **VIS-12** empty states and
+    **GEO-08** the remaining one-offs onto the scale is done too — see
+    "Already completed".
+11. **VIS-15 / VIS-16** — done, see "Already completed": the rename field is
+    the same `.field` component `#props input` uses, and the canvas's
+    selection ring, level bounds, hover cell and keyboard cursor are all
+    contrast-guaranteed two-tone/difference indicators now. **VIS-17**
+    missing-texture treatment is still open. **VIS-12** empty states and
     **VIS-14** status-message expiry/persistent fields are both done — see
     "Already completed".
 
@@ -3511,8 +3516,9 @@ straight off the `--sprite`/`--space-*`/`--scrollbar` tokens it provided, and
 VIS-08/VIS-09 both then shipped straight off the `--dur-*`/`--radius-*`/
 `--elev-*` tokens it provided, genuinely unblocked rather than waiting on a
 foundation that did not exist yet (VIS-07 was one of them and had already
-shipped, also needing nothing further from this graph); GEO-08/VIS-18/
-NAT-15's forced-colours work remain open on the same basis; PERF-04 and
+shipped, also needing nothing further from this graph); GEO-08 and VIS-18
+have since shipped on the same basis too; NAT-15's forced-colours work
+remains open on it; PERF-04 and
 GEO-11 (grid.js's own remaining unnamed constants) each shipped
 independently, needing nothing from this graph.
 ```
@@ -3644,8 +3650,15 @@ demonstrably true. Each is checkable, not a matter of opinion.
       three done, see "Already completed"; verified with the probe harness:
       a success message cleared itself after 4.3s, an error message did not,
       and both empty-state rows render with the expected text)
-- [ ] The Monaco editor's palette matches the surrounding chrome, including
-      scrollbars, widgets and lists.
+- [x] The Monaco editor's palette matches the surrounding chrome, including
+      scrollbars, widgets and lists. (VIS-18 — `THEME.colors` grew to
+      nineteen keys, all sourced from `Tokens`/`tokens.js`, covering the
+      scrollbar, suggestion widget, list states, bracket-match and
+      error/warning colours that used to leak `vs-dark`'s own blue; verified
+      with the probe harness, a script tab opened and Monaco loaded:
+      `editor.background` read `"#0b0813"` matching `--canvas-bg` exactly,
+      and the live editor's own `fontSize`/`lineHeight` read `12`/`18`
+      matching `--font-size`/`--line-box`)
 - [ ] `CLAUDE.md`'s "Deviations from the design file" section records every
       remaining divergence from `Pellizzola Brothers.svg`, with a reason.
 
@@ -3681,7 +3694,13 @@ demonstrably true. Each is checkable, not a matter of opinion.
       `role="alert"`; verified with the probe harness: both roles present,
       `aria-atomic="true"` on both)
 - [ ] The app is usable under Windows High Contrast, `prefers-contrast: more`,
-      and OS text scaling.
+      and OS text scaling. (`prefers-contrast: more` is partly done: the
+      canvas's own indicators - selection ring, level bounds, hover cell,
+      keyboard cursor - are two-tone/difference-composited so they stay
+      visible regardless, and the selection stroke itself thickens under the
+      query, VIS-16, done, see "Already completed"; the chrome's own controls
+      do not yet respond to it, and `forced-colors`/OS text scaling remain
+      fully open, A11Y-06/A11Y-07)
 - [ ] A VoiceOver, Narrator and Orca pass each reach and describe the file
       list, tabs, palette, inspector and canvas.
 
