@@ -316,8 +316,14 @@ html[data-platform="darwin"] .acts { display: none; }
 	display: flex;
 	align-items: center;
 	gap: var(--space-4);
-	max-width: 260px;
-	padding: 0 14px;
+	/* GEO-08: tabs hold filenames, so a statement in ch (which tracks the
+	   actual font's metrics, the same reasoning --side-min already uses)
+	   is a statement about content; 260px was not. min-width is new - a
+	   one-character name used to be free to shrink to a sliver next to its
+	   own close button. */
+	min-width: 6ch;
+	max-width: 24ch;
+	padding: 0 var(--space-5);	/* was 14px, 12 is the nearer step */
 	color: var(--dim);
 	white-space: nowrap;
 	cursor: pointer;
@@ -594,7 +600,10 @@ body.text #right { display: none; }
 .grp {
 	padding: var(--space-3) var(--space-1) var(--space-1);
 	color: var(--dim);
-	font-size: 10px;
+	font-size: var(--font-size-sm);	/* GEO-08: was 10px, below the practical
+						   legibility floor for a UI face - not a
+						   third size token, just the one already
+						   named for exactly this weight of label */
 	grid-column: 1 / -1;
 }
 /* A11Y-01: .cell is a <button> now, not a <div> - display/width undo the
@@ -683,7 +692,7 @@ body.text #right { display: none; }
 #props .err { color: var(--danger); white-space: pre-wrap; }
 #props .warn { margin: 0 0 var(--space-4) var(--space-6); padding: 0; color: var(--danger); font-size: 11px; }
 #props .warn li { margin-bottom: var(--space-1); }
-#props .hint { margin-top: var(--space-2); color: var(--dim); font-size: 10px; }
+#props .hint { margin-top: var(--space-2); color: var(--dim); font-size: var(--font-size-sm); }
 
 /* status */
 #status {
