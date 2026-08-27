@@ -225,11 +225,37 @@ function sidebar()
 	list($('midis'), Object.keys(App.doc.midi).sort(), false);
 }
 
+/* VIS-12: a fresh document - the state App.setdoc() always starts in - left
+ * both lists blank voids with no indication that anything could go there or
+ * how (GEO-05's content-driven default is what keeps that void from also
+ * being a disproportionate 60/40 empty region). Not a role="option" row -
+ * there is nothing here to select - just static text plus the one action
+ * that would fill it, the section's own create command so there is exactly
+ * one way to do it, not two. */
+function empty(ul, isscript)
+{
+	const li = document.createElement('li');
+	const b = document.createElement('button');
+
+	li.className = 'empty';
+	li.setAttribute('role', 'presentation');
+	li.append(isscript ? 'no scripts yet · ' : 'no midi files · ');
+	b.type = 'button';
+	b.textContent = isscript ? 'new script' : 'import…';
+	b.onclick = isscript ? addscript : addmidi;
+	li.appendChild(b);
+	ul.appendChild(li);
+}
+
 function list(ul, keys, isscript)
 {
 	ul.innerHTML = '';
 	ul.setAttribute('role', 'listbox');
 	ul.setAttribute('aria-label', isscript ? 'scripts' : 'midi files');
+	if (!keys.length) {
+		empty(ul, isscript);
+		return;
+	}
 	const items = [];
 	for (const k of keys) {
 		const li = document.createElement('li');
@@ -366,6 +392,14 @@ function cleanmidi(s, old)
 function addscript()
 {
 	const ul = $('scripts');
+	/* VIS-12: an empty list's placeholder row is the thing that just got
+	 * clicked (it is the only route into this function while the list is
+	 * empty) - drop it now rather than leaving "no scripts yet" hanging
+	 * above the new inline field until the rename commits and sidebar()
+	 * rebuilds. */
+	const ph = ul.querySelector('li.empty');
+	if (ph)
+		ph.remove();
 	const li = document.createElement('li');
 	const b = document.createElement('span');
 

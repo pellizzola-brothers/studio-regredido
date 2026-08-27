@@ -250,7 +250,18 @@ html[data-platform="darwin"] .acts { display: none; }
 	background: var(--acc);
 }
 .tab span { overflow: hidden; text-overflow: ellipsis; }
-.tab .tabclose { font-style: normal; opacity: .6; }
+/* A11Y-04: the × glyph itself stays the same size - only its hit area grows,
+   to --space-7 (24px), the platform minimum - so the visual density the
+   design wants is unchanged and only the clickable box around it is bigger. */
+.tab .tabclose {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--space-7);
+	height: var(--space-7);
+	font-style: normal;
+	opacity: .6;
+}
 .tab .tabclose:hover { opacity: 1; }
 #add { padding: 0 var(--space-5); }
 .run { padding: 0 var(--space-6); color: var(--acc-text); font-size: 13px; }
@@ -303,14 +314,29 @@ html[data-platform="darwin"] .acts { display: none; }
 	color: var(--acc-text);
 }
 .hdr.r { justify-content: flex-end; }
-.hdr button { margin-left: auto; line-height: 1; }
+/* A11Y-04: same trade as .tab .tabclose above - a 24px hit box around the
+   same small "+" glyph, not a bigger glyph. */
+.hdr button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--space-7);
+	height: var(--space-7);
+	margin-left: auto;
+}
 
-#scripts, #midis { overflow: auto; min-height: 0; padding: var(--space-4) 0; list-style: none; }
-/* GEO-04/GEO-05: user-resizable now (layout.js drags --scripts-h/--props-h
-   within a floor and ceiling), defaulting to the same 60/40 and 54/46 splits
-   as before a drag ever happens. */
-#scripts { flex: 0 0 var(--scripts-h); }
-#midis { flex: 1 1 auto; }
+#scripts, #midis { overflow: auto; padding: var(--space-4) 0; list-style: none; }
+/* GEO-05: by default each section is only as tall as its own content - a
+   floor of three rows so neither collapses to nothing, and a ceiling on
+   #scripts so an empty #midis is never crowded entirely off screen by it -
+   rather than the unexplained 60/40 split this used to default to
+   regardless of what either list actually held. Once the user (or a
+   restored session, GEO-04) has actually dragged the splitter, #side gets
+   .split-scripts (layout.js) and this goes back to the literal --scripts-h
+   percentage a drag maintains, exactly like before this finding. */
+#scripts { flex: 0 1 auto; min-height: calc(var(--row) * 3); max-height: 70%; }
+#midis { flex: 1 1 auto; min-height: calc(var(--row) * 3); }
+#side.split-scripts #scripts { flex: 0 0 var(--scripts-h); max-height: none; }
 /* GEO-01/GEO-02: --space-3 top/bottom padding, on the same 18px line box
    every other row height derives from, gives exactly --row (30px) - the same
    relationship --row-lg and --row-sm state, applied here instead of the old
@@ -339,6 +365,12 @@ li.on::before {
 	background: var(--acc);
 }
 li span { overflow: hidden; text-overflow: ellipsis; }
+/* VIS-12: the row itself is not a target (there is nothing to select) - only
+   its button is, so it does not take the ordinary row's hover/pointer
+   treatment. */
+li.empty { cursor: default; font-size: var(--font-size-sm); white-space: normal; }
+li.empty:hover { color: var(--dim); background: none; }
+li.empty button { color: var(--acc-text); text-decoration: underline; }
 
 /* stage */
 #stage {

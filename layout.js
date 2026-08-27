@@ -137,9 +137,17 @@ function pxsplitter(el, prop, panel, key, measure)
 
 /* #scripts | #midis and #palette | #props: a plain percentage of the
  * container's own height, since neither split has a content-driven min/max
- * token the way the side panels do (GEO-05/GEO-06, still open) - a floor and
- * ceiling stand in so neither side can be dragged to nothing. */
-function pctsplitter(el, prop, key, def, measure)
+ * token the way the side panels do (GEO-06 is still open for #palette/#props;
+ * GEO-05 gave #scripts/#midis one instead of this percentage, below) - a
+ * floor and ceiling stand in so neither side can be dragged to nothing.
+ *
+ * `cls`/`target`, when given, is a class this toggles on `target` for exactly
+ * as long as `prop` is actually overridden (dragged, stepped, or restored
+ * from a previous session) - GEO-05's content-driven default for #scripts
+ * only applies in that class's absence, so switching to and from it here is
+ * what lets one CSS custom property continue meaning "the user's own size"
+ * rather than "the size", now that the two can differ. */
+function pctsplitter(el, prop, key, def, measure, cls, target)
 {
 	const FLOOR = 15, CEIL = 85;
 
@@ -148,6 +156,8 @@ function pctsplitter(el, prop, key, def, measure)
 		pct = Math.max(FLOOR, Math.min(CEIL, pct));
 		root.style.setProperty(prop, pct + '%');
 		el.setAttribute('aria-valuenow', Math.round(pct));
+		if (cls)
+			target.classList.add(cls);
 		if (persist) {
 			const s = loadstate();
 			s[key] = pct;
@@ -159,6 +169,8 @@ function pctsplitter(el, prop, key, def, measure)
 	{
 		root.style.removeProperty(prop);
 		el.removeAttribute('aria-valuenow');
+		if (cls)
+			target.classList.remove(cls);
 		const s = loadstate();
 		delete s[key];
 		savestate(s);
@@ -194,7 +206,8 @@ Layout.init = function ()
 	pxsplitter($('splitter-right'), '--right', right, 'right',
 		ev => body().right - ev.clientX);
 	pctsplitter($('splitter-scripts'), '--scripts-h', 'scripts', '60%',
-		ev => (ev.clientY - side.getBoundingClientRect().top) / side.getBoundingClientRect().height * 100);
+		ev => (ev.clientY - side.getBoundingClientRect().top) / side.getBoundingClientRect().height * 100,
+		'split-scripts', side);
 	pctsplitter($('splitter-props'), '--props-h', 'props', '46%',
 		ev => (right.getBoundingClientRect().bottom - ev.clientY) / right.getBoundingClientRect().height * 100);
 };
