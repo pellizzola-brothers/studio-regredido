@@ -217,6 +217,7 @@ function levelview(p)
 			'<label>width<input value="' + W + '" disabled></label>' +
 			'<label>rows<input id="p_rows" type="number" min="1" max="999" value="' + Grid.h + '"></label>' +
 		'</div>' +
+		'<p class="hint" id="p_rows_hint"></p>' +
 		'<button class="act" id="p_fit">fit view</button>';
 
 	bind('p_name', v => { i.name = v; App.retitle(); });
@@ -227,6 +228,17 @@ function levelview(p)
 		App.touch();
 		Grid.redraw();
 	});
+	/* UX-08: warn before the destructive variant commits, rather than only
+	 * after - typing a smaller row count can delete entities well below the
+	 * visible viewport with nothing on screen to suggest it. */
+	$('p_rows').oninput = e => {
+		const h = +e.target.value;
+		const n = h > 0 && h < Grid.h ?
+			App.doc.json.level.entities.filter(v => v.pos[1] >= h * B).length : 0;
+		$('p_rows_hint').textContent = n ?
+			n + ' ' + (n === 1 ? 'entity' : 'entities') + ' below row ' + h +
+				' will be removed' : '';
+	};
 	$('p_rows').onchange = e => {
 		Grid.setheight(+e.target.value);
 		Panel.inspect();
@@ -363,19 +375,30 @@ function defview(p, id)
 		Panel.inspect();
 	});
 	$('p_script').onchange = ev => Panel.assign(d.id, ev.target.value);
-	$('p_rm').onclick = () => Undo.act(() => {
+	$('p_rm').onclick = () => {
 		const es = App.doc.json.level.entities;
-		for (let i = es.length - 1; i >= 0; i--)
-			if (es[i].def === d.id)
-				es.splice(i, 1);
-		defs.splice(defs.indexOf(d), 1);
-		Grid.tool = {kind: 'block', id: 2};
-		Grid.sel = -1;
-		App.touch();
+		let removed = 0;
+		Undo.act(() => {
+			for (let i = es.length - 1; i >= 0; i--)
+				if (es[i].def === d.id) {
+					es.splice(i, 1);
+					removed++;
+				}
+			defs.splice(defs.indexOf(d), 1);
+			Grid.tool = {kind: 'block', id: 2};
+			Grid.sel = -1;
+			App.touch();
+		});
 		Panel.palette();
 		Panel.inspect();
 		Grid.redraw();
-	});
+		/* UX-08: undoable (Undo.act, above), but otherwise silent - clicking
+		 * this was one click for what can be dozens of placed entities. */
+		App.say('removed \'' + d.id + '\'' + (removed ?
+			' and ' + removed + ' ' + (removed === 1 ? 'entity' : 'entities') +
+				' · ' + (api.platform === 'darwin' ? '⌘Z' : 'Ctrl+Z') + ' to undo' :
+			''));
+	};
 }
 
 /* Live-edit a text field without rebuilding the panel under the caret.  The

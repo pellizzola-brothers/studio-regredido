@@ -207,6 +207,8 @@ Grid.setheight = function (h)
 	if (h === Grid.h)
 		return;
 
+	const oldh = Grid.h;
+	let removed = 0;
 	Undo.act(() => {
 		const old = Grid.a;
 		const a = new Uint16Array(W * h);
@@ -217,13 +219,25 @@ Grid.setheight = function (h)
 
 		const es = elist();
 		for (let i = es.length - 1; i >= 0; i--)
-			if (es[i].pos[1] >= h * B)
+			if (es[i].pos[1] >= h * B) {
 				es.splice(i, 1);
+				removed++;
+			}
 		Undo.grid(old.slice(), a.slice());
 		Grid.sel = -1;
 		App.touch();
 	});
 	Grid.redraw();
+	/* UX-08: shrinking the level can silently delete entities below the new
+	 * bound - it is undoable (Undo.act, above), but the user was never told
+	 * anything happened. Say so only when it actually cost something. */
+	App.say(removed ?
+		'level shortened to ' + h + ' row' + (h === 1 ? '' : 's') + ', ' +
+			removed + ' ' + (removed === 1 ? 'entity' : 'entities') +
+			' removed · ' + (api.platform === 'darwin' ? '⌘Z' : 'Ctrl+Z') +
+			' to undo' :
+		'level ' + (h > oldh ? 'grown' : 'shortened') + ' to ' + h +
+			' row' + (h === 1 ? '' : 's'));
 };
 
 /* Never fit *above* 100% - a small level should not be blown up past its
