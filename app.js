@@ -385,8 +385,10 @@ function edit(li, b, old, isscript)
 
 	inp.value = b.textContent;
 	/* VIS-08: a bare fade-in marks the moment this field replaces the row's
-	 * static label, rather than the label just vanishing and this appearing. */
-	inp.style.cssText = 'width:100%;border:1px solid var(--acc);background:var(--surface-raised);color:var(--fg);font:inherit;animation:pb-fade-in var(--dur) var(--ease)';
+	 * static label, rather than the label just vanishing and this appearing.
+	 * VIS-15: .field is the same shared text-input component #props uses,
+	 * so this is no longer a second, visually distinct input built by hand. */
+	inp.className = 'field rename';
 	li.replaceChild(inp, b);
 	inp.focus();
 	inp.select();

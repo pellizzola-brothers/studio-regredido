@@ -651,10 +651,14 @@ body.text #right { display: none; }
    .split-* class toggle (layout.js) so a user's own drag still overrides it. */
 #props { overflow: auto; flex: 0 1 auto; min-height: calc(var(--row) * 3); max-height: 70%; padding: 10px; }
 #right.split-props #props { flex: 0 0 var(--props-h); max-height: none; }
-#props h4 { margin: 10px 0 4px; color: var(--dim); font: inherit; font-size: 10px; }
+#props h4 { margin: 10px 0 4px; color: var(--dim); font: inherit; font-size: var(--font-size-sm); }
 #props h4:first-child { margin-top: 0; }
 #props label { display: block; margin-bottom: var(--space-3); color: var(--dim); }
-#props input, #props select, #props textarea {
+/* VIS-15: .field is what the file manager's own inline rename input (edit(),
+   app.js) uses too, instead of a hand-duplicated inline style that used to
+   agree with none of this - one component, not two visually different text
+   inputs that happen to sit in different corners of the app. */
+.field, #props input, #props select, #props textarea {
 	display: block;
 	width: 100%;
 	padding: 3px 5px;
@@ -665,15 +669,21 @@ body.text #right { display: none; }
 	font: inherit;
 	transition: border-color var(--dur-fast) var(--ease);
 }
-#props input:focus, #props select:focus, #props textarea:focus {
+.field:focus, #props input:focus, #props select:focus, #props textarea:focus {
 	border-color: var(--acc);
 }
+/* VIS-15: the rename field's own remaining concern, once .field above
+   covers the rest - the fade-in it gets when it replaces a row's static
+   label (VIS-08), which none of #props's own fields ever do. */
+.rename { animation: pb-fade-in var(--dur) var(--ease); }
 /* VIS-07: disabled fields (the level's own read-only width, an entity's
    read-only cell coordinate) used to get whatever grey Chromium's UA
    stylesheet supplies for a bare <input disabled> - not a colour this app
    ever chose. */
 #props input:disabled { color: var(--fg-disabled); cursor: default; }
-#props textarea { height: 48px; resize: vertical; }
+/* GEO-08: "three lines of description" is the decision this field makes;
+   48px (2.67 lines) was not a statement of it, just what fell out of one. */
+#props textarea { height: calc(var(--line-box) * 3); resize: vertical; }
 #props .row { display: flex; gap: var(--space-3); }
 #props .row > * { flex: 1; }
 #props .act {
