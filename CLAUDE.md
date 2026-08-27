@@ -140,6 +140,20 @@ creates the entity and the same gesture carries it to its cell. Snapping keeps
 "one entity, one cell" exactly true, which is what makes the rule above
 well-defined.
 
+**The canvas is keyboard-operable, in parallel with the pointer.**
+`Grid.kcur` (`grid.js`) is a second cursor, independent of the mouse-driven
+`Grid.hov`, that arrow keys move one cell at a time; Return/Space applies
+`Grid.tool` at it through `Grid.kpaint()`, mirroring `ondown()`'s own
+precedence exactly (an existing entity is always grabbed first, regardless
+of which tool is active); Delete/Backspace erases under it through
+`Grid.kerase()`, but only when nothing is already selected via `Grid.sel` -
+that case still deletes the selection, as before. Both wrap their single
+edit in `Undo.act()` directly, since a keypress is a discrete action with no
+drag to bracket with `begin()`/`end()`. Each move announces the cursor's
+position and content through `#msg`'s live region (`role="status"`,
+A11Y-05). Wired from `keys()` (`app.js`), gated the same way that file's
+other canvas-local keys already are.
+
 **The grid is mirrored into a `Uint16Array`.** `block_data` is 540 three-digit
 strings per row — fine on disk, poor to paint into. `Grid.load()` unpacks once
 and `Grid.commit()` packs back. **Every save path must call `Grid.commit()`

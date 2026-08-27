@@ -35,7 +35,11 @@
 		aria-orientation="vertical" aria-label="Resize file manager"></div>
 
 	<main id="stage">
-		<div id="wrap"><canvas id="cv" tabindex="0"></canvas></div>
+		<div id="wrap"><canvas id="cv" tabindex="0" role="application"
+			aria-label="Level canvas" aria-describedby="cv-help"></canvas></div>
+		<p id="cv-help" class="sr-only">Arrow keys move the keyboard cursor.
+			Enter or Space places the selected tool at the cursor. Delete
+			removes what is under it. Escape clears the current selection.</p>
 		<div id="hbar"><div id="hspace"></div></div>
 		<div id="code"></div>
 	</main>

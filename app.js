@@ -659,12 +659,12 @@ const ACTS = {
 	fitall:		() => Grid.fit()
 };
 
-/* Canvas-local keys only: Escape and Delete apply to the selection, not to
- * any command the menu already owns.  Gated on the canvas itself holding
- * focus (Grid.cv.focus() in ondown()), not on excluding text-input tag names
- * - A11Y-01 made the palette, file rows and tabs focusable too, and without
- * this a Delete pressed while renaming a script would also delete whatever
- * Grid.sel happened to be selected on the canvas underneath. */
+/* Canvas-local keys only: Escape, Delete, and now the A11Y-03 keyboard-editing
+ * set, not any command the menu already owns.  Gated on the canvas itself
+ * holding focus (Grid.cv.focus() in ondown()), not on excluding text-input
+ * tag names - A11Y-01 made the palette, file rows and tabs focusable too, and
+ * without this a Delete pressed while renaming a script would also delete
+ * whatever Grid.sel happened to be selected on the canvas underneath. */
 function keys(e)
 {
 	if (App.tab !== 'level' || e.target !== Grid.cv)
@@ -677,14 +677,27 @@ function keys(e)
 			Panel.inspect();
 			Grid.redraw();
 		}
-	} else if ((e.key === 'Delete' || e.key === 'Backspace') && Grid.sel >= 0) {
-		Undo.act(() => {
-			App.doc.json.level.entities.splice(Grid.sel, 1);
-			Grid.sel = -1;
-			App.touch();
-		});
-		Panel.inspect();
-		Grid.redraw();
+	} else if (e.key === 'Delete' || e.key === 'Backspace') {
+		if (Grid.sel >= 0) {
+			Undo.act(() => {
+				App.doc.json.level.entities.splice(Grid.sel, 1);
+				Grid.sel = -1;
+				App.touch();
+			});
+			Panel.inspect();
+			Grid.redraw();
+		} else
+			/* A11Y-03: no mouse-selected entity - erase under the keyboard
+			 * cursor instead, the keyboard equivalent of a right-click. */
+			Grid.kerase();
+	} else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+			e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+		e.preventDefault();
+		Grid.kmove(e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0,
+			e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0);
+	} else if (e.key === 'Enter' || e.key === ' ') {
+		e.preventDefault();
+		Grid.kpaint();
 	}
 }
 

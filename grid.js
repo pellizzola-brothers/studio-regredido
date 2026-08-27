@@ -15,6 +15,8 @@ const Grid = {
 	tool: {kind: 'block', id: 2},	/* what the palette has selected */
 	sel: -1,			/* index into level.entities, or -1 */
 	hov: {x: -1, y: -1},
+	kcur: null,			/* A11Y-03: the keyboard cursor cell, or null before
+					   the canvas has ever been driven from the keyboard */
 	pan: null, paint: -1, last: null, moving: false, rdown: null,
 	need: false, rsz: false, fitted: false, dpr: 1
 };
@@ -97,6 +99,16 @@ Grid.init = function (cv)
 	/* UX-12: alt-tabbing away mid-drag left the gesture live forever, since
 	 * onup() is only ever reached by a mouseup. */
 	addEventListener('blur', Grid.cancel);
+	/* A11Y-03: Tab-ing into the canvas announces where the keyboard cursor
+	 * is (it is given a starting cell, centred in the viewport, the first
+	 * time) rather than leaving a keyboard user focused on a surface that
+	 * says nothing about itself. */
+	cv.addEventListener('focus', () => {
+		if (!Grid.kcur)
+			Grid.kcur = kdefault();
+		announce(Grid.kcur);
+		Grid.redraw();
+	});
 	watchdpr();
 };
 
@@ -182,6 +194,7 @@ Grid.load = function ()
 			Grid.a[o + x] = +row[x];
 	}
 	Grid.sel = -1;
+	Grid.kcur = null;
 };
 
 /* Pack the working array back into block_data.  Called before every save. */
@@ -225,6 +238,8 @@ Grid.setheight = function (h)
 			}
 		Undo.grid(old.slice(), a.slice());
 		Grid.sel = -1;
+		if (Grid.kcur)			/* A11Y-03: keep it inside the resized grid */
+			Grid.kcur.y = Math.min(Grid.kcur.y, h - 1);
 		App.touch();
 	});
 	Grid.redraw();
@@ -464,6 +479,20 @@ Grid.draw = function ()
 		g.strokeRect(sx + .5, sy + .5, s - 1, s - 1);
 	}
 
+	/* A11Y-03: the keyboard cursor - drawn like the hover cell above, since
+	 * it means the same thing ("here is where the next action lands"), just
+	 * driven from the keyboard instead of the pointer. Only while the canvas
+	 * itself holds focus, so it does not linger once the user has moved on
+	 * to something else. */
+	if (Grid.kcur && document.activeElement === Grid.cv) {
+		const sx = Math.round(Grid.kcur.x * B * z - ox);
+		const sy = Math.round(Grid.kcur.y * B * z - oy);
+		const s = Math.round(B * z);
+		g.strokeStyle = Tokens.hoverCell;
+		g.lineWidth = 1;
+		g.strokeRect(sx + .5, sy + .5, s - 1, s - 1);
+	}
+
 	g.strokeStyle = Tokens.bounds;
 	g.lineWidth = 1;
 	g.strokeRect(Math.round(-ox) + .5, Math.round(-oy) + .5,
@@ -569,6 +598,112 @@ function onwheel(ev)
 	}
 	Grid.redraw();
 }
+
+/* A11Y-03: keyboard editing of the canvas - the pointer gestures above are
+ * unchanged, this is the parallel keyboard path onto the same document
+ * mutations. Wired from keys() (app.js), gated the same way the rest of that
+ * file's canvas-local keys are: App.tab === 'level' and the canvas itself
+ * focused. */
+
+/* The keyboard cursor's starting cell, the first time it is needed - centred
+ * in whatever the viewport is currently showing, so a keyboard user starts
+ * somewhere visible rather than off in a corner of the level. */
+function kdefault()
+{
+	const r = Grid.cv.getBoundingClientRect();
+	const cx = Math.floor((Grid.cam.x + r.width / Grid.cam.z / 2) / B);
+	const cy = Math.floor((Grid.cam.y + r.height / Grid.cam.z / 2) / B);
+
+	return {
+		x: Math.max(0, Math.min(W - 1, cx)),
+		y: Math.max(0, Math.min(Grid.h - 1, cy))
+	};
+}
+
+/* What a screen reader hears the cursor land on: an entity's own id if one
+ * is there (entat() already resolves overlap the same way painting does),
+ * else the block's name, else "empty". */
+function kdescribe(c)
+{
+	const hit = entat(c.x, c.y);
+	if (hit >= 0)
+		return elist()[hit].def;
+	const id = Grid.a[c.y * W + c.x];
+	return id ? (tiles.get(id) || {}).name || 'unknown' : 'empty';
+}
+
+function announce(c)
+{
+	App.say('column ' + c.x + ', row ' + c.y + ' — ' + kdescribe(c));
+}
+
+Grid.kmove = function (dx, dy)
+{
+	const c = Grid.kcur || kdefault();
+
+	Grid.kcur = {
+		x: Math.max(0, Math.min(W - 1, c.x + dx)),
+		y: Math.max(0, Math.min(Grid.h - 1, c.y + dy))
+	};
+	announce(Grid.kcur);
+	Grid.redraw();
+};
+
+/* Return/Space: apply the current tool at the keyboard cursor, mirroring
+ * ondown()'s own precedence exactly - an existing entity is always grabbed
+ * (selected) first, regardless of which tool is active, and only the block
+ * tool ever reaches setblock(). Each press is one discrete edit, so it is
+ * wrapped in Undo.act() directly rather than the begin()/end() pair a drag
+ * needs. */
+Grid.kpaint = function ()
+{
+	if (!Grid.kcur)
+		return;
+	const c = Grid.kcur, hit = entat(c.x, c.y);
+
+	if (hit >= 0) {
+		Grid.sel = hit;
+		App.inspect();
+		Grid.redraw();
+		return;
+	}
+	if (Grid.tool.kind === 'entity') {
+		Undo.act(() => {
+			App.usedef(Grid.tool.id);
+			elist().push({def: Grid.tool.id, pos: [c.x * B, c.y * B]});
+			Grid.sel = elist().length - 1;
+			setblock(c.x, c.y, 0);
+			App.touch();
+		});
+	} else
+		Undo.act(() => {
+			Grid.sel = -1;
+			setblock(c.x, c.y, Grid.tool.id);
+		});
+	App.inspect();
+	Grid.redraw();
+};
+
+/* Delete/Backspace with no mouse-selected entity (Grid.sel, handled in
+ * keys() itself) but a keyboard cursor: erase whatever is under it, the
+ * keyboard equivalent of a right-click. */
+Grid.kerase = function ()
+{
+	if (!Grid.kcur)
+		return;
+	const c = Grid.kcur, hit = entat(c.x, c.y);
+
+	Undo.act(() => {
+		if (hit >= 0) {
+			elist().splice(hit, 1);
+			Grid.sel = -1;
+		} else
+			setblock(c.x, c.y, 0);
+		App.touch();
+	});
+	App.inspect();
+	Grid.redraw();
+};
 
 function ondown(ev)
 {
