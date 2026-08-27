@@ -875,24 +875,33 @@ confirms `ArrowRight` moves both focus and the roving tabindex from "new" to
 
 #### UX-04 — Zoom has no controls, no indicator, and no fit-width
 
-Shipped: `Grid.fit()` (`grid.js`) now takes the smaller of the width-fit and
-height-fit scales instead of height alone - `Grid.fitH()`/`Grid.fitW()` keep
-the single-axis behaviour available as explicit commands, per the finding's
-own "keep fit-height as an explicit command" note. `Grid.zoomto()`/
-`Grid.zoomby()` zoom about the canvas's own centre, driving a new View menu
-(`menu.js`: Zoom In/Out, Actual Size, Fit Height/Width/All, and Toggle Full
-Screen - which had no home since NAT-01's menu shipped without a View menu,
-closing the §12 "Full screen" regression too) and a new `#zoom` status-bar
-button showing the live percentage, opening a native 25/50/100/200%/Fit
-quick-menu (`main.js`'s `menu:zoom`, mirroring NAT-05's row-menu pattern) on
-click. Verified with the probe harness: `Grid.fitH()` on this window
-reproduced the audit's own finding almost exactly (z = 0.469, ~4.6% of the
-level's width visible, against the audit's measured 3.7%); `Grid.fit()` now
-clamps to `ZMIN` and shows ~72.5% of the width at full height instead;
-`zoomby(ZOOM_STEP)`/`zoomto(1)`/`fitW()` all move the camera as expected; a
-patched `Menu.buildFromTemplate` confirms the View menu template carries all
-seven items with Zoom In enabled on the level tab and a `togglefullscreen`
-role.
+Shipped: `Grid.fit()` (`grid.js`) originally took the smaller of the
+width-fit and height-fit scales against the level's actual full width -
+`Grid.fitH()`/`Grid.fitW()` keep the single-axis behaviour available as
+explicit commands, per the finding's own "keep fit-height as an explicit
+command" note. That full-width fit turned out to still be the wrong target
+even at `min()`: a 540-column level clamps to `ZMIN` and shows most, but
+never all, of an unfittable width, which reads the same as the original bug
+to a user - so a follow-up (same session) redefined "fit"/"fit width" to
+target the scene nearest the camera instead of the whole level (`grid.js`'s
+`SCENES`/`SCENECOLS`/`curscene()`/`fitscene()`, `CLAUDE.md`'s new "A level
+divides into 9 scenes" note); `Grid.fitH()` is untouched, since height is not
+scene-divided. `Grid.zoomto()`/`Grid.zoomby()` zoom about the canvas's own
+centre, driving a new View menu (`menu.js`: Zoom In/Out, Actual Size, Fit
+Height/Scene Width/Scene, and Toggle Full Screen - which had no home since
+NAT-01's menu shipped without a View menu, closing the §12 "Full screen"
+regression too) and a new `#zoom` status-bar button showing the live
+percentage, opening a native 25/50/100/200%/Fit quick-menu (`main.js`'s
+`menu:zoom`, mirroring NAT-05's row-menu pattern) on click. Verified with the
+probe harness: `Grid.fitH()` on this window reproduced the audit's own
+finding almost exactly (z = 0.469, ~4.6% of the level's width visible,
+against the audit's measured 3.7%); from a settled camera, `Grid.fit()` now
+computes scene 0 (camx -100, stable under repeated calls) instead of clamping
+to `ZMIN` over the whole level; panning into scene 3 and re-fitting locks
+onto scene 3 with the entire scene inside the viewport; `zoomby(ZOOM_STEP)`/
+`zoomto(1)` move the camera as expected; a patched `Menu.buildFromTemplate`
+confirms the View menu reads "Fit Height"/"Fit Scene Width"/"Fit Scene" with
+Zoom In enabled on the level tab and a `togglefullscreen` role.
 
 ---
 
@@ -1055,8 +1064,9 @@ the menu bar already carried it, and is a real per-platform toolbar on
 Windows/Linux (NAT-04); every button, row and tab now shares one hover/
 active/selected/disabled treatment instead of three unrelated mechanisms for
 "selected" and an effectively-invisible disabled state (VIS-07); zoom has a
-status-bar indicator, a quick-menu, a View menu, and a `Grid.fit()` that fits
-the level instead of one axis of it (UX-04); and the side panels, the
+status-bar indicator, a quick-menu, a View menu, and a `Grid.fit()` that
+targets the scene nearest the camera instead of the level's unfittable full
+width (UX-04); and the side panels, the
 scripts/MIDI split and the palette/inspector split are all user-resizable
 with keyboard-operable splitters that persist across sessions (GEO-04) — see
 "Already completed" above for all five. The shell's remaining problems are
@@ -3141,8 +3151,8 @@ trackpad scroll now pans instead of zooming, and pinch/Ctrl+wheel zooms
 (NAT-11, shipped, see "Already completed"); the canvas now shows a cursor for
 every gesture - crosshair, copy, grab, grabbing, not-allowed (NAT-13,
 shipped, see "Already completed"); zoom now has controls, an indicator, and a
-fit that actually fits the level instead of one axis of it (UX-04, shipped,
-see "Already completed").
+fit that targets the scene nearest the camera instead of an unfittable whole
+level (UX-04, shipped, see "Already completed").
 
 **Navigating** — a vertical scrollbar (GEO-10); resizable panels that remember
 their size are shipped (GEO-04, see "Already completed"); tabs that overflow
