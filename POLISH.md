@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The fifty-three items below have shipped and are removed from the findings
+The fifty-eight items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -608,17 +608,18 @@ through `--space-7` (a 2/4/6/8/12/16/24 progression), `--font-size`/
 (`--row-sm`/`--row`/`--row-lg`, replacing `--bar`, `--tabs`, `.hdr`'s 24px,
 `#status`'s 22px and `li`'s `1px 10px 1px 18px` padding with three named,
 derived rows) - plus radius, elevation, motion and z-index tokens, defined but
-not yet consumed (VIS-08/VIS-09 will; VIS-07 has since consumed the colour
-tokens this same commit added, `--surface-hover`/`--surface-active`/
-`--fg-disabled`, done — see "Already completed"). The line-box token is named
-`--line-box`, not `--line` as the audit's own draft proposed, because `--line`
-already names the separator-colour token shipped with VIS-01 and the two would
-otherwise silently overwrite each other in `:root`. GEO-02 (band heights) and
-part of GEO-08 (the gaps and font sizes that exactly matched a new scale step)
-are resolved as a side effect - see their own entries. Verified with the probe
-harness: `#tabs` computes to `34px` and `#status`/`.hdr` to `26px` (both
-`--row-lg`/`--row-sm`); after adding a script row, `li` computes to `30px`
-(`--row`) where it previously measured 20px.
+not yet consumed at the time (VIS-08/VIS-09, both since done — see "Already
+completed"; VIS-07 consumed the colour tokens this same commit added,
+`--surface-hover`/`--surface-active`/`--fg-disabled`, done too). The line-box
+token is named `--line-box`, not `--line` as the audit's own draft proposed,
+because `--line` already names the separator-colour token shipped with VIS-01
+and the two would otherwise silently overwrite each other in `:root`. GEO-02
+(band heights) and part of GEO-08 (the gaps and font sizes that exactly
+matched a new scale step) are resolved as a side effect - see their own
+entries. Verified with the probe harness: `#tabs` computes to `34px` and
+`#status` to `26px` (`--row-lg`/`--row-sm`; `.hdr` itself has since moved to
+`--row-hdr`, 36px, GEO-13, done); after adding a script row, `li` computes to
+`30px` (`--row`) where it previously measured 20px.
 
 ---
 
@@ -1059,6 +1060,119 @@ header/menu commands already did.
 
 ---
 
+#### UX-08 — Destructive actions have no confirmation and no undo affordance
+
+Shipped, without a modal confirmation - both are undoable already, and the
+finding's own text is explicit that a dialog on top would be pure friction.
+`Grid.setheight()` (`grid.js`) counts how many entities its own shrink
+splices out and reports it through `App.say()` - `level shortened to 8 rows,
+1 entity removed · ⌘Z to undo` (`Ctrl+Z` off macOS) - or the plain `level
+grown/shortened to N rows` when nothing was lost. `panel.js`'s `p_rm` handler
+(`remove definition`) does the same for the entities a definition removal
+takes with it: `removed 'goomba' and 40 entities · ⌘Z to undo`. The rows
+field also gained a live, in-place warning as the finding's second bullet
+asked: a new `oninput` handler (`levelview()`, `panel.js`) computes how many
+entities sit below the typed row count and shows `N entities below row 8
+will be removed` in a `.hint` under the field, before the value ever commits
+on `onchange`. Verified with the probe harness: placing an entity then
+calling `Grid.setheight()` to a smaller value produced exactly the expected
+message and left the entity gone; typing a shorter row count into `p_rows`
+populated the hint with the correct count and target row, and clearing it
+back to the current height cleared the hint; removing a definition with two
+placed entities produced `removed 'custom_1' and 2 entities · ⌘Z to undo` and
+left both entities gone.
+
+---
+
+#### VIS-08 — There is no motion at all
+
+Shipped, deliberately minimal and tokenised exactly as recommended:
+`transition: background-color/color var(--dur-fast) var(--ease)` on the
+generic `button`, `.tab`, `li` and `.cell` rules covers hover/active/selected
+tints everywhere they apply (a state class only ever changes which
+background/colour value wins - the transition property living once, on the
+base selector, is what makes every state under it animate without a rule per
+state); the focus ring's `outline-color` transitions the same way; `#msg`'s
+colour transitions at `--dur` for the less-frequent error/success swap; the
+inline rename field (`edit()`, `app.js`) fades in via a new `pb-fade-in`
+keyframe referenced from its own inline style, since the field is still
+styled inline (VIS-15, still open) rather than through a class this could
+attach to structurally. Canvas drawing, tab content swapping and the save
+path are untouched, per the finding's own "do not animate" list. The
+mandatory `@media (prefers-reduced-motion: reduce)` companion landed in the
+same commit, collapsing every transition and animation to 1ms. Verified with
+the probe harness: `getComputedStyle()` on a button and a tab both report a
+`0.09s` (`--dur-fast`) transition duration; a full regression pass (paint,
+undo/redo, save/open, script create/rename/tab-switch) showed no behavioural
+change, confirming the motion is purely cosmetic.
+
+---
+
+#### VIS-09 — No radius, border-width or elevation scale
+
+Shipped: `--radius-1` already had a consumer (the generic `button` rule,
+which palette cells inherit since they are real `<button>`s, A11Y-01) -
+`--radius-2` is now the standalone-action-button tier, applied to the hotbar,
+`.act`, the two header `+`s and the active tab's own corner flare (GEO-13);
+`--radius-3` stays deliberately unconsumed, since there is still no dialog or
+popover that would need it. `--elev-1` now shadows both side panels, per the
+design's own drop-shadow filters (GEO-13); `--elev-2` stays unconsumed for
+the same reason NAT-05 already gave it - the context menu that would have
+been its only consumer is native now. `--border` replaced the bare `1px`
+literal on `.cell`, `#props`'s fields and `.act`, so the one border-width
+token actually has consumers instead of being defined and ignored. Verified
+with the probe harness: `getComputedStyle()` on `#add` reports a `4px`
+border-radius (`--radius-2`); on `#side` a `box-shadow` matching `--elev-1`'s
+`0 1px 2px rgba(0,0,0,.4)`.
+
+---
+
+#### GEO-13 — Design-file proportions that were not carried over
+
+Shipped, two of three items in full and the third as a documented,
+evidence-based departure rather than a literal transcription. (1) The
+window's own top-corner radius is the OS's to own now (NAT-02, done); the
+internal tab flare is real, but at `--radius-2` (4px) rather than the
+design's literal 26px - at 34px tall (`--row-lg`), this tab strip would read
+as a pill at 26px, not a flare, so the figure does not transfer from the
+scale it was drawn at, and `--radius-2` is the largest step actually
+proportionate to an element this size (recorded in `CLAUDE.md`'s
+"Deviations from the design file", the section the finding's own text names
+for exactly this). (2) A new `--row-hdr` token (`calc(var(--line-box) * 2)`,
+36px - the same "N × line-box" statement `--row-sm`/`--row`/`--row-lg`
+already make) now drives every section header (`.hdr`), replacing the
+`--row-sm` (26px) it defaulted to. (3) Both side panels carry `--elev-1`
+(VIS-09, above). Verified with the probe harness: `getComputedStyle()` on
+`.tab.on` reports `4px 4px 0 0`; on a `.hdr` element, a `36px` height; on
+`#side`, the `--elev-1` box-shadow.
+
+---
+
+#### A11Y-02 — The DOM has no semantics
+
+Shipped the scope A11Y-01 left open: `#title` (`index.html`) is a real
+`<header>` now, not a `<div>`; each of the four section headers (`scripts`,
+`midi`, `items`, `properties`) is a real `<h2 class="hdr">` with its own id,
+and the list or panel it labels points back to it with `aria-labelledby`
+instead of a second, parallel `aria-label` string naming the same thing
+(`list()`/`app.js` for the file lists, `Panel.palette()`/`panel.js` for the
+palette); `#props` carries `role="region" aria-label="Properties"`, and its
+`h4`s were already real headings, so an inspector user can already jump
+between them. `.hdr`'s own CSS gained `font: inherit` - a heading carries UA
+default font-size/weight a `<div>` never did, which would otherwise have
+blown the row out of its token-derived height the moment the tag changed.
+The disabled `▶` button's `aria-disabled`/`aria-describedby` stays with
+VIS-13, as the finding's own text already scoped it. Verified with the probe
+harness: `document.getElementById('title').tagName === 'HEADER'`; all four
+header ids resolve to `H2` elements; `#scripts`/`#midis`/`#palette` each
+report the expected `aria-labelledby`; `#props` reports `role="region"`,
+`aria-label="Properties"`; `getComputedStyle()` on a header element reports
+the inherited `12px` font size, not a heading's UA default; a full
+regression pass (paint, undo/redo, save/open, script rename/delete, MIDI
+import, tab switching) showed no behavioural change.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -1191,11 +1305,15 @@ for all five. The shell's remaining problems are below.
    `nativeTheme` (NAT-06 through NAT-09, NAT-15, NAT-17). Most of the
    Electron APIs that exist precisely to make this application feel native
    are still unreferenced anywhere in the tree (verified by grep).
-2. **There is still no motion, radius or elevation system.** The tokens
-   exist (`--dur-*`/`--ease`, `--radius-*`, `--elev-*`, GEO-01, done) but
-   nothing consumes them yet: every state change is an instantaneous swap,
-   every surface is a hard rectangle, and the app has exactly one shadow, on
-   a context menu that no longer even exists (VIS-08, VIS-09).
+2. **There is still no icon system.** Five text glyphs stand in for icons at
+   four different effective sizes, three of them a bare "+" rendered three
+   different ways by three different mechanisms, while a real icon set sits
+   unused in `textures/icons/` (VIS-11). The slot this used to describe -
+   motion, radius and elevation, tokens defined but with nothing consuming
+   them - is closed now: every hover/active/selected tint transitions,
+   `--radius-2` distinguishes a standalone action button from an inline
+   control, and both side panels carry the design's own drop-shadow
+   (VIS-08, VIS-09, GEO-13, all done — see "Already completed").
 3. **Geometry's remaining loose ends are small but still arbitrary.** The
    spacing/row/type scale, proportional and clamped side panels, integer
    palette cells, user-resizable splitters and the file manager's own default
@@ -1334,16 +1452,20 @@ Monaco keys that are not a restatement of an existing token - `code.js`'s own
 `#150f24`/`#2e2049`/`#1e1633` - are unaffected; giving them a considered
 relationship to the surrounding chrome is VIS-18, not this). `main.js`'s
 `backgroundColor` and `chrome.js`'s `BAR` remain the two documented, necessary
-duplicates (each must be known before any CSS has loaded). Not every token has
-a consumer yet: radius, elevation, motion and z-index are defined but unused,
-waiting on VIS-08/VIS-09. Panel widths are proportional and clamped, the
-palette's cells are an integer multiple of the sprite, and the panels are
-user-resizable with keyboard-operable splitters (GEO-03/GEO-07/GEO-04, all
-done - see "Already completed"). There is still exactly **one** shadow
-(`0 6px 20px rgba(0,0,0,.55)`), **one** non-circular
-radius in use (the scrollbar thumb's, now a token relationship rather than a
-coincidence - NAT-20, done), and **zero** transitions or animations applied
-anywhere.
+duplicates (each must be known before any CSS has loaded). Radius, elevation
+and motion now have real consumers too (VIS-08/VIS-09, done - see "Already
+completed"): every hover/active/selected tint, the focus ring and the inline
+rename field transition at `--dur-fast`/`--dur`; `--radius-2` marks a
+standalone action button apart from an inline control's `--radius-1`,
+including the active tab's own corner flare (GEO-13); both side panels carry
+`--elev-1`, per the design's own drop-shadow filters. `--radius-3` and
+`--elev-2` remain unconsumed, deliberately - there is still no dialog or
+popover that would need them, the same reasoning that already applied to
+`--elev-2` before NAT-05 made the context menu native. `z-index` is the one
+still genuinely waiting on a second layer above the surface. Panel widths are
+proportional and clamped, the palette's cells are an integer multiple of the
+sprite, and the panels are user-resizable with keyboard-operable splitters
+(GEO-03/GEO-07/GEO-04, all done - see "Already completed").
 
 ### Existing platform abstractions
 
@@ -1603,9 +1725,9 @@ theming:
    colours wholesale; make sure the layout does not collapse and that
    canvas-drawn content, which forced colours cannot reach, gets a fallback
    outline. Currently untested and certain to be broken.
-3. **`prefers-reduced-motion`** — currently vacuous (there are zero
-   transitions), but VIS-09 adds some, and the media query must land in the
-   same commit.
+3. **`prefers-reduced-motion`** — done, see "Already completed", VIS-08: the
+   transitions it now reduces, and the media query itself, landed in the same
+   commit as required.
 Also: `nativeTheme.on('updated')` must re-push `titleBarOverlay` colours on
 Windows if the OS accent/theme changes - `titleBarOverlay` itself is done
 (NAT-02, see "Already completed"), the re-push on theme change is not.
@@ -1775,39 +1897,6 @@ without a splitter, so the vertical bar has something to reflect.
 
 ---
 
-
-#### GEO-13 — Design-file proportions that were not carried over
-
-**Category** Layout / Visual · **Severity** Low · **Priority** P3 · **Affects** UI
-
-Parsed from `Pellizzola Brothers.svg`, three deliberate design decisions are
-absent from the implementation:
-
-1. **Rounded top corners on the chrome.** The design's tab-strip band is
-   `M48 111C48 96.64 59.64 85 74 85H205V122H48V111Z` — a **26 px corner
-   radius** at the top of the window, and a matching 26 px flare on the right
-   edge of the active tab (`M463 85H469C483.36 85 495 96.64 495 111V122H463V85Z`).
-   The implementation has square corners everywhere and no radius token at all
-   (VIS-09). The window's own corners are now the OS's to own (NAT-02, done —
-   see "Already completed" — shipped `hiddenInset`/`titleBarOverlay`, so
-   `roundedCorners` is what would apply on macOS if this is revisited); the
-   **tab flare**, which is purely internal, is still open and should be
-   honoured regardless.
-2. **A 36 px section-header band** (`122 → 158` in every panel). The
-   implementation uses 24 px (`style.css:107`), which is why the headers read
-   as cramped labels rather than as the panel headers the design draws.
-3. **Panel elevation.** The design wraps both side panels in
-   `filter0_dd`/`filter1_dd` drop-shadow filters, separating them from the
-   frame. The implementation has one shadow in the entire app, on the context
-   menu (VIS-09).
-
-**Recommended.** Reconcile deliberately: adopt (2) and (3) via the radius and
-elevation tokens; adopt the tab flare from (1); document any conscious
-departure in `CLAUDE.md`'s "Deviations from the design file" section, which
-already exists for exactly this purpose and is the right home for the record.
-
----
-
 ### 4.4 Visual consistency (VIS)
 
 ---
@@ -1840,77 +1929,6 @@ completed" — so what is left is recording the mapping to the design's
 `#7E58BE` / `#815AC1` in `CLAUDE.md`. Then update the SVG or the deviations
 note so the two artefacts agree — a design file that silently disagrees with
 the build is worse than no design file.
-
----
-
-#### VIS-08 — There is no motion at all
-
-**Category** Visual · **Severity** Low · **Priority** P2 · **Affects** UI
-
-**Current.** Zero `transition`, `animation` or `@keyframes` declarations in
-`style.css` (verified by grep). Every state change — hover, tab switch, panel
-show/hide, menu open — is an instantaneous swap.
-
-**Why it's a problem.** Not because animation is inherently good; because
-instantaneous changes give the eye nothing to track, which is what makes an
-interface feel abrupt rather than responsive. A 100 ms tint on hover is the
-difference between a control that acknowledges the pointer and one that
-flickers.
-
-**Recommended.** Deliberately minimal, tokenised:
-```
---dur-fast: 90ms;    /* hover/active tints, focus ring        */
---dur:     140ms;    /* panel and tab transitions             */
---ease:    cubic-bezier(.2, 0, 0, 1);   /* standard decelerate */
-```
-Apply to: hover/active/selected background tints, the focus ring, the inline
-rename field appearing, the status-bar message changing, and panel show/hide.
-
-**Do not animate:** the canvas (it is redrawn on `requestAnimationFrame`
-already, and the camera should stay 1:1 with the pointer), tab content swaps,
-or anything on the save path.
-
-**Mandatory companion:**
-```
-@media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after { transition-duration: 1ms !important;
-                                 animation-duration: 1ms !important; }
-}
-```
-This must land in the same commit as the first transition, not later.
-
----
-
-#### VIS-09 — No radius, border-width or elevation scale
-
-**Category** Design system · **Severity** Medium · **Priority** P2 · **Affects** UI
-
-**Current.** Radius: `50%` (the dots) and `6px` (the scrollbar thumb). That is
-the complete set — every other surface in the application is a hard rectangle.
-Elevation: one shadow, `0 6px 20px rgba(0, 0, 0, .55)`, on `#menu`. Border
-width: `1px` everywhere except the 2 px canvas selection ring.
-
-The design file, by contrast, specifies a 26 px window/tab radius, 1 px `rx` on
-the inspector's small controls, and drop-shadow filters on both side panels
-(GEO-13).
-
-**Recommended.**
-```
---radius-1: 2px;   /* inputs, palette cells, small controls   */
---radius-2: 4px;   /* buttons, menu, popovers                 */
---radius-3: 8px;   /* dialogs / overlays if any appear        */
---border:   1px;
---border-strong: 2px;   /* focus ring, canvas selection       */
---elev-1: 0 1px 2px rgba(0,0,0,.4);        /* panels          */
---elev-2: 0 6px 20px rgba(0,0,0,.55);      /* menus, popovers */
-```
-Three radius steps is enough; more is decoration. Two elevations is enough,
-because the app has exactly two layers above the surface.
-
-**Note.** NAT-05 (done — see "Already completed") already made the context
-menu native, deleting the `#menu` box-shadow that would have been
-`--elev-2`'s only consumer — introduce the token only once something else
-needs it, rather than pre-emptively.
 
 ---
 
@@ -2031,7 +2049,8 @@ are already announced; what A11Y-05 did not add is any expiry.
 
 **Recommended.**
 - Transient confirmations ("saved", "imported 3 files", "undo") auto-clear
-  after ~4 s, with the transition from VIS-08.
+  after ~4 s, with the colour transition `#msg` already has (VIS-08, done —
+  see "Already completed").
 - **Errors do not auto-clear** — they persist until the next action, and they
   get an icon plus the `--danger` colour, not colour alone (a colour-only
   distinction fails WCAG 1.4.1).
@@ -2292,33 +2311,6 @@ custom definitions make the list long — flag as a follow-up, not now.
 
 ---
 
-#### UX-08 — Destructive actions have no confirmation and no undo affordance
-
-**Category** UX · **Severity** Medium · **Priority** P1 · **Affects** UX
-
-Two cases, both silent and both surprising:
-
-1. **`remove definition`** (`panel.js:281-293`) deletes the definition *and
-   every entity of that kind* in the level. A user who placed forty enemies and
-   clicks it loses all forty with no prompt and no indication of what happened.
-2. **Reducing the level height** (`Grid.setheight`, `grid.js:146-149`) splices
-   out every entity whose `pos[1] >= h * B`, silently. Typing `8` into the rows
-   field where there was `12` can delete entities the user cannot see.
-
-Both *are* undoable (`Undo.act` wraps them correctly), which is the mitigating
-factor — but the user is not told that anything happened.
-
-**Recommended.** Do not add a modal confirmation — that is friction on an
-undoable action. Instead:
-- **Report the consequence**: `removed 'goomba' and 40 entities · ⌘Z to undo`
-  in the status bar; `level shortened to 8 rows, 3 entities removed`.
-- **Warn before** the destructive variant, in-place: the rows field shows
-  `3 entities below row 8 will be removed` as a hint before commit.
-- Reserve real confirmation dialogs for genuinely irreversible actions. There
-  are currently none, which is a good property to keep.
-
----
-
 #### UX-09 — First run drops the user into an untitled void
 
 **Category** UX · **Severity** Medium · **Priority** P1 · **Affects** UX
@@ -2357,9 +2349,13 @@ widths, not the last directory, not zoom, not grid visibility.
 adding only once there are ≥4 real settings; the credible list is:
 grid overlay on/off, palette cell size 1×/2× (the `--cell` token this would
 flip between 1x and 2x already exists, GEO-07, done - see "Already
-completed"), editor font size,
+completed"), editor font size, and
 the recovery-snapshot interval (fixed at 30s today - done, see "Already
-completed", UX-10), and confirm-on-destructive-height-change (UX-08).
+completed", UX-10). A confirm-on-destructive-height-change toggle, floated
+here in an earlier draft, turned out not to be the right fix - UX-08 (done,
+see "Already completed") reports the consequence and warns in-place instead,
+per its own "do not add a modal confirmation" reasoning, so there is nothing
+left for a preference to gate.
 
 Store in `app.getPath('userData')/settings.json`, owned by main, exposed
 read/write through the preload. On macOS the item is
@@ -2506,52 +2502,6 @@ already shipped (see "Already completed") and are not repeated here.
 
 ---
 
-#### A11Y-02 — The DOM has no semantics
-
-**Category** Accessibility · **Severity** High · **Priority** P1 · **Affects** UI
-
-**Current.** `index.html` is 58 lines of `<div>`s and two `<aside>`s. The
-original audit found **zero** `role` or `aria-*` attributes anywhere in the
-application; A11Y-01 (done — see "Already completed") has since added
-`role="tablist"`/`role="tab"`/`aria-selected` to the tab strip and
-`role="listbox"`/`role="option"`/`aria-selected` to the file lists, since
-fixing keyboard reachability there meant giving those groups real semantics
-too - so those two items are done, listed under "Recommended" below with
-that noted rather than removed, since the rest of this finding's scope
-(headings, landmarks, the status bar, the inspector, the palette's own
-labelling) is still open. A screen reader today still encounters: an
-unlabelled title bar, unlabelled section headings, an unnamed canvas, and an
-inspector with no landmark of its own.
-
-**Recommended.** Correct elements first, ARIA only where HTML cannot express
-the pattern:
-- The tab strip's `role="tablist"` and the file lists' `role="listbox"` are
-  done (A11Y-01, above) - no HTML element expresses either pattern natively,
-  so both were legitimate ARIA. Still open: `<header>` for the title bar;
-  `<main>` for the stage (already `<main>` — good); `<aside>` for both panels
-  (already correct — good).
-- Each section header becomes a real heading (`<h2>`) and the list it labels
-  gets `aria-labelledby` pointing at it, so "scripts" and "midi" become
-  navigable landmarks.
-- The status bar's confirmation/error messaging gets `role="status"`/
-  `role="alert"` - done (A11Y-05, see "Already completed"). The persistent
-  cursor-position and warning-count fields next to it are deliberately not
-  live (A11Y-03's keyboard cursor is the case that actually needs position
-  announced, and only while it is in use).
-- `#props` gets `role="region" aria-label="Properties"` and its `h4`s become
-  real headings, so an inspector user can jump between sections.
-- The disabled `▶` gets `aria-disabled` and `aria-describedby` (VIS-13).
-
-**Done, and worth recording as the model to repeat:** the palette cells, file
-rows and tabs became real `<button>`s / properly-roled list items rather than
-gaining `role="button"` on a `<div>` (A11Y-01, above) - using the right
-element instead of compensating with ARIA on the wrong one, exactly as this
-finding recommends. Anything still built as a bare clickable `<div>` (the
-section headers, `#warnings` in the status bar) should follow the same
-pattern rather than take a `role` shortcut.
-
----
-
 #### A11Y-03 — The canvas is inaccessible and unnamed
 
 **Category** Accessibility · **Severity** High · **Priority** P2 · **Affects** UI, UX
@@ -2624,15 +2574,15 @@ response to OS text-size settings — is unaffected by either change.
 
 **Category** Accessibility · **Severity** Low · **Priority** P2 · **Affects** UI
 
-**Current.** No `prefers-reduced-motion` (vacuous today, mandatory with VIS-08),
-no `prefers-contrast`, no `forced-colors`. Windows High Contrast mode is
-untested and will produce a broken result: Chromium force-overrides CSS colours
-but cannot touch canvas pixels, so the chrome would flip to the system palette
-while the canvas stays purple, and the canvas-drawn selection ring (VIS-16)
-would become invisible.
+**Current.** `prefers-reduced-motion: reduce` is done - it shipped in the same
+commit as the first transition, as VIS-08 itself required (done — see
+"Already completed"). Still missing: `prefers-contrast`, `forced-colors`.
+Windows High Contrast mode is untested and will produce a broken result:
+Chromium force-overrides CSS colours but cannot touch canvas pixels, so the
+chrome would flip to the system palette while the canvas stays purple, and
+the canvas-drawn selection ring (VIS-16) would become invisible.
 
-**Recommended.** Three media queries, each small:
-- `prefers-reduced-motion: reduce` → durations to ~0 (VIS-08).
+**Recommended.** Two media queries remain, each small:
 - `prefers-contrast: more` → `--control-border` to `--fg`, focus ring to 3 px,
   disabled text to ≥4.5:1, canvas selection stroke thickened (VIS-16).
 - `forced-colors: active` → `forced-color-adjust: none` on the canvas and the
@@ -2924,7 +2874,7 @@ window and menu layers.
 | Scrollbars | Respect the overlay/classic setting; `scrollbar-gutter: stable` so layout does not depend on it — done, see "Already completed" | NAT-20 |
 | Dialogs | "Don't Save", not "Discard"; sheet-parented; `detail` added — done, see "Already completed" | NAT-21 |
 | Distribution | `hardenedRuntime`, code signing, notarisation — without these an unsigned build is blocked by Gatekeeper. | NAT-07 |
-| Accessibility | VoiceOver reaches nothing today; native menus (NAT-05, done), real controls in the palette/file lists/tabs (A11Y-01, done) and the status bar's live region (A11Y-05, done) fix most of it at once — remaining: headings and landmarks (A11Y-02). | A11Y-02 |
+| Accessibility | Native menus (NAT-05), real controls in the palette/file lists/tabs (A11Y-01), the status bar's live region (A11Y-05), and headings/landmarks for the title bar, section headers and inspector (A11Y-02) are all done — see "Already completed". VoiceOver was reaching almost nothing before any of this; the canvas itself is what remains (A11Y-03). | A11Y-03 |
 
 ### 5.2 Windows
 
@@ -2992,9 +2942,14 @@ completed"); `--side`/`--right`, the palette's column definition, and all
 six of `grid.js`'s remaining unnamed constants are done too (GEO-03, GEO-07,
 GEO-11 — see "Already completed").
 
+Row 3 (`.hdr`'s band height against the design's own 36px figure) is done too
+- see "Already completed", GEO-13: `--row-hdr`, twice the line box, now
+drives it - this table's own note that GEO-02 had already moved it to 26px
+(`--row-sm`) was itself out of date by the time this row was last touched, an
+inaccuracy corrected in the same pass that closed the row.
+
 | # | Value | Where | What should determine it | Finding |
 |---|---|---|---|---|
-| 3 | `.hdr` `24px` (now `--row-sm`, 26px — GEO-02, done) | `style.css:107` | Design says 36 px, still not adopted | GEO-13 |
 | 9 | `--props-h: 46%` | `style.css` | Content height, or the design's 47.5 % as the token's default - the splitter itself is done (GEO-04) | GEO-06 |
 | 11 | `.tab max-width: 260px` | `style.css:79` | `24ch` — a statement about filenames | GEO-08 |
 | 12 | `textarea height: 48px` | `style.css:208` | `calc(var(--line-box) * 3)` | GEO-08 |
@@ -3035,12 +2990,19 @@ are defined and consumed now, exactly per GEO-01's own implementation note
 that a token should arrive with the component that needs it, not before -
 the same note `--split`/`--scripts-h`/`--props-h` (GEO-04, done) followed too.
 
-Not yet consumed by anything (defined, waiting on the findings that will use
-them): `--radius-*`, `--elev-*` (VIS-09), `--dur-*`/`--ease` (VIS-08),
-`--z-*` (no finding currently needs more than one layer above the surface).
-`--side`/`--right` are `clamp()`-based percentages now, not fixed literals
-(GEO-03, done — see "Already completed"); `--sprite`/`--cell` were added for
-the same commit that gave the palette integer-sized cells (GEO-07, done).
+`--radius-*`, `--elev-*` (VIS-09) and `--dur-*`/`--ease` (VIS-08) are consumed
+now too — see "Already completed" for both; `--radius-1` was already
+consumed (the generic `button` rule), so what those two findings actually
+closed was `--radius-2` (a standalone action button, including the active
+tab's own flare, GEO-13), `--elev-1` (both side panels, GEO-13) and every
+`--dur-*` transition. `--radius-3` and `--elev-2` stay unconsumed
+deliberately — there is still no dialog or popover that would need them.
+`--z-*` is the one token still genuinely waiting on a second layer above the
+surface; no finding currently needs it. `--side`/`--right` are `clamp()`-based
+percentages now, not fixed literals (GEO-03, done — see "Already completed");
+`--sprite`/`--cell` were added for the same commit that gave the palette
+integer-sized cells (GEO-07, done); `--row-hdr` was added for the section
+headers' own 36px band (GEO-13, done).
 
 JavaScript-side constants in `grid.js` are now fully named: `FITPAD`,
 `GRIDMIN`, `SELW`, `BARSLOP` (GEO-11, done — see "Already completed") join
@@ -3077,8 +3039,8 @@ the finding that resolves it.
 | **Colour** | Fixed — one `:root` definition, consumed by `grid.js`'s canvas and `code.js`'s Monaco theme through `tokens.js` instead of each restating it (VIS-04, done — see "Already completed") | — |
 | **Contrast** | Fixed — resting and accent text, control borders, and disabled text (VIS-01, VIS-02, VIS-07, all done — see "Already completed"); `.mi.off` is moot, its `<div>` menu deleted by NAT-05 | — |
 | **Borders** | `--line` is now split from `--control-border` (VIS-02, done); still one width only, no distinct strong/emphasis weight | Add `--border-strong` |
-| **Radius** | `50%` and `6px`, nothing else; design specifies 26 px window/tab radius | Three-step radius scale; adopt the tab flare (VIS-09, GEO-13) |
-| **Shadows** | Exactly one, on the context menu, which is about to become native | Two-step elevation; panel `--elev-1` per the design's filters (VIS-09, GEO-13) |
+| **Radius** | Fixed — `--radius-1` (inputs, palette cells, inline controls) and `--radius-2` (standalone action buttons, and the active tab's own corner flare) both have real consumers now; `--radius-3` stays unconsumed, deliberately, until a dialog or popover exists (VIS-09, GEO-13, done — see "Already completed") | — |
+| **Shadows** | Fixed — both side panels carry `--elev-1`, per the design's own drop-shadow filters; `--elev-2` stays unconsumed, deliberately, for the same reason as `--radius-3` (VIS-09, GEO-13, done — see "Already completed") | — |
 | **Scrollbars** | Fixed — all five containers now share one tokenised treatment with `scrollbar-gutter: stable` (NAT-20/GEO-09, done — see "Already completed"); Monaco's own scrollbar keys are still VS Code's defaults | Monaco keys set (VIS-18) |
 | **Hover** | Fixed — every button, row and tab gets a `--surface-hover` tint, text unchanged (VIS-07, done — see "Already completed") | — |
 | **Active / pressed** | Fixed — a deeper `--surface-active` tint on `:active` (VIS-07, done — see "Already completed") | — |
@@ -3098,9 +3060,9 @@ the finding that resolves it.
 | **Forms** | Borders now visible via `--control-border` (VIS-02, done); still: a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `appearance: none` on the select control only; one shared `.field` class (NAT-16, VIS-15) |
 | **Buttons** | One shared hover/active/disabled treatment now (VIS-07, done — see "Already completed"); still no border except `.act`, and `.acts`/`.hdr button`/`#add` remain differently sized | One button component with size variants (GEO-08) |
 | **Resizers / splitters** | Fixed — four keyboard-operable splitters (GEO-04, done — see "Already completed") | — |
-| **Panels** | Widths are proportional, clamped and user-resizable now, and the file manager's own split is content-driven by default (GEO-03/GEO-04/GEO-05, done — see "Already completed"); still flat, no elevation, and not collapsible | Elevation, collapsible sections (VIS-09) |
+| **Panels** | Widths are proportional, clamped and user-resizable now, the file manager's own split is content-driven by default, and both carry the design's own drop-shadow now too (GEO-03/GEO-04/GEO-05, VIS-09/GEO-13, done — see "Already completed"); still not collapsible | Collapsible sections |
 | **Overlays** | NAT-05 (done) removed the app's only `z-index` along with the DOM context menu it belonged to; `--z-*` is defined (GEO-01, done) with nothing to convert yet | — |
-| **Animation** | None at all | Three tokens, applied to states and panels, with `prefers-reduced-motion` (VIS-08) |
+| **Animation** | Fixed — hover/active/selected tints, the focus ring and the inline rename field all transition now, with the mandatory `prefers-reduced-motion` companion in the same commit (VIS-08, done — see "Already completed") | — |
 | **Canvas indicators** | Purple-on-purple, no contrast guarantee, unreachable by forced colours | Two-tone strokes (VIS-16) |
 | **Missing assets** | Flat purple and maroon rectangles that read as blocks | Empty while loading; hatch + warning when genuinely missing (VIS-17) |
 | **Editor (Monaco)** | A fifth colour definition; unset keys leak VS Code blue into a purple app | Generate from tokens; set the leaking keys (VIS-18) |
@@ -3138,10 +3100,10 @@ BUG-06, shipped, see "Already completed"); delete-in-use offering reassignment
 instead of refusal (UX-13); MIDI export and metadata (UX-18).
 
 **Trust and recovery** — atomic saves, an honest dirty flag, save failures that
-are impossible to miss, a `.bak` on overwrite, crash-recovery snapshots, and
-playability warnings before the game rejects the level are all shipped
-(BUG-02, BUG-03, BUG-07, UX-10, BUG-11 — see "Already completed"). Still open:
-destructive actions that report what they did (UX-08).
+are impossible to miss, a `.bak` on overwrite, crash-recovery snapshots,
+playability warnings before the game rejects the level, and destructive
+actions that report what they did are all shipped (BUG-02, BUG-03, BUG-07,
+UX-10, BUG-11, UX-08 — see "Already completed").
 
 **Feedback** — status messages that expire, errors that do not, plus
 persistent size/entity-count/tool fields (VIS-14, UX-06 — the zoom field
@@ -3170,9 +3132,9 @@ still requires a pointer (A11Y-03).
 | 2.4.3 Focus Order | Fixed — roving tabindex gives the palette, file lists and tab strip one Tab stop each, in a defined title-bar-to-status-bar order | A11Y-01, done |
 | 2.4.7 Focus Visible | Fixed — global `:focus-visible` rule, nothing left to suppress it | VIS-06, done |
 | 2.5.8 Target Size | Fixed — `li` rows are 30 px (GEO-01, done); window controls are the OS's own (NAT-02, done); the `.tab` close glyph and `.hdr button` are padded to a 24px hit area too (A11Y-04, done) | A11Y-04, done |
-| 4.1.2 Name, Role, Value | Partial — the palette, file lists and tab strip now carry `role`/`aria-*` (A11Y-01, done); the rest of the application still has none | A11Y-02 |
+| 4.1.2 Name, Role, Value | Fixed — the palette, file lists and tab strip carry `role`/`aria-*` (A11Y-01); the title bar is a `<header>`, section headers are real `<h2>`s their lists point back to with `aria-labelledby`, and `#props` is a labelled region (A11Y-02) | A11Y-01, A11Y-02, done |
 | 4.1.3 Status Messages | Fixed — `#msg` carries `role="status"`, `App.fail()`'s error block carries `role="alert"` | A11Y-05, done |
-| 2.3.3 Animation from Interactions | N/A today; becomes required with VIS-08 | VIS-08, A11Y-07 |
+| 2.3.3 Animation from Interactions | Fixed — `prefers-reduced-motion: reduce` collapses every transition/animation to 1ms, shipped in the same commit as the first one | VIS-08, done |
 | System high contrast | Untested; will break canvas indicators | A11Y-07, VIS-16 |
 
 Native menus (NAT-05, done — see "Already completed") already deleted one
@@ -3181,10 +3143,12 @@ the palette, file rows and tabs' clickable `<div>`s with real controls
 (A11Y-01, done — see "Already completed") was the single largest remaining
 piece of keyboard, focus-order and semantics work; status and error messages
 reaching a screen reader (A11Y-05, done — see "Already completed") closed
-the announcements gap the same way. What is left is the canvas itself
-(A11Y-03, the one surface a parallel-DOM approach genuinely cannot cover),
-the rest of the DOM's semantics (A11Y-02) and system preferences (A11Y-06,
-A11Y-07).
+the announcements gap the same way, and giving the rest of the DOM real
+semantics - a `<header>`, real headings, a labelled inspector region
+(A11Y-02, done — see "Already completed") - closed the semantics gap outside
+the canvas. What is left is the canvas itself (A11Y-03, the one surface a
+parallel-DOM approach genuinely cannot cover) and system preferences
+(A11Y-06, A11Y-07).
 
 ---
 
@@ -3281,8 +3245,8 @@ relitigated.
 | Scrollbars | ✅ shipped - one tokenised treatment, `scrollbar-gutter: stable` (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | — |
 | Fonts | ✅ shipped - bundled, identically on all three platforms (VIS-05) | ✅ shipped (VIS-05) | ✅ shipped (VIS-05) | — |
 | High contrast / forced colours | ⚠️ Increase Contrast ignored | ❌ untested, will break | ⚠️ | A11Y-07 |
-| Reduced motion | n/a (no motion) → required with VIS-08 | same | same | VIS-08, A11Y-07 |
-| Screen reader | ⚠️ the palette, file lists and tab strip are now named and role-bearing (A11Y-01, shipped), and status/error messages are announced (A11Y-05, shipped); everything else VoiceOver reaches is still unlabelled | ⚠️ same for Narrator | ⚠️ same for Orca | A11Y-02 |
+| Reduced motion | ✅ shipped - `prefers-reduced-motion: reduce` collapses every transition/animation, landed in the same commit as the first one (VIS-08) | ✅ shipped (VIS-08) | ✅ shipped (VIS-08) | — |
+| Screen reader | ⚠️ the palette, file lists and tab strip are named and role-bearing (A11Y-01), status/error messages are announced (A11Y-05), and the title bar, section headers and inspector carry real semantics now too (A11Y-02, shipped — see "Already completed" for all three); the canvas itself is what VoiceOver still reaches nothing of | ⚠️ same for Narrator | ⚠️ same for Orca | A11Y-03 |
 | Notifications | ❌ | ❌ | ❌ | NAT-19 |
 | Full screen | ✅ shipped - a new View menu carries `role: 'togglefullscreen'`, closing the regression NAT-01's own menu opened by shipping without a View menu (UX-04) | ✅ shipped (UX-04) | ✅ shipped (UX-04) | — |
 | Quit / lifecycle | ✅ ⌘Q works (`role: 'appMenu'`, NAT-01); a hung/dirty renderer no longer wedges close (BUG-09, shipped) | ✅ shipped (BUG-09) | ✅ shipped (BUG-09) | — |
@@ -3333,10 +3297,10 @@ complete or verify - is the only item remaining in this tier.
 | NAT-16 | Native `<select>` among custom fields |
 | GEO-06, GEO-08 | List splits, one-offs (GEO-05 is shipped) |
 | GEO-10 | No vertical scrollbar |
-| VIS-03, VIS-08, VIS-09, VIS-10, VIS-11 | Design divergence, motion, radius/elevation, capitalisation, icons |
+| VIS-03, VIS-10, VIS-11 | Design divergence, capitalisation, icons |
 | VIS-14, VIS-15, VIS-16, VIS-18 | Status messages, inline `cssText`, canvas indicators, Monaco theme |
-| UX-01, UX-03, UX-05, UX-06, UX-08, UX-09, UX-15, UX-16 | Editing and navigation friction |
-| A11Y-02, A11Y-03, A11Y-06 | Semantics, canvas, scaling |
+| UX-01, UX-03, UX-05, UX-06, UX-09, UX-15, UX-16 | Editing and navigation friction |
+| A11Y-03, A11Y-06 | Canvas, scaling |
 | ARCH-04, ARCH-06 | Panel rebuilds, IPC shape |
 | PERF-02, PERF-07 | Layout thrash, startup paint |
 
@@ -3347,7 +3311,6 @@ complete or verify - is the only item remaining in this tier.
 | NAT-15 | System preference handling (contrast, forced colours) |
 | NAT-17 | Dock menu, JumpList tasks (About panel already shipped, NAT-01) |
 | NAT-19 | Feedback for long operations |
-| GEO-13 | Unadopted design proportions (window sizing, formerly GEO-12, is done — see "Already completed", NAT-10) |
 | VIS-13, VIS-17 | Playtest button communication; missing-texture swatches |
 | UX-02, UX-11, UX-13, UX-14, UX-17, UX-18 | Menu contents, preferences, in-use script deletion, silent script creation, numeric rounding, MIDI opacity |
 | A11Y-07, A11Y-08 | System accessibility preferences; colour-only states |
@@ -3434,8 +3397,10 @@ VIS-06) is done — see "Already completed". **VIS-05** (bundle JetBrains Mono
 five-state contract, applied to every interactive surface) are also done —
 see "Already completed" for both.
 
-8. **VIS-09 / VIS-08 / VIS-11 / VIS-10** radius and elevation, motion, icons,
-   capitalisation.
+8. **VIS-11 / VIS-10** icons, capitalisation. **VIS-09** (radius and
+   elevation) and **VIS-08** (motion, with its mandatory
+   `prefers-reduced-motion` companion) are done — see "Already completed" for
+   both.
 9. **NAT-20 / GEO-09** — done, see "Already completed": one scrollbar
    treatment across all five containers. **VIS-18** Monaco theme fully
    aligned with the surrounding chrome (its own colour duplication is
@@ -3482,10 +3447,10 @@ done — see "Already completed"; it was the largest single piece of work in
 this phase, now that native menus (NAT-05) and A11Y-01 together have deleted
 or fixed every inaccessible subsystem outside the canvas itself.
 
-19. **A11Y-02** semantics and landmarks. **A11Y-05** live regions is done —
-    see "Already completed". **A11Y-04** hit targets is done too - the `li`
-    row height piece (GEO-01) and the `.tab` close glyph/`.hdr button`
-    padding both shipped.
+19. **A11Y-05** live regions, **A11Y-04** hit targets - the `li` row height
+    piece (GEO-01) and the `.tab` close glyph/`.hdr button` padding both
+    shipped - and **A11Y-02** semantics and landmarks are all done, see
+    "Already completed".
 20. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
     already in place); **A11Y-06** scaling; **A11Y-07** system preferences;
     **A11Y-08** non-colour cues.
@@ -3500,12 +3465,13 @@ BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
     show-after-ready; **PERF-05** refresh granularity.
 22. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
     async I/O *if* measurement justifies it.
-23. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
+23. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-09 / UX-13 / UX-14 /
     UX-15 / UX-17** — the remaining workflow items, each independent. UX-03 is
     narrower than originally scoped: the menu items themselves already exist
     (NAT-01), only per-action labelling is left. UX-15 is also narrower: the
     contrast and MIDI-collision problems it cited are already fixed (VIS-01,
-    BUG-06).
+    BUG-06). **UX-08** destructive-action reporting is done - see "Already
+    completed".
 24. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
     NAT-17 is narrower too: the About panel already shipped (NAT-01), only the
     Dock menu and JumpList tasks are left.
@@ -3532,8 +3498,9 @@ unblocked NAT-03 and NAT-04 (both now done); NAT-05 deleted an entire
 inaccessible subsystem rather than fixing it in place, independently of the
 rest of this graph; NAT-11 unblocked GEO-10 (the wheel now scrolls) and named
 two of GEO-11's eight constants; A11Y-01 (also done, needing nothing from
-this graph) unblocked A11Y-02, A11Y-03 and A11Y-04 (also since done, needing
-nothing further from this graph), none of which depended on tokens either;
+this graph) unblocked A11Y-02, A11Y-04 (both also since done, needing nothing
+further from this graph) and A11Y-03, none of which depended on tokens
+either;
 BUG-12 and NAT-13 each shipped independently, needing nothing
 from this graph and unblocking nothing on it; **GEO-01 + VIS-04** (the token
 block - spacing, rows, type, radius, elevation, motion, z-index, colour
@@ -3541,12 +3508,14 @@ consolidation, folding in GEO-02's and GEO-09's asks) is done and unblocked
 exactly what this graph said it would: NAT-20 and A11Y-05 both shipped
 straight off it, PERF-01 shipped independently of it (the drag hot path is a
 pure-JS fix, not a token consumer), and GEO-07 and GEO-03 both then shipped
-straight off the `--sprite`/`--space-*`/`--scrollbar` tokens it provided;
-VIS-08/VIS-09/GEO-08/VIS-18/NAT-15's forced-colours work remain open, now
-genuinely unblocked rather than waiting on a foundation that does not exist
-yet (VIS-07 was one of them and has since shipped, also needing nothing
-further from this graph); PERF-04 and GEO-11 (grid.js's own remaining unnamed
-constants) each shipped independently, needing nothing from this graph.
+straight off the `--sprite`/`--space-*`/`--scrollbar` tokens it provided, and
+VIS-08/VIS-09 both then shipped straight off the `--dur-*`/`--radius-*`/
+`--elev-*` tokens it provided, genuinely unblocked rather than waiting on a
+foundation that did not exist yet (VIS-07 was one of them and had already
+shipped, also needing nothing further from this graph); GEO-08/VIS-18/
+NAT-15's forced-colours work remain open on the same basis; PERF-04 and
+GEO-11 (grid.js's own remaining unnamed constants) each shipped
+independently, needing nothing from this graph.
 ```
 
 ---
@@ -3636,10 +3605,10 @@ demonstrably true. Each is checkable, not a matter of opinion.
       canvas draw calls and `code.js`'s `THEME` both consume that object;
       verified with the probe harness: `Tokens` matches every `:root` colour
       it names, and `THEME.colors['editorCursor.foreground'] === Tokens.acc`.
-      Radius/elevation/motion/z-index still have no consumer, so nothing
-      restates them either - VIS-08/VIS-09 are what will; the colour tokens
-      this box is actually about have a new consumer, VIS-07, done - see
-      "Already completed")
+      Radius, elevation and motion have real consumers now too - VIS-07's
+      colour tokens, VIS-08's motion and VIS-09's radius/elevation, all done,
+      see "Already completed" - leaving `z-index` the one token still
+      genuinely waiting on a second layer above the surface)
 - [x] The app renders in JetBrains Mono, bundled, identically on all three
       platforms. (VIS-05 — verified with the probe harness's canvas metrics
       probe: "JetBrains Mono" now measures 93.6px against the fallback
@@ -3660,7 +3629,13 @@ demonstrably true. Each is checkable, not a matter of opinion.
       `::-webkit-scrollbar` rule and `scrollbar-gutter: stable` on the four
       vertical ones; verified with the probe harness: `scrollbarGutter` reads
       `"stable"` on all four)
-- [ ] Motion is tokenised and honours `prefers-reduced-motion`.
+- [x] Motion is tokenised and honours `prefers-reduced-motion`. (VIS-08 —
+      hover/active/selected tints, the focus ring, the inline rename field
+      and the status message all transition at `--dur-fast`/`--dur`; the
+      mandatory `@media (prefers-reduced-motion: reduce)` companion landed in
+      the same commit, collapsing every duration to 1ms. Verified with the
+      probe harness: `getComputedStyle()` on a button and a tab both report a
+      `0.09s` transition duration)
 - [ ] Every list has an empty state; every error has an icon, a colour and a
       message that persists until acted on. (The empty-state half is done —
       VIS-12, see "Already completed" — a `no scripts yet · new script` /
