@@ -641,8 +641,18 @@ body.text #right { display: none; }
 }
 /* VIS-08: the status message swaps between an ordinary confirmation and an
    error often enough (save, undo, a failed rename) that the colour change is
-   worth tracking rather than an instant snap. */
-#msg { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; transition: color var(--dur) var(--ease); }
+   worth tracking rather than an instant snap. VIS-14: a border, not another
+   18px gap, marks it as a different *kind* of field from cursor/zoom/dims/
+   entities/tool - transient, where those are persistent - so the two groups
+   read as separate rather than one long run of five equally-weighted facts. */
+#msg {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	border-left: 1px solid var(--line);
+	padding-left: var(--space-5);
+	transition: color var(--dur) var(--ease);
+}
 #msg.bad { color: var(--danger); }
 #warnings:empty { display: none; }
 #warnings { color: var(--danger); cursor: pointer; }

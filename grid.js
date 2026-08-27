@@ -405,6 +405,7 @@ Grid.draw = function ()
 	Grid.clamp();
 	Grid.syncbar();
 	App.zoom(Math.round(Grid.cam.z * 100));
+	App.stats(W + '×' + Grid.h, elist().length);	/* VIS-14 */
 
 	const cw = Grid.cv.width, ch = Grid.cv.height;
 	const z = Grid.cam.z * Grid.dpr;

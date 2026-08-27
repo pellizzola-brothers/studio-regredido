@@ -17,7 +17,7 @@
 	<div id="tablist"></div>
 	<button id="add" title="New Lua script">+</button>
 	<div class="drag grow"></div>
-	<button id="run" class="run" disabled
+	<button id="run" class="run" disabled aria-disabled="true"
 		title="Playtest is inert: the game cannot load .lvl archives yet (game/todo.txt 3.1)">&#9654;</button>
 </div>
 
@@ -57,7 +57,7 @@
 	</aside>
 </div>
 
-<div id="status"><span id="cursor"></span><button id="zoom" title="Zoom"></button><span id="warnings"></span><span id="msg" role="status" aria-atomic="true"></span></div>
+<div id="status"><span id="cursor"></span><button id="zoom" title="Zoom"></button><span id="dims"></span><span id="entcount"></span><span id="tool"></span><span id="warnings"></span><span id="msg" role="status" aria-atomic="true"></span></div>
 
 <script src="node_modules/monaco-editor/min/vs/loader.js"></script>
 <script src="catalog.js"></script>

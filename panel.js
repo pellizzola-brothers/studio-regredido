@@ -103,7 +103,21 @@ Panel.palette = function ()
 	items.push(add);
 
 	roving(el, items, palcols(el));
+	App.tool(toolname());
 };
+
+/* UX-06: the same display name each palette cell already uses for its own
+ * title/aria-label - block 0 is "air (eraser)", a plain block is its own
+ * catalog name, and an entity or item is its own id, "(custom)" appended
+ * for a definition the catalog does not know about (customdefs(), above). */
+function toolname()
+{
+	const t = Grid.tool;
+
+	if (t.kind === 'block')
+		return t.id === 0 ? 'air (eraser)' : ((tiles.get(t.id) || {}).name || 'unknown');
+	return entdefs.has(t.id) ? t.id : t.id + ' (custom)';
+}
 
 function group(parent, name)
 {
@@ -214,7 +228,7 @@ function levelview(p)
 			esc(b.id) + '</option>').join('') + '</select>' +
 		'<h4>size</h4>' +
 		'<div class="row">' +
-			'<label>width<input value="' + W + '" disabled></label>' +
+			'<label>width<input value="' + W + '" disabled aria-disabled="true"></label>' +
 			'<label>rows<input id="p_rows" type="number" min="1" max="999" value="' + Grid.h + '"></label>' +
 		'</div>' +
 		'<p class="hint" id="p_rows_hint"></p>' +
@@ -265,7 +279,7 @@ function entityview(p, e)
 			'<label>y<input id="p_y" type="number" step="' + B + '" value="' + e.pos[1] + '"></label>' +
 		'</div>' +
 		'<label>cell<input id="p_cell" value="' + Math.floor(e.pos[0] / B) + ', ' +
-			Math.floor(e.pos[1] / B) + '" disabled></label>' +
+			Math.floor(e.pos[1] / B) + '" disabled aria-disabled="true"></label>' +
 		'<h4>script</h4>' +
 		'<select id="p_script">' + scripts(e.def).map(v =>
 			'<option' + (v === script(e.def) ? ' selected' : '') + '>' + esc(v) +

@@ -51,11 +51,31 @@ App.syncmenu = function ()
 	});
 };
 
+/* VIS-14: a transient confirmation used to sit there for the rest of the
+ * session, indistinguishable in permanence from an actual error. A success
+ * auto-clears after ~4s, with the colour transition #msg already has
+ * (VIS-08); an error persists until the next action, per the finding's own
+ * text, and never relies on colour alone - a small aria-hidden glyph (the
+ * message text itself, which role="status" already announces, carries the
+ * meaning for a screen reader) plus the existing --danger colour. */
+let saytimer = null;
 App.say = function (m, bad)
 {
 	const el = $('msg');
-	el.textContent = m || '';
+
+	clearTimeout(saytimer);
+	el.textContent = '';
 	el.classList.toggle('bad', !!bad);
+	if (bad && m) {
+		const icon = document.createElement('span');
+		icon.textContent = '⚠';
+		icon.setAttribute('aria-hidden', 'true');
+		el.append(icon, ' ' + m);
+	} else {
+		el.textContent = m || '';
+		if (m)
+			saytimer = setTimeout(() => { el.textContent = ''; }, 4000);
+	}
 };
 
 App.status = function (cx, cy)
@@ -64,12 +84,30 @@ App.status = function (cx, cy)
 		? cx + ', ' + cy : '';
 };
 
+/* VIS-14: level dimensions and entity count had nowhere to live either.
+ * Grid.draw() calls this once per frame, the same place App.zoom() already
+ * gets its own readout from - cheap (two textContent writes) and correct
+ * without hunting down every one of the several places that add or remove
+ * an entity. */
+App.stats = function (dims, n)
+{
+	$('dims').textContent = dims;
+	$('entcount').textContent = n + (n === 1 ? ' entity' : ' entities');
+};
+
 /* UX-04: the only zoom feedback used to be none at all - wheel-only, with no
  * numeric readout and no command beyond it.  Grid.draw() reports the current
  * percentage on every frame; clicking it pops the same native quick-menu
  * (main.js's 'menu:zoom' handler, NAT-05's pattern) the View menu's Zoom
  * commands also dispatch through. */
 App.zoom = function (pct) { $('zoom').textContent = pct + '%'; };
+
+/* UX-06: the only feedback for which tool is about to paint was a 1px border
+ * on one of 30-odd similar palette cells - easy to miss, and no feedback at
+ * all for a keyboard user who has tabbed past the palette. Panel.palette()
+ * calls this with the newly-selected tool's own display name on every
+ * change, the same name the palette cell itself already shows as a tooltip. */
+App.tool = function (name) { $('tool').textContent = 'tool: ' + name; };
 
 /* Semantic warnings (BUG-11) never block a save - lvl.js's review() only
  * says what the game would trip on: missing start/end, dangling script
@@ -116,7 +154,13 @@ App.fail = function (err)
 	 * this function recreates on every failure. */
 	d.setAttribute('role', 'alert');
 	d.setAttribute('aria-atomic', 'true');
-	d.textContent = err;
+	/* A11Y-08: the same non-colour cue #msg's own error state carries - a
+	 * screen reader already gets role="alert" above; this is for a sighted
+	 * user who cannot rely on --danger alone. */
+	const icon = document.createElement('span');
+	icon.textContent = '⚠';
+	icon.setAttribute('aria-hidden', 'true');
+	d.append(icon, ' ' + err);
 	$('props').prepend(d);
 	App.say(err.split('\n')[0], true);
 };
