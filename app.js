@@ -666,9 +666,13 @@ function keys(e)
 	if (App.tab !== 'level' || e.target !== Grid.cv)
 		return;
 	if (e.key === 'Escape') {
-		Grid.sel = -1;
-		Panel.inspect();
-		Grid.redraw();
+		/* UX-12: a gesture in progress is cancelled and reverted; only with
+		 * nothing open does Escape fall back to a plain deselect. */
+		if (!Grid.cancel()) {
+			Grid.sel = -1;
+			Panel.inspect();
+			Grid.redraw();
+		}
 	} else if ((e.key === 'Delete' || e.key === 'Backspace') && Grid.sel >= 0) {
 		Undo.act(() => {
 			App.doc.json.level.entities.splice(Grid.sel, 1);
@@ -730,6 +734,21 @@ addEventListener('DOMContentLoaded', () => {
 			addscript();
 		else if (a.action === 'importmidi')
 			addmidi();
+		/* NAT-12: the canvas menu's own two actions. `a.hit` is the entity
+		 * index the click was over, captured at press time (grid.js). */
+		else if (a.action === 'canvasdelete' && a.hit >= 0) {
+			Undo.act(() => {
+				App.doc.json.level.entities.splice(a.hit, 1);
+				if (Grid.sel === a.hit)
+					Grid.sel = -1;
+				else if (Grid.sel > a.hit)
+					Grid.sel--;
+				App.touch();
+			});
+			Panel.inspect();
+			Grid.redraw();
+		} else if (a.action === 'fitview')
+			Grid.fit();
 	});
 	/* Clicking the warning count shows the level's own inspector view, where
 	 * the list lives - clear any entity/definition selection standing in the

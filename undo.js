@@ -94,6 +94,21 @@ Undo.end = function ()
 		App.syncmenu();
 };
 
+/* UX-12: abort the step currently open, reverting whatever it had already
+ * applied, without ever recording it in history - used when a gesture is
+ * cancelled mid-flight rather than completed at mouseup. Reuses apply()
+ * against the step's own 'before' shot, exactly like undoing it would, since
+ * an aborted step and an undone one restore the document the same way. */
+Undo.cancel = function ()
+{
+	const s = Undo.step;
+
+	if (!s)
+		return;
+	Undo.step = null;
+	apply(s, 'before');
+};
+
 /* Run fn as a single undoable step. */
 Undo.act = function (fn)
 {

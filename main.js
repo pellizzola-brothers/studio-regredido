@@ -270,6 +270,23 @@ ipcMain.on('menu:row', (e, ctx) => {
 		return;
 	const send = action => () =>
 		win.webContents.send('rowcmd', Object.assign({action}, ctx));
+
+	/* NAT-12: the canvas's own menu, reached now by a right click that never
+	 * dragged (grid.js). Only real, already-implemented actions are on it -
+	 * deleting the clicked entity and fitting the view - rather than the
+	 * audit's fuller wish list (duplicate, toggle grid), which are features
+	 * that do not exist yet and are out of this finding's own scope. It does
+	 * not fall through to the "new script"/"import midi" pair every other
+	 * menu carries below - neither belongs to a right click on the level. */
+	if (ctx.kind === 'canvas') {
+		Menu.buildFromTemplate([
+			{label: 'delete entity', enabled: ctx.hit >= 0, click: send('canvasdelete')},
+			{type: 'separator'},
+			{label: 'fit view', click: send('fitview')}
+		]).popup({window: win});
+		return;
+	}
+
 	const items = [];
 
 	if (ctx.kind === 'script') {

@@ -15,7 +15,7 @@ const Grid = {
 	tool: {kind: 'block', id: 2},	/* what the palette has selected */
 	sel: -1,			/* index into level.entities, or -1 */
 	hov: {x: -1, y: -1},
-	pan: null, paint: -1, last: null, moving: false,
+	pan: null, paint: -1, last: null, moving: false, rdown: null,
 	need: false, rsz: false, fitted: false, dpr: 1
 };
 
@@ -94,6 +94,9 @@ Grid.init = function (cv)
 	cv.addEventListener('contextmenu', e => e.preventDefault());
 	addEventListener('mousemove', onmove);
 	addEventListener('mouseup', onup);
+	/* UX-12: alt-tabbing away mid-drag left the gesture live forever, since
+	 * onup() is only ever reached by a mouseup. */
+	addEventListener('blur', Grid.cancel);
 	watchdpr();
 };
 
@@ -567,19 +570,16 @@ function ondown(ev)
 
 	const hit = entat(c.x, c.y);
 
-	if (ev.button === 2) {				/* right: remove */
-		Undo.begin();
-		if (hit >= 0) {
-			elist().splice(hit, 1);
-			Grid.sel = -1;
-			App.touch();
-			App.inspect();
-		} else {
-			Grid.paint = 0;
-			Grid.last = c;
-			setblock(c.x, c.y, 0);
-		}
-		Grid.redraw();
+	/* NAT-12: a right press no longer erases on its own - only a genuine
+	 * right-*drag* does (onmove() converts it once the pointer actually
+	 * moves). A press that never moves is a click, resolved on mouseup into
+	 * the canvas context menu instead. On macOS, Ctrl+click arrives as this
+	 * same button-2 event - the single-button-mouse convention for reaching
+	 * a context menu - so it must never erase regardless of any subsequent
+	 * movement. */
+	if (ev.button === 2) {
+		Grid.rdown = {x: ev.clientX, y: ev.clientY, c: c, hit: hit,
+			noerase: ev.ctrlKey && api.platform === 'darwin'};
 		return;
 	}
 	if (ev.button !== 0)
@@ -624,6 +624,27 @@ function onmove(ev)
 {
 	const c = at(ev);
 
+	if (Grid.rdown) {
+		if (Grid.rdown.noerase)
+			return;			/* Ctrl+click never erases, moved or not */
+		if (Math.hypot(ev.clientX - Grid.rdown.x, ev.clientY - Grid.rdown.y) < 3)
+			return;			/* not a drag yet */
+		/* The press just became a genuine erase-drag: apply it from the
+		 * cell the press itself was over, then fall through so this same
+		 * move also strokes to the current cell. */
+		Undo.begin();
+		if (Grid.rdown.hit >= 0) {
+			elist().splice(Grid.rdown.hit, 1);
+			Grid.sel = -1;
+			App.touch();
+			App.inspect();
+		} else {
+			Grid.paint = 0;
+			Grid.last = Grid.rdown.c;
+		}
+		Grid.rdown = null;
+	}
+
 	Grid.cursor(c);
 	if (Grid.pan) {
 		Grid.cam.x = Grid.pan.cx - (ev.clientX - Grid.pan.x) / Grid.cam.z;
@@ -664,10 +685,27 @@ function onmove(ev)
 	}
 }
 
+/* NAT-12: a right press that reaches mouseup without ever converting into an
+ * erase-drag (onmove(), above) was a plain click - the operation the audit
+ * says the canvas has never offered a menu for. Only what already has a real
+ * implementation is on it: deleting the entity under the click, and fitting
+ * the view. `hit` is the entity index at *press* time, sent along so the
+ * main-process handler can act on it directly - the same "capture now, act
+ * later" shape NAT-05's row menus already use, for the same reason (the
+ * popup is asynchronous and the selection could in principle change first). */
+function canvasmenu(rdown)
+{
+	api.rowmenu({kind: 'canvas', hit: rdown.hit});
+}
+
 function onup()
 {
 	const moved = Grid.moving;
 
+	if (Grid.rdown) {
+		canvasmenu(Grid.rdown);
+		Grid.rdown = null;
+	}
 	Grid.pan = null;
 	Grid.paint = -1;
 	Grid.last = null;
@@ -680,3 +718,23 @@ function onup()
 	if (moved)
 		App.inspect();
 }
+
+/* UX-12: Escape (and losing window focus) mid-gesture must both stop the
+ * gesture and revert whatever it had already applied - previously Escape only
+ * cleared Grid.sel, so onmove()'s move branch silently stopped applying to a
+ * still-live drag and left the Undo step open until mouseup, which
+ * CLAUDE.md's undo rule says corrupts whatever step runs next. Returns
+ * whether a gesture was actually open, so callers can fall back to a plain
+ * deselect when there was nothing to cancel. */
+Grid.cancel = function ()
+{
+	if (!Undo.step)
+		return false;
+	Undo.cancel();
+	Grid.pan = null;
+	Grid.paint = -1;
+	Grid.last = null;
+	Grid.moving = false;
+	Grid.cursor(Grid.hov);
+	return true;
+};

@@ -162,6 +162,14 @@ today) must call `Undo.grid()` with before and after copies, because a cell
 diff cannot describe a resize. `Undo` calls `App.refresh()` afterwards, which
 rebuilds every view and re-syncs Monaco's models through `Code.sync()`.
 
+A step left open by `Undo.begin()` can also be abandoned instead of finished:
+`Undo.cancel()` reverts whatever it had already applied (reusing `apply()`
+against the step's own `before` shot) and discards it without ever pushing it
+onto `Undo.past`. `Grid.cancel()` (`grid.js`) is the gesture-level wrapper —
+called when Escape or a `blur` interrupts a still-open drag or paint stroke —
+so a cancelled gesture can never leave a step open for the next unrelated edit
+to be folded into.
+
 Ctrl+Z is bound only while the Level Editor tab is active; inside a script tab
 it belongs to Monaco, which keeps its own text history. This is enforced by
 `menu.js`: the Edit menu's Undo/Redo items are disabled whenever the active
@@ -257,6 +265,14 @@ additions were needed for the app to be usable:
   bare click.
 - Inline renaming, since Electron does not implement `window.prompt`.
 - A horizontal scrollbar under the canvas.
+- A context menu on the canvas itself, opened by a right click that never
+  dragged — the same `menu:row`/`rowcmd` round trip as the file manager's,
+  under `kind: 'canvas'`. A right press that *does* drag still erases, as
+  before; on macOS, Ctrl+click arrives as the same button-2 event and never
+  erases regardless of movement, since it is the platform's own reflex for
+  reaching a context menu. The menu itself only carries actions that already
+  exist (delete the clicked entity, fit the view) — see `grid.js`'s
+  `canvasmenu()`.
 
 The design's inspector shows `health`, `damage`, `hit position`. The schema has
 no home for per-entity properties — an entity is `{def, pos}` — so the
