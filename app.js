@@ -338,7 +338,9 @@ function edit(li, b, old, isscript)
 	const inp = document.createElement('input');
 
 	inp.value = b.textContent;
-	inp.style.cssText = 'width:100%;border:1px solid var(--acc);background:var(--surface-raised);color:var(--fg);font:inherit';
+	/* VIS-08: a bare fade-in marks the moment this field replaces the row's
+	 * static label, rather than the label just vanishing and this appearing. */
+	inp.style.cssText = 'width:100%;border:1px solid var(--acc);background:var(--surface-raised);color:var(--fg);font:inherit;animation:pb-fade-in var(--dur) var(--ease)';
 	li.replaceChild(inp, b);
 	inp.focus();
 	inp.select();

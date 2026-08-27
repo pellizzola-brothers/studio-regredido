@@ -5,9 +5,10 @@
    spacing, row heights, radius, elevation, motion and z-index alongside the
    colours - consumed by grid.js and code.js through tokens.js rather than
    each restating its own copy (POLISH.md). Not every token here has a
-   consumer yet (VIS-08's motion and VIS-09's radius/elevation are still
-   open); they are defined now so the components that need them later have a
-   scale to join instead of inventing their own. */
+   consumer yet: `--radius-3` and `--elev-2` are still waiting on a dialog or
+   popover that would actually need them (VIS-09), and `--z-*` is waiting on
+   a second layer above the surface; they are defined now so the components
+   that need them later have a scale to join instead of inventing their own. */
 :root {
 	/* ---- surfaces ---- */
 	--frame: #1c1d20;
@@ -70,6 +71,12 @@
 	--row-sm: calc(var(--line-box) + var(--space-2) * 2);	/* 26px */
 	--row:    calc(var(--line-box) + var(--space-3) * 2);	/* 30px */
 	--row-lg: calc(var(--line-box) + var(--space-4) * 2);	/* 34px - the title bar and tab strip */
+	/* GEO-13: the design's own section-header band is 36px (122 -> 158 in
+	   Pellizzola Brothers.svg), which the implementation had never adopted -
+	   twice the line box, the same "N x line-box" statement the other three
+	   row tokens already make, and a genuinely different band from --row-sm
+	   (which the status bar keeps, unrelated to a panel header). */
+	--row-hdr: calc(var(--line-box) * 2);			/* 36px */
 
 	/* ---- sprites: every texture in the library is 32x32 (GEO-07) ---- */
 	--sprite: 32px;
@@ -97,18 +104,31 @@
 	--right-max: 320px;
 	--right: clamp(var(--right-min), 13%, var(--right-max));
 	/* GEO-04: the splitter track width/height, and the two in-panel splits a
-	   splitter drag (layout.js) also overwrites directly - #scripts/#midis
-	   and #palette/#props have no content-driven min/max token of their own
-	   (that is GEO-05/GEO-06, still open), so these are plain percentages
-	   with a floor and ceiling enforced in JS instead. */
+	   splitter drag (layout.js) also overwrites directly - #palette/#props
+	   has no content-driven min/max token of its own yet (that is GEO-06,
+	   still open; #scripts/#midis got one, GEO-05, done), so these are plain
+	   percentages with a floor and ceiling enforced in JS instead. */
 	--split: 8px;
 	--scripts-h: 60%;
 	--props-h: 46%;
 
-	/* ---- borders, radius, elevation: defined, not yet consumed (VIS-09) ---- */
+	/* ---- borders, radius, elevation (VIS-09) ---- */
 	--border: 1px;
 	--border-strong: 2px;
+	/* radius-1: buttons and inputs generally (the generic `button` rule,
+	   #props's fields below) - including the palette cells, which are real
+	   <button>s (A11Y-01) and so already inherit it without a rule of their
+	   own. radius-2: the standalone action buttons - the hotbar, the
+	   inspector's own .act, the two header "+"s, and the active tab's own
+	   flare (GEO-13) - reused rather than a fourth step, since "the largest
+	   step we have" is exactly what a flare wants. radius-3: still waiting on
+	   a dialog or popover that would actually need it - there are none;
+	   native menus (NAT-05) can't be styled from here either. */
 	--radius-1: 2px; --radius-2: 4px; --radius-3: 8px;
+	/* elev-1: the two side panels, per the design's own drop-shadow filters
+	   (GEO-13). elev-2: still waiting on an in-app menu or popover - the
+	   context menu that would have been its only consumer is native now
+	   (NAT-05) - introduced for when one exists, not pre-emptively. */
 	--elev-1: 0 1px 2px rgba(0, 0, 0, .4);
 	--elev-2: 0 6px 20px rgba(0, 0, 0, .55);
 
@@ -117,7 +137,14 @@
 	--scrollbar-pad: 3px;
 	--scrollbar-thumb: calc(var(--scrollbar) - var(--scrollbar-pad) * 2);
 
-	/* ---- motion: defined, not yet consumed - zero transitions exist (VIS-08) ---- */
+	/* ---- motion (VIS-08): hover/active/selected tints, the focus ring, and
+	   the rename field's own appearance all transition at --dur-fast; wider
+	   changes (a panel's own background) at --dur. Deliberately not applied
+	   to the canvas (already its own requestAnimationFrame loop), a tab's
+	   content swapping in, or anything on the save path - CLAUDE.md's
+	   "Deviations" section is not where a swap becomes a fade. The mandatory
+	   prefers-reduced-motion companion lands in the same rule block, below,
+	   per the finding's own requirement that the two ship together. */
 	--dur-fast: 90ms; --dur: 140ms; --ease: cubic-bezier(.2, 0, 0, 1);
 
 	/* ---- layering: defined, not yet consumed (NAT-05 removed the app's only
@@ -171,6 +198,9 @@ button {
 	color: var(--dim);
 	font: inherit;
 	cursor: pointer;
+	/* VIS-08: the hover/active tint below is otherwise an instant swap. */
+	transition: background-color var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease);
 }
 button:hover:not(:disabled) { color: var(--fg); background: var(--surface-hover); }
 button:active:not(:disabled) { background: var(--surface-active); }
@@ -184,7 +214,28 @@ button:disabled { color: var(--fg-disabled); cursor: default; }
 :focus-visible {
 	outline: 2px solid var(--acc);
 	outline-offset: 2px;
+	transition: outline-color var(--dur-fast) var(--ease);
 }
+
+/* VIS-08: minimal, tokenised motion - hover/active/selected tints, the focus
+   ring, the inline rename field's own appearance, and the status message's
+   colour change. Mandatory in the same commit as the first transition above:
+   every duration collapses to imperceptible once the OS asks for less
+   motion, rather than this app deciding on the user's behalf that its own
+   90-140ms is not "real" motion. */
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		transition-duration: 1ms !important;
+		animation-duration: 1ms !important;
+	}
+}
+
+/* VIS-08: the inline rename field (edit(), app.js) replaces a row's label
+   outright, with nothing to mark the moment it appeared - referenced by name
+   from that field's own inline style, since the field itself is otherwise
+   styled inline (VIS-15, still open) rather than through a class this rule
+   could attach to directly. */
+@keyframes pb-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 .drag { -webkit-app-region: drag; }
 .grow { flex: 1; }
@@ -234,10 +285,20 @@ html[data-platform="darwin"] .acts { display: none; }
 	color: var(--dim);
 	white-space: nowrap;
 	cursor: pointer;
+	transition: background-color var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease);
 }
 .tab:hover { color: var(--fg); background: var(--surface-hover); }
 .tab:active { background: var(--surface-active); }
-.tab.on { background: var(--tab); color: var(--acc-text); }
+/* GEO-13: the design's own active-tab flare is a 26px corner radius - at the
+   scale it was drawn at, a full window's worth of chrome. This tab strip is
+   34px tall (--row-lg) end to end, where 26px would read as a pill, not a
+   flare, so the literal figure does not transfer; --radius-2 is the largest
+   step actually proportionate to an element this size, reused rather than a
+   fourth radius step invented for one consumer. The window's own top corners
+   (the other half of the design's radius, drawn at the same 26px) are the
+   OS's to own now (NAT-02, hiddenInset/titleBarOverlay). */
+.tab.on { background: var(--tab); color: var(--acc-text); border-radius: var(--radius-2) var(--radius-2) 0 0; }
 /* VIS-07: one selected treatment - text colour, a fill, and a 2px marker on
    the edge that reads as "this one" - rather than li.on's colour-only one and
    .cell.on's border-only one.  A tab's own leading edge is its bottom, where
@@ -261,9 +322,13 @@ html[data-platform="darwin"] .acts { display: none; }
 	height: var(--space-7);
 	font-style: normal;
 	opacity: .6;
+	transition: opacity var(--dur-fast) var(--ease);
 }
 .tab .tabclose:hover { opacity: 1; }
-#add { padding: 0 var(--space-5); }
+/* VIS-09: the standalone action buttons (this, the hotbar, .act, the two
+   header "+"s) read as one step more prominent than an inline control -
+   --radius-2 rather than the generic button rule's --radius-1. */
+#add { padding: 0 var(--space-5); border-radius: var(--radius-2); }
 .run { padding: 0 var(--space-6); color: var(--acc-text); font-size: 13px; }
 
 /* body
@@ -279,10 +344,18 @@ html[data-platform="darwin"] .acts { display: none; }
 	min-height: 0;
 }
 
+/* GEO-13: the design wraps both side panels in their own drop-shadow filter,
+   separating them from the frame - the implementation had none anywhere
+   except a shadow that belonged to a DOM element deleted since (the old
+   context-menu, NAT-05). --elev-1 is deliberately subtle (a 1-2px panel
+   elevation, not a floating popover's), and reads mostly at the seam against
+   #stage since the frame and #body share the same dark background either
+   side of it. */
 #side, #right {
 	display: flex;
 	flex-direction: column;
 	background: var(--panel);
+	box-shadow: var(--elev-1);
 	/* A grid item's default min-width is auto, i.e. its content's intrinsic
 	   minimum - normally invisible, but #palette's auto-fill grid (GEO-07)
 	   has a large one (fixed-size tracks don't shrink the way 1fr ones did),
@@ -300,18 +373,27 @@ html[data-platform="darwin"] .acts { display: none; }
 .splitter { position: relative; background: transparent; touch-action: none; }
 .splitter.v { cursor: col-resize; }
 .splitter.h { flex: 0 0 var(--split); cursor: row-resize; }
-.splitter::after { content: ''; position: absolute; background: var(--line); }
+.splitter::after {
+	content: ''; position: absolute; background: var(--line);
+	transition: background-color var(--dur-fast) var(--ease);
+}
 .splitter.v::after { top: 0; bottom: 0; left: 50%; width: 1px; }
 .splitter.h::after { left: 0; right: 0; top: 50%; height: 1px; }
 .splitter:hover::after, .splitter:focus-visible::after { background: var(--acc); }
 
+/* GEO-13: 36px (--row-hdr), the design's own section-header band - the
+   implementation used to default this to --row-sm (26px), which reads as a
+   cramped label rather than the panel header the design draws. */
+/* A11Y-02: a real <h2> now (index.html), not a <div> - font/margin reset
+   since headings carry their own UA defaults that a div never did. */
 .hdr {
 	display: flex;
 	align-items: center;
-	flex: 0 0 var(--row-sm);
+	flex: 0 0 var(--row-hdr);
 	padding: 0 10px;
 	background: var(--hdr);
 	color: var(--acc-text);
+	font: inherit;
 }
 .hdr.r { justify-content: flex-end; }
 /* A11Y-04: same trade as .tab .tabclose above - a 24px hit box around the
@@ -323,6 +405,7 @@ html[data-platform="darwin"] .acts { display: none; }
 	width: var(--space-7);
 	height: var(--space-7);
 	margin-left: auto;
+	border-radius: var(--radius-2);		/* VIS-09: a standalone action button */
 }
 
 #scripts, #midis { overflow: auto; padding: var(--space-4) 0; list-style: none; }
@@ -350,6 +433,8 @@ li {
 	color: var(--dim);
 	white-space: nowrap;
 	cursor: pointer;
+	transition: background-color var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease);
 }
 li:hover { color: var(--fg); background: var(--surface-hover); }
 li:active { background: var(--surface-active); }
@@ -465,11 +550,13 @@ body.text #right { display: none; }
 	position: relative;
 	display: block;
 	width: 100%;
-	border: 1px solid transparent;
+	border: var(--border) solid transparent;
 	aspect-ratio: 1;
 	background: var(--surface-raised) center/contain no-repeat;
 	cursor: pointer;
 	image-rendering: pixelated;
+	transition: border-color var(--dur-fast) var(--ease),
+		background-color var(--dur-fast) var(--ease);
 }
 .cell:hover { border-color: var(--dim); }
 .cell.on { border-color: var(--acc); background-color: var(--surface-selected); }
@@ -491,10 +578,12 @@ body.text #right { display: none; }
 	display: block;
 	width: 100%;
 	padding: 3px 5px;
-	border: 1px solid var(--control-border);
+	border: var(--border) solid var(--control-border);
+	border-radius: var(--radius-1);		/* VIS-09 */
 	background: var(--surface-raised);
 	color: var(--fg);
 	font: inherit;
+	transition: border-color var(--dur-fast) var(--ease);
 }
 #props input:focus, #props select:focus, #props textarea:focus {
 	border-color: var(--acc);
@@ -511,8 +600,12 @@ body.text #right { display: none; }
 	width: 100%;
 	margin-top: var(--space-4);
 	padding: var(--space-2);
-	border: 1px solid var(--control-border);
+	border: var(--border) solid var(--control-border);
+	border-radius: var(--radius-2);		/* VIS-09: a standalone action button */
 	color: var(--dim);
+	transition: border-color var(--dur-fast) var(--ease),
+		color var(--dur-fast) var(--ease),
+		background-color var(--dur-fast) var(--ease);
 }
 #props .act:hover { border-color: var(--acc); color: var(--fg); background: var(--surface-hover); }
 #props .act:active { background: var(--surface-active); }
@@ -533,7 +626,10 @@ body.text #right { display: none; }
 	color: var(--dim);
 	font-size: var(--font-size-sm);
 }
-#msg { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* VIS-08: the status message swaps between an ordinary confirmation and an
+   error often enough (save, undo, a failed rename) that the colour change is
+   worth tracking rather than an instant snap. */
+#msg { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; transition: color var(--dur) var(--ease); }
 #msg.bad { color: var(--danger); }
 #warnings:empty { display: none; }
 #warnings { color: var(--danger); cursor: pointer; }

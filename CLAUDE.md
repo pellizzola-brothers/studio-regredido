@@ -236,7 +236,8 @@ sanctioned exceptions — each must be known before any CSS has loaded, so each
 duplicates a token's value with a comment naming which one and the rule to
 change both together. Not every token has a consumer yet; introduce them
 before the components that need them, not after, per the pattern this file's
-own row/spacing tokens already set (`--row`, `--row-sm`, `--row-lg`).
+own row/spacing tokens already set (`--row`, `--row-sm`, `--row-lg`,
+`--row-hdr`).
 
 ## Deviations from the design file
 
@@ -273,6 +274,16 @@ additions were needed for the app to be usable:
   reaching a context menu. The menu itself only carries actions that already
   exist (delete the clicked entity, fit the view) — see `grid.js`'s
   `canvasmenu()`.
+
+The design draws the active tab's own corner flare at a 26px radius - at the
+scale the window itself was drawn at. This tab strip is 34px tall
+(`--row-lg`) end to end, where 26px would consume nearly the whole tab in one
+curve and read as a pill rather than a flare, so the literal figure does not
+transfer to an element this size. `.tab.on` uses `--radius-2` (4px) instead -
+the largest radius step actually proportionate here - reused rather than
+inventing a token for one consumer. The design's other radius, the window's
+own top corners at the same 26px, is the OS's to own now (`hiddenInset`/
+`titleBarOverlay`, `chrome.js`).
 
 The design's inspector shows `health`, `damage`, `hit position`. The schema has
 no home for per-entity properties — an entity is `{def, pos}` — so the
