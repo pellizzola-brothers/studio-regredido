@@ -136,10 +136,12 @@ function pxsplitter(el, prop, panel, key, measure)
 }
 
 /* #scripts | #midis and #palette | #props: a plain percentage of the
- * container's own height, since neither split has a content-driven min/max
- * token the way the side panels do (GEO-06 is still open for #palette/#props;
- * GEO-05 gave #scripts/#midis one instead of this percentage, below) - a
- * floor and ceiling stand in so neither side can be dragged to nothing.
+ * container's own height - neither split has a content-driven min/max token
+ * the way the side panels do, so a floor and ceiling stand in instead, so
+ * neither side can be dragged to nothing. GEO-05/GEO-06 (both done, see
+ * "Already completed") gave #scripts and #props their own content-driven
+ * *default*, below, without needing to touch this percentage mechanism -
+ * it is what a user's own drag still overrides either default with.
  *
  * `cls`/`target`, when given, is a class this toggles on `target` for exactly
  * as long as `prop` is actually overridden (dragged, stepped, or restored
@@ -209,5 +211,6 @@ Layout.init = function ()
 		ev => (ev.clientY - side.getBoundingClientRect().top) / side.getBoundingClientRect().height * 100,
 		'split-scripts', side);
 	pctsplitter($('splitter-props'), '--props-h', 'props', '46%',
-		ev => (right.getBoundingClientRect().bottom - ev.clientY) / right.getBoundingClientRect().height * 100);
+		ev => (right.getBoundingClientRect().bottom - ev.clientY) / right.getBoundingClientRect().height * 100,
+		'split-props', right);
 };

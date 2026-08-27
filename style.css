@@ -104,10 +104,11 @@
 	--right-max: 320px;
 	--right: clamp(var(--right-min), 13%, var(--right-max));
 	/* GEO-04: the splitter track width/height, and the two in-panel splits a
-	   splitter drag (layout.js) also overwrites directly - #palette/#props
-	   has no content-driven min/max token of its own yet (that is GEO-06,
-	   still open; #scripts/#midis got one, GEO-05, done), so these are plain
-	   percentages with a floor and ceiling enforced in JS instead. */
+	   splitter drag (layout.js) also overwrites directly - these are plain
+	   percentages with a floor and ceiling enforced in JS, since neither
+	   split has a content-driven min/max token the way the side panels do;
+	   #scripts and #props each still get a content-driven *default*, GEO-05/
+	   GEO-06 both done, see "Already completed", below. */
 	--split: 8px;
 	--scripts-h: 60%;
 	--props-h: 46%;
@@ -539,11 +540,15 @@ body.text #right { display: none; }
    start keeps the leftover width (there is always some, since --cell rarely
    divides the panel's content box exactly) after the last column rather than
    stretched back into every cell. */
+/* GEO-06: #palette takes whatever #props (below) does not - the same
+   "content-driven default, remainder takes the rest" pair GEO-05 already
+   gave #scripts/#midis, with a matching floor so it cannot be squeezed to
+   nothing either. */
 #palette {
 	display: grid;
 	overflow: auto;
 	flex: 1 1 auto;
-	min-height: 0;
+	min-height: calc(var(--row) * 3);
 	align-content: start;
 	justify-content: start;
 	gap: var(--space-2);
@@ -577,13 +582,30 @@ body.text #right { display: none; }
    so hovering the already-selected cell does not read as merely hovered -
    selected stays visually selected under a hover too. */
 .cell.on:hover { background-color: var(--surface-selected); }
+/* UX-06: a border alone was easy to miss among 30-odd similar cells - a
+   filled corner marker reads at a glance even at a distance, the same job
+   li.on/.tab.on's own edge marker does for a row or a tab. A triangle, not a
+   third rectangle, so it does not compete with the border it sits on. */
+.cell.on::after {
+	content: '';
+	position: absolute;
+	top: 0; right: 0;
+	border-width: 0 7px 7px 0;
+	border-style: solid;
+	border-color: transparent var(--acc) transparent transparent;
+}
 .cell.air { background: repeating-conic-gradient(var(--checker-a) 0 25%, var(--checker-b) 0 50%) 0/12px 12px; }
 .cell.add { display: grid; place-items: center; color: var(--dim); }
 
 /* inspector */
-/* GEO-04/GEO-06: user-resizable now (layout.js), defaulting to the same
-   ~46% split as before a drag ever happens. */
-#props { overflow: auto; flex: 0 0 var(--props-h); min-height: 0; padding: 10px; }
+/* GEO-06: as tall as its own fields by default - a floor of three rows and a
+   70% ceiling so an unusually short view (the definition view's three
+   fields) never crowds the palette out entirely and an unusually tall one
+   (the level view's seven) never swallows it - the same `flex: 0 1 auto` /
+   min-height/max-height pattern GEO-05 already gave #scripts, and the same
+   .split-* class toggle (layout.js) so a user's own drag still overrides it. */
+#props { overflow: auto; flex: 0 1 auto; min-height: calc(var(--row) * 3); max-height: 70%; padding: 10px; }
+#right.split-props #props { flex: 0 0 var(--props-h); max-height: none; }
 #props h4 { margin: 10px 0 4px; color: var(--dim); font: inherit; font-size: 10px; }
 #props h4:first-child { margin-top: 0; }
 #props label { display: block; margin-bottom: var(--space-3); color: var(--dim); }
