@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The forty-eight items below have shipped and are removed from the findings
+The fifty-three items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -940,8 +940,9 @@ absolute length clamped to GEO-03's own `--side-min`/`--side-max`/
 since a `calc()`-based custom property's own computed value does not resolve
 to a px number the way a real layout box's does); `#scripts | #midis` and
 `#palette | #props` (new `--scripts-h`/`--props-h` tokens) drag a plain
-percentage within a 15-85% floor and ceiling, since neither split has a
-content-driven min/max of its own yet (GEO-05/GEO-06, still open). Each
+percentage within a 15-85% floor and ceiling, since neither split had a
+content-driven min/max of its own yet (GEO-05, since done - see "Already
+completed", below; GEO-06 still open). Each
 splitter is `role="separator"`, drags via Pointer Events with the OS cursor
 locked to the whole document for the gesture's duration, and double-click or
 Enter removes the override so the panel goes back to tracking the window
@@ -957,6 +958,104 @@ scripts/midis split moves `--scripts-h` from 60% to 30% and back. A full
 regression pass through the real gesture path confirmed paint, undo/redo,
 entity placement, script create/rename/delete, MIDI import and a save-as/
 open round trip all still work with the new grid layout in place.
+
+---
+
+#### UX-12 — Escape does not cancel an in-progress gesture
+
+Shipped: a new `Grid.cancel()` (`grid.js`) reverts whatever the currently-open
+`Undo` step has already applied - reusing `apply()` against the step's own
+`before` shot via a new `Undo.cancel()` (`undo.js`), exactly as if the step had
+been undone rather than completed - then resets `pan`/`paint`/`last`/`moving`
+and returns whether a gesture was actually open. `keys()`'s Escape branch
+(`app.js`) calls it first, falling back to the previous plain-deselect
+behaviour only when nothing was open; `Grid.init()` also wires it to
+`window.blur`, so alt-tabbing away mid-drag no longer leaves the gesture (and
+its still-open `Undo` step) live, per the finding's own "Related" note.
+Verified with the probe harness: a synthetic mousedown-then-mousemove paint
+drag left 6 cells changed and `Undo.step` open; dispatching Escape reverted
+all 6 cells, closed the step without pushing it onto `Undo.past` (`past.length`
+unchanged, `App.dirty` still `false`), and cleared `paint`/`last`/`moving`; a
+second drag cancelled via a synthetic `blur` event reverted identically.
+
+---
+
+#### NAT-12 — Right-click erases, which collides with Ctrl-click on macOS and blocks a canvas menu
+
+Shipped: a right *press* (`ondown()`, `grid.js`) no longer erases by itself -
+it only records the press (position, cell, whatever entity was under it); a
+right **drag** past a 3px threshold (`onmove()`) converts it into the same
+erase gesture as before, so "keep right-drag-to-erase" (the finding's own
+first bullet) is unchanged. A press that reaches mouseup without ever
+converting was a click, resolved into a new canvas context menu instead
+(`canvasmenu()`/`onup()`, `grid.js`; `main.js`'s `menu:row` handler grows a
+`kind === 'canvas'` branch) carrying the two actions that already have a real
+implementation - delete the clicked entity, fit the view - rather than the
+finding's fuller wish list (duplicate, toggle grid), which are features that
+do not exist yet and are out of this finding's own scope. On macOS, Ctrl+click
+arrives as this same button-2 event; it is marked `noerase` at press time and
+never converts into an erase regardless of any subsequent movement, per the
+finding's own "do not treat Ctrl+click as erase" instruction. Verified with the
+probe harness: a plain right click with no movement erased nothing (previously
+erased one cell) and built a menu template reading `delete entity` (disabled),
+`fit view`; painting then right-dragging across the same cells still erased
+all of them, confirming the drag gesture is unchanged; placing an entity and
+right-clicking it (no drag) built the menu with `delete entity` **enabled**,
+and invoking it removed exactly that entity; a Ctrl+click drag across painted
+cells erased nothing despite the movement.
+
+---
+
+#### A11Y-04 — Hit targets are below the platform minimums
+
+Shipped: `.tab .tabclose` and `.hdr button` (the tab-close glyph and the MIDI
+header's `+`) each grow a `display: flex; align-items: center;
+justify-content: center` box sized to `--space-7` (24px, GEO-01's own token,
+not a new literal) - the glyph inside is untouched, so only the *hit* area
+grows, per the finding's own "does not require 24px of visual area" note. `li`
+file rows were already 30px (GEO-01) and window controls are already the OS's
+own (NAT-02), so those two rows needed nothing further. Verified with the
+probe harness: `getComputedStyle()` on `#addmidi` and on a `.tab .tabclose`
+both now read `24px` × `24px` (previously measured ≈12×12 and ≈7×18).
+
+---
+
+#### GEO-05 — `#scripts` 60 % / `#midis` 40 % is arbitrary and ergonomically backwards
+
+Shipped: `#scripts`/`#midis` (`style.css`) default to `flex: 0 1 auto` with a
+three-row `min-height` floor (`#scripts` also capped at a 70% ceiling), so each
+section is only as tall as its own content by default - the exact rule the
+finding's own "Recommended" section gives. A user's own drag still overrides
+it: `layout.js`'s `pctsplitter()` grows an optional `cls`/`target` pair, toggled
+onto `#side` as `.split-scripts` for exactly as long as `--scripts-h` is
+actually overridden (dragged, stepped, or restored from a previous session),
+and `#side.split-scripts #scripts` is the only rule that still reads the
+literal `--scripts-h` percentage - one custom property, two meanings resolved
+by which class is present, rather than a second token. Verified with the probe
+harness: a fresh document's `#scripts` computed to exactly `90px`
+(`--row * 3`, the floor) with no `.split-scripts` class present; pressing
+`ArrowDown` on the scripts splitter applied `.split-scripts` and moved
+`--scripts-h` to `62%`, confirming the keyboard-operable override still works
+unchanged.
+
+---
+
+#### VIS-12 — Empty states are blank voids
+
+Shipped: `list()` (`app.js`) renders a single non-option `<li class="empty"
+role="presentation">` in place of the row loop whenever a list is empty -
+"no scripts yet · **new script**", "no midi files · **import…**" - wired to
+the same `addscript()`/`addmidi()` the section's own create commands already
+use, so there is exactly one way to do each, not two. `addscript()` also drops
+any such placeholder before appending its own inline-rename row, so the
+message does not linger above the new field while the user is still typing.
+Depended on GEO-05 (done, above) for a sensibly-sized region to sit in.
+Verified with the probe harness: a fresh document's `#scripts`/`#midis` each
+show exactly one child with the expected text; adding a script removes the
+placeholder and leaves one real row; clicking the placeholder's own button
+end-to-end starts the inline script-rename field (and, for MIDI, drives a
+stubbed import dialog through to a real new row) exactly as the equivalent
+header/menu commands already did.
 
 ---
 
@@ -1069,8 +1168,17 @@ targets the scene nearest the camera instead of the level's unfittable full
 width (UX-04); and the side panels, the
 scripts/MIDI split and the palette/inspector split are all user-resizable
 with keyboard-operable splitters that persist across sessions (GEO-04) — see
-"Already completed" above for all five. The shell's remaining problems are
-below.
+"Already completed" above for all five. Most recently of all: Escape now
+cancels and reverts a gesture in progress instead of only deselecting
+underneath it (UX-12); a right click on the canvas that never dragged opens
+the canvas's own context menu instead of erasing a cell, and Ctrl+click on
+macOS no longer erases at all (NAT-12); the tab-close glyph and the MIDI
+header's `+` both reach the 24px platform hit-area minimum without growing
+their visible glyph (A11Y-04); the script/MIDI split defaults to its own
+content's height, with a floor and a ceiling, instead of an unexplained 60/40
+(GEO-05); and both file-manager lists say what goes there and how instead of
+sitting empty on every fresh launch (VIS-12) — see "Already completed" above
+for all five. The shell's remaining problems are below.
 
 ### The three biggest remaining sources of perceived unpolish
 
@@ -1090,11 +1198,11 @@ below.
    a context menu that no longer even exists (VIS-08, VIS-09).
 3. **Geometry's remaining loose ends are small but still arbitrary.** The
    spacing/row/type scale, proportional and clamped side panels, integer
-   palette cells and user-resizable splitters are all real now (GEO-01,
-   GEO-03, GEO-07, GEO-04, all done — see "Already completed"). What is left
-   is smaller: `#props { flex: 0 0 var(--props-h) }` / `#scripts { flex: 0 0
-   var(--scripts-h) }` still *default* to the same unexplained 46%/60%
-   fractions as before a splitter existed to drag them from (GEO-05, GEO-06).
+   palette cells, user-resizable splitters and the file manager's own default
+   split are all real now (GEO-01, GEO-03, GEO-07, GEO-04, GEO-05, all done —
+   see "Already completed"). What is left is smaller still: `#props { flex: 0
+   0 var(--props-h) }` still *defaults* to the same unexplained 46% fraction
+   as before a splitter existed to drag it from (GEO-06).
 
 ### The highest-impact improvements
 
@@ -1440,35 +1548,6 @@ add it to the bridge.
 
 ---
 
-#### NAT-12 — Right-click erases, which collides with Ctrl-click on macOS and blocks a canvas menu
-
-**Category** Native · **Severity** Medium · **Priority** P2 · **Affects** UX
-
-**Current.** `grid.js:79` suppresses `contextmenu` on the canvas, and
-`ondown` (`grid.js:380`) treats `button === 2` as "erase / delete entity".
-
-**Why it's a problem.** On macOS, **Ctrl+click is a right-click** at the OS
-level. A user Ctrl-clicking to get a context menu — the reflex on a
-single-button trackpad — instead erases a block or deletes an entity. There is
-also no canvas context menu at all, so the operations a user most expects to
-find there (Delete Entity, Duplicate, Assign Script, Fit View, Toggle Grid) are
-unreachable by that route.
-
-**Recommended.**
-- Keep right-drag-to-erase — it is a genuinely good level-editor gesture and
-  the palette's air/eraser cell (`panel.js:29`) is the discoverable
-  alternative.
-- Add a **canvas context menu** on right-*click* without drag: if the pointer
-  did not move between `mousedown` and `mouseup`, and the press did not modify
-  anything, show the native menu (NAT-05, done — see "Already completed";
-  this canvas menu itself is not) instead of treating it as an erase.
-  This makes the two gestures distinguishable by intent rather than by button.
-- On macOS specifically, do not treat `ctrlKey + button 0` as erase.
-- Document the erase gesture in a status-bar hint on first hover of the canvas,
-  and in Help.
-
----
-
 #### NAT-14 — The command set is thin; zoom, tab switching and region operations have no shortcut
 
 **Category** Native · **Severity** Medium · **Priority** P1 · **Affects** UX, Accessibility
@@ -1484,8 +1563,8 @@ longer exists, and `Ctrl+Y` for redo is gone. What is left of this finding:
    out / fit (⌘+ / ⌘- / ⌘0), tab switching (⌘1…⌘9, ⌃Tab), arrow-key nudge of
    the selected entity (with Shift for a coarse step), tool cycling, duplicate
    (⌘D), and select-all/copy/paste of a region.
-2. `Escape` clears the selection but does **not** cancel an in-progress drag
-   or paint stroke (UX-12).
+2. `Escape` cancelling and reverting an in-progress drag or paint stroke is
+   done (UX-12, see "Already completed").
 
 **Recommended.** Add the missing commands to the menu template and the
 renderer's `ACTS` table (both already exist) as each one is implemented; keep
@@ -1617,43 +1696,6 @@ tokens that come out of it are collected in §6.
 
 ---
 
-#### GEO-05 — `#scripts` 60 % / `#midis` 40 % is arbitrary and ergonomically backwards
-
-**Category** Layout · **Severity** Medium · **Priority** P2 · **Affects** UI, UX
-
-**Current.** `style.css` — `#scripts { flex: 0 0 var(--scripts-h) }`,
-`#midis { flex: 1 1 auto }`, `--scripts-h: 60%`. The split is user-draggable
-now (GEO-04, done - see "Already completed"), but the *default* - what a
-fresh document, or a double-click reset, shows - is still the same
-unexplained 60/40 the audit originally measured, now a token instead of a
-literal but no more principled a number for it.
-
-**Why it's a problem.** Both fractions are unexplained, and the default split
-ignores content entirely. A level typically has a handful of scripts and zero
-or one MIDI files; the screenshot shows the consequence — the `midi` header
-sits at the vertical centre of the panel with two large empty regions above
-and below it, in a brand-new document with nothing in either list. Forty per
-cent of the file manager is permanently reserved by default for a list that
-is usually empty.
-
-**Recommended.** Content-driven with a floor and a ceiling, replacing
-`--scripts-h`'s default value rather than the mechanism GEO-04 already built
-around it:
-```
-#scripts, #midis { flex: 0 1 auto; min-height: calc(var(--row) * 3); }
-#scripts { max-height: 70%; }
-```
-so each section is as tall as its contents by default, both stay scrollable,
-neither can collapse to nothing, and the free space goes to whichever list is
-longer - a user's own drag still overrides it, exactly as it overrides the
-current 60/40 default today. Collapsible section headers (a disclosure
-triangle on `.hdr`) also give the empty MIDI section somewhere to go.
-
-**Depends on.** VIS-12 (empty states) — an empty list should say so, not be a
-void.
-
----
-
 #### GEO-06 — `#props { flex: 0 1 46% }` is an unexplained fraction
 
 **Category** Layout · **Severity** Low · **Priority** P2 · **Affects** UI
@@ -1669,7 +1711,10 @@ So 46 % is an approximation of a design value that was never written down.
 
 **Recommended.** Either state the design ratio as `--props-h`'s new default
 value directly (`47.5%`, with a comment pointing at the SVG), or — better —
-make it content-driven like GEO-05: the inspector is as tall as its fields,
+make it content-driven the way `#scripts`/`#midis`' own split now is (GEO-05,
+done — see "Already completed", the same `flex: 0 1 auto` /
+`min-height`/`max-height` pattern, and the same `.split-*` class toggle so a
+user's own drag still overrides it): the inspector is as tall as its fields,
 the palette takes the remainder, with a minimum - the splitter itself no
 longer needs building, GEO-04 already did that part. The inspector's height
 genuinely varies (the level view has seven controls, the entity view has six,
@@ -1937,30 +1982,6 @@ at exactly 16 or 32 px with `image-rendering: pixelated`.
 
 Needed icons: new, open, save, save-as, new-script, import, close, play,
 script-file, midi-file, block, entity, warning, error.
-
----
-
-#### VIS-12 — Empty states are blank voids
-
-**Category** Visual / UX · **Severity** Medium · **Priority** P1 · **Affects** UI, UX
-
-**Current.** With a fresh document — the state the app *always starts in*
-(`app.js:543`) — `#scripts` and `#midis` are empty `<ul>`s occupying 60 % and
-40 % of a 184 px column (GEO-05). The screenshot shows the result: two large
-empty purple regions with a floating `midi` header between them, and no
-indication that anything can be put there or how.
-
-`#props` in its level view is never empty, and the palette never is, so this is
-confined to the file manager — but it is the first thing a new user sees.
-
-**Recommended.** An empty-state block per list: one line of secondary text
-naming what goes there and one affordance to create it —
-"No scripts yet · **New script**", "No MIDI files · **Import…**" — centred in
-the list's minimum height, using `--dim` (already readable — the VIS-01
-retune is shipped, see "Already completed") at `--font-size-sm`. Not an
-illustration; one line and one link.
-
-**Depends on.** GEO-05 (so the empty state sits in a sensibly-sized region).
 
 ---
 
@@ -2305,7 +2326,8 @@ undoable action. Instead:
 **Current.** `app.js:543-546` calls `api.blank()` on load and shows an
 untitled 12-row empty level. No recent files (NAT-06), no template, no
 onboarding, no indication of what the tool does or how to place the first
-block. The file manager is two empty voids (VIS-12). The palette's first cell
+block. The file manager's two empty voids now say what goes there and how
+(VIS-12, done — see "Already completed"). The palette's first cell
 is the *eraser*, selected-by-default tool is `{kind: 'block', id: 2}` (brick),
 and nothing says so.
 
@@ -2317,7 +2339,6 @@ and nothing says so.
   completed") - the last path just needs adding to that same file.
 - Otherwise show a **start view** in place of the canvas: New Level · Open… ·
   Recent (list) — reusing the same commands, no new surfaces.
-- Empty states in the file manager (VIS-12).
 - A single status-bar hint on the empty canvas: `click to place · right-drag
   to erase · alt-drag to pan`, dismissed on the first edit.
 
@@ -2348,31 +2369,6 @@ read/write through the preload. On macOS the item is
 
 **View state** (panel widths, last zoom, open tabs) is *not* preferences and
 should persist separately and silently, per-document where it makes sense.
-
----
-
-#### UX-12 — Escape does not cancel an in-progress gesture
-
-**Category** UX · **Severity** Low · **Priority** P2 · **Affects** UX
-
-**Current.** `keys()` (`app.js:495-499`) handles Escape by closing the menu,
-clearing `Grid.sel` and redrawing. It does not touch `Grid.pan`, `Grid.paint`,
-`Grid.moving` or the open `Undo` step. Pressing Escape mid-drag therefore
-deselects the entity that is *currently being dragged*, and the drag continues
-with `Grid.sel === -1` — `onmove`'s move branch (`grid.js:448`) then silently
-stops applying, leaving the entity wherever it was when Escape was pressed and
-the undo step still open until `mouseup`.
-
-**Recommended.** Escape during a gesture **cancels and reverts** it: close the
-`Undo` step and immediately undo it, reset `pan`/`paint`/`moving`/`last`,
-release pointer capture, redraw. Escape with no gesture in progress keeps the
-current deselect behaviour. This is one small function, `Grid.cancel()`, called
-from the Escape branch and from `blur`.
-
-**Related.** `onup` (`grid.js:469`) is bound on `window`, so a mouseup outside
-the window ends the gesture correctly — good. But there is no `blur` handler,
-so alt-tabbing away mid-drag leaves the gesture live; `Grid.cancel()` on
-`window.blur` fixes that too.
 
 ---
 
@@ -2588,31 +2584,6 @@ here. What *is* reasonable, and is what comparable tools do:
 **Depends on.** UX-06 (a tool indicator); VIS-06's focus ring, which step 2
 needs to be usable, is already shipped; A11Y-05's live region, which step 3
 needs to announce into, is already shipped too.
-
----
-
-#### A11Y-04 — Hit targets are below the platform minimums
-
-**Category** Accessibility · **Severity** Medium · **Priority** P1 · **Affects** UI
-
-**Current, measured or computed:**
-
-| Target | Size | Minimum |
-|---|---|---|
-| `.tab i` close glyph (`×`) | ~7 × 18 px | 24 × 24 |
-| `li` file rows | fixed - 30 px tall now (`--row`, GEO-01, done) | 24 |
-| `.hdr button` (`+`) | ~12 × 12 px | 24 × 24 |
-| `#hbar` scrollbar | 12 px tall | acceptable for a scrollbar (exempt as an inline control; its track/thumb metrics are now tokenised and shared with four other containers - NAT-20, done, see "Already completed") |
-
-**Recommended.** Every target reaches at least 24 × 24 px of *hit area*, which
-does not require 24 px of *visual* area — pad the clickable element, or use a
-transparent `::before` overlay, so the visual density the design wants is
-preserved while the target grows. `li` rows are 30 px tall now (`--row`,
-GEO-01, done — see "Already completed"), so only the `.tab` close glyph and
-`.hdr button` remain below the minimum. Window controls are already the OS's
-own (NAT-02, done —
-see "Already completed") and already inherit correct sizing for free - the
-row above this used to track them and is now removed.
 
 ---
 
@@ -2945,7 +2916,7 @@ window and menu layers.
 | Window chrome | `titleBarStyle: 'hiddenInset'` + `trafficLightPosition`; the fake dots are deleted; the green button is real full screen, not `maximize()` — done, see "Already completed" | NAT-02 |
 | Title | Document name only; `setRepresentedFilename` for the proxy icon; `setDocumentEdited` for the close-button dot. Not a path, not an asterisk — done, see "Already completed" | NAT-03 |
 | Toolbar | The New/Open/Save hotbar is gone — the menu bar carries File regardless of window framing — done, see "Already completed" | NAT-04 |
-| Context menus | `Menu.popup()` — done, see "Already completed". Ctrl+click must still not erase. | NAT-05, NAT-12 |
+| Context menus | `Menu.popup()`, including the canvas's own; Ctrl+click no longer erases — done, see "Already completed" | NAT-05 |
 | Open Recent | `addRecentDocument` — feeds both the File menu and the Dock icon menu. | NAT-06, NAT-17 |
 | File association | `CFBundleDocumentTypes` for `.lvl` via electron-builder; handle `app.on('open-file')`, including before `whenReady`. | NAT-07 |
 | Trackpad | Two-finger scroll pans; pinch (`wheel` + `ctrlKey`) zooms — done, see "Already completed". This was the single biggest day-to-day usability defect on a Mac. | NAT-11 |
@@ -3024,16 +2995,16 @@ GEO-11 — see "Already completed").
 | # | Value | Where | What should determine it | Finding |
 |---|---|---|---|---|
 | 3 | `.hdr` `24px` (now `--row-sm`, 26px — GEO-02, done) | `style.css:107` | Design says 36 px, still not adopted | GEO-13 |
-| 8 | `--scripts-h: 60%` / `#midis` remainder | `style.css` | Content height, with a floor - the splitter itself is done (GEO-04) | GEO-05 |
 | 9 | `--props-h: 46%` | `style.css` | Content height, or the design's 47.5 % as the token's default - the splitter itself is done (GEO-04) | GEO-06 |
 | 11 | `.tab max-width: 260px` | `style.css:79` | `24ch` — a statement about filenames | GEO-08 |
 | 12 | `textarea height: 48px` | `style.css:208` | `calc(var(--line-box) * 3)` | GEO-08 |
 | 13 | Gaps `14px` on `.acts`, `10px` on `#title` | `style.css` passim | `--space-*` scale (the `li`/`.tab`/`#palette`/`#props`/`.grp` gaps that were also here are now tokenised — GEO-01, done) | GEO-08 |
 | 14 | Font sizes `10px`/`13px` | `style.css` passim | `--font-size-sm` covers the `11px` case now (GEO-01, done); `10px`/`13px` remain | GEO-08 |
-| 15 | `li` indent has no icon to hang from | `style.css:123` | `--space-4 + --icon` once rows get a file-type icon (the padding/height itself is `--row` now — GEO-01/GEO-02, done) | A11Y-04, VIS-11 |
+| 15 | `li` indent has no icon to hang from | `style.css:123` | `--space-4 + --icon` once rows get a file-type icon (the padding/height itself is `--row` now — GEO-01/GEO-02, done; the row's own hit area is done too, A11Y-04) | VIS-11 |
 
-`0.03`/`3` zoom clamps and the `0.0015` wheel factor, both formerly rows here,
-are done (NAT-11, see "Already completed"): `ZMIN`, `ZMAX` and
+Row 8 (`--scripts-h`'s unexplained 60/40 default) is done too - see "Already
+completed", GEO-05. `0.03`/`3` zoom clamps and the `0.0015` wheel factor, both
+formerly rows here, are done (NAT-11, see "Already completed"): `ZMIN`, `ZMAX` and
 `ZOOM_PX_PER_DOUBLING = 462` (`Math.LN2 / ZOOM_PX_PER_DOUBLING` reproduces
 `0.0015` exactly) are now named `const`s in `grid.js`, shared between
 `Grid.fit()` and `onwheel()`. The `1600 × 950` / `960 × 620` window-size row is
@@ -3102,7 +3073,7 @@ the finding that resolves it.
 |---|---|---|
 | **Typography** | Fixed — the app renders in its own bundled font now, identically on all three platforms, and the two `<b>`-plus-`font-weight: normal` layout hacks are `<span>`s instead (VIS-05, done — see "Already completed"); font sizes down to two (GEO-01, done), `10px`/`13px` remain | GEO-08 |
 | **Spacing** | Fixed — a 7-step scale now covers most of the stylesheet (GEO-01, done — see "Already completed"); `.acts`'/`#title`'s two gaps and a few `10px`/`13px` one-offs remain | GEO-08 |
-| **Rows / heights** | Fixed — `--row-sm`/`--row`/`--row-lg`, derived from the 18px line box, now cover the title bar, tab strip, section headers, status bar and file-manager rows (GEO-01, GEO-02, done — see "Already completed") | A11Y-04's hit-area padding and VIS-11's row icon are the remaining, unrelated pieces |
+| **Rows / heights** | Fixed — `--row-sm`/`--row`/`--row-lg`, derived from the 18px line box, now cover the title bar, tab strip, section headers, status bar and file-manager rows (GEO-01, GEO-02, done — see "Already completed"); every hit area below the 24 px platform minimum is padded up to it too (A11Y-04, done — see "Already completed") | VIS-11's row icon is the remaining, unrelated piece |
 | **Colour** | Fixed — one `:root` definition, consumed by `grid.js`'s canvas and `code.js`'s Monaco theme through `tokens.js` instead of each restating it (VIS-04, done — see "Already completed") | — |
 | **Contrast** | Fixed — resting and accent text, control borders, and disabled text (VIS-01, VIS-02, VIS-07, all done — see "Already completed"); `.mi.off` is moot, its `<div>` menu deleted by NAT-05 | — |
 | **Borders** | `--line` is now split from `--control-border` (VIS-02, done); still one width only, no distinct strong/emphasis weight | Add `--border-strong` |
@@ -3120,14 +3091,14 @@ the finding that resolves it.
 | **Cursor** | Fixed — seven states on the canvas (`crosshair`/`copy`/`grab`/`grabbing`/`not-allowed`) driven by `Grid.cursor()` (NAT-13, done — see "Already completed"), and `col-resize`/`row-resize` on the four splitters (GEO-04, done — see "Already completed") | — |
 | **Tooltips** | Native `title=` on some controls, absent on tabs and rows; Windows/Linux's hotbar carries accelerators now (NAT-04, done — see "Already completed"); Title Case among lowercase labels elsewhere | Add the missing ones; VIS-10 for capitalisation |
 | **Loading** | Fixed for the editor — Monaco now shows a plain "loading editor…" text while it lazy-loads (ARCH-08, done — see "Already completed"); long saves still block silently | Progress for long ops (NAT-19) |
-| **Empty states** | Two blank voids in the file manager on every launch | One line + one action per list (VIS-12) |
+| **Empty states** | Fixed — one line of secondary text plus one affordance per list, replacing the two blank voids every fresh launch used to show (VIS-12, done — see "Already completed") | — |
 | **Error states** | `var(--danger)` text, colour-only; save failures now reach a native dialog regardless of tab (BUG-07, shipped), and every error is announced to a screen reader (A11Y-05, shipped) — still colour-only visually | Icon (VIS-14, A11Y-08) |
 | **Context menus** | Fixed — native `Menu.popup()`, real keyboard navigation and platform appearance (NAT-05, done — see "Already completed") | — |
 | **Dialogs** | The unsaved-changes prompt now has a per-platform template, `detail`, `noLink`, and string verdicts (NAT-21, BUG-10, done — see "Already completed") | — |
 | **Forms** | Borders now visible via `--control-border` (VIS-02, done); still: a native `<select>` among flat custom fields; the inline rename input is a second, different text field | `appearance: none` on the select control only; one shared `.field` class (NAT-16, VIS-15) |
 | **Buttons** | One shared hover/active/disabled treatment now (VIS-07, done — see "Already completed"); still no border except `.act`, and `.acts`/`.hdr button`/`#add` remain differently sized | One button component with size variants (GEO-08) |
 | **Resizers / splitters** | Fixed — four keyboard-operable splitters (GEO-04, done — see "Already completed") | — |
-| **Panels** | Widths are proportional, clamped and user-resizable now (GEO-03/GEO-04, done — see "Already completed"); still flat, no elevation, and not collapsible | Elevation, collapsible sections (GEO-05, VIS-09) |
+| **Panels** | Widths are proportional, clamped and user-resizable now, and the file manager's own split is content-driven by default (GEO-03/GEO-04/GEO-05, done — see "Already completed"); still flat, no elevation, and not collapsible | Elevation, collapsible sections (VIS-09) |
 | **Overlays** | NAT-05 (done) removed the app's only `z-index` along with the DOM context menu it belonged to; `--z-*` is defined (GEO-01, done) with nothing to convert yet | — |
 | **Animation** | None at all | Three tokens, applied to states and panels, with `prefers-reduced-motion` (VIS-08) |
 | **Canvas indicators** | Purple-on-purple, no contrast guarantee, unreachable by forced colours | Two-tone strokes (VIS-16) |
@@ -3146,13 +3117,15 @@ with Recent (UX-09); recent documents in the menu and the Dock/JumpList
 `.lvl` in the file manager (NAT-07).
 
 **Editing** — rectangle fill, flood fill, duplicate, arrow-key nudge (UX-05);
-a visible active tool (UX-06); Escape cancels and reverts a gesture (UX-12);
-trackpad scroll now pans instead of zooming, and pinch/Ctrl+wheel zooms
-(NAT-11, shipped, see "Already completed"); the canvas now shows a cursor for
-every gesture - crosshair, copy, grab, grabbing, not-allowed (NAT-13,
-shipped, see "Already completed"); zoom now has controls, an indicator, and a
-fit that targets the scene nearest the camera instead of an unfittable whole
-level (UX-04, shipped, see "Already completed").
+a visible active tool (UX-06); trackpad scroll now pans instead of zooming,
+and pinch/Ctrl+wheel zooms (NAT-11, shipped, see "Already completed"); the
+canvas now shows a cursor for every gesture - crosshair, copy, grab, grabbing,
+not-allowed (NAT-13, shipped, see "Already completed"); zoom now has
+controls, an indicator, and a fit that targets the scene nearest the camera
+instead of an unfittable whole level (UX-04, shipped, see "Already
+completed"); Escape cancelling and reverting a gesture, and a right click
+that never dragged opening the canvas's own context menu instead of erasing,
+are shipped too (UX-12, NAT-12, see "Already completed").
 
 **Navigating** — a vertical scrollbar (GEO-10); resizable panels that remember
 their size are shipped (GEO-04, see "Already completed"); tabs that overflow
@@ -3196,7 +3169,7 @@ still requires a pointer (A11Y-03).
 | 2.1.1 Keyboard | Partial — the palette, file rows and tabs are operable now (A11Y-01, done); the canvas itself still is not | A11Y-03 |
 | 2.4.3 Focus Order | Fixed — roving tabindex gives the palette, file lists and tab strip one Tab stop each, in a defined title-bar-to-status-bar order | A11Y-01, done |
 | 2.4.7 Focus Visible | Fixed — global `:focus-visible` rule, nothing left to suppress it | VIS-06, done |
-| 2.5.8 Target Size | Partial — `li` rows are 30 px now (GEO-01, done); window controls are the OS's own (NAT-02, done); `.tab` close glyph and `.hdr button` remain below 24 px | A11Y-04 |
+| 2.5.8 Target Size | Fixed — `li` rows are 30 px (GEO-01, done); window controls are the OS's own (NAT-02, done); the `.tab` close glyph and `.hdr button` are padded to a 24px hit area too (A11Y-04, done) | A11Y-04, done |
 | 4.1.2 Name, Role, Value | Partial — the palette, file lists and tab strip now carry `role`/`aria-*` (A11Y-01, done); the rest of the application still has none | A11Y-02 |
 | 4.1.3 Status Messages | Fixed — `#msg` carries `role="status"`, `App.fail()`'s error block carries `role="alert"` | A11Y-05, done |
 | 2.3.3 Animation from Interactions | N/A today; becomes required with VIS-08 | VIS-08, A11Y-07 |
@@ -3303,7 +3276,7 @@ relitigated.
 | Default window size | ✅ shipped - 80% of the display's work area, clamped (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | — |
 | Mixed-DPI / scaling | ✅ shipped (BUG-12) | ✅ shipped, not run on real per-monitor-DPI hardware (BUG-12) | ✅ shipped, not run on real Wayland hardware (BUG-12) | — |
 | Trackpad scroll vs pinch | ✅ shipped (NAT-11) | ✅ shipped (NAT-11) | ✅ shipped (NAT-11) | — |
-| Right-click semantics | ❌ Ctrl+click erases | ✅ | ✅ | NAT-12 |
+| Right-click semantics | ✅ shipped - Ctrl+click no longer erases, and a right click that never dragged opens the canvas's own menu (NAT-12) | ✅ shipped (NAT-12) | ✅ shipped (NAT-12) | — |
 | Keyboard shortcuts | ⚠️ conflicts with default menu; layout-dependent | ⚠️ same | ⚠️ same | NAT-14 |
 | Scrollbars | ✅ shipped - one tokenised treatment, `scrollbar-gutter: stable` (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | — |
 | Fonts | ✅ shipped - bundled, identically on all three platforms (VIS-05) | ✅ shipped (VIS-05) | ✅ shipped (VIS-05) | — |
@@ -3356,15 +3329,14 @@ complete or verify - is the only item remaining in this tier.
 | NAT-06 | No recent documents |
 | NAT-08 | No single-instance lock |
 | NAT-09 | No drag and drop (the navigation-loses-work hole itself is shipped, NAT-18) |
-| NAT-12 | Right-click erases; Ctrl+click collision on macOS |
-| NAT-14 | Command set is thin: zoom, tab switching, region operations |
+| NAT-14 | Command set is thin: zoom, tab switching, region operations (Escape's own gesture-cancel case is shipped, UX-12) |
 | NAT-16 | Native `<select>` among custom fields |
-| GEO-05, GEO-06, GEO-08 | List splits, one-offs |
+| GEO-06, GEO-08 | List splits, one-offs (GEO-05 is shipped) |
 | GEO-10 | No vertical scrollbar |
 | VIS-03, VIS-08, VIS-09, VIS-10, VIS-11 | Design divergence, motion, radius/elevation, capitalisation, icons |
-| VIS-12, VIS-14, VIS-15, VIS-16, VIS-18 | Empty states, status messages, inline `cssText`, canvas indicators, Monaco theme |
-| UX-01, UX-03, UX-05, UX-06, UX-08, UX-09, UX-12, UX-15, UX-16 | Editing and navigation friction |
-| A11Y-02, A11Y-03, A11Y-04, A11Y-06 | Semantics, canvas, targets, scaling |
+| VIS-14, VIS-15, VIS-16, VIS-18 | Status messages, inline `cssText`, canvas indicators, Monaco theme |
+| UX-01, UX-03, UX-05, UX-06, UX-08, UX-09, UX-15, UX-16 | Editing and navigation friction |
+| A11Y-02, A11Y-03, A11Y-06 | Semantics, canvas, scaling |
 | ARCH-04, ARCH-06 | Panel rebuilds, IPC shape |
 | PERF-02, PERF-07 | Layout thrash, startup paint |
 
@@ -3470,9 +3442,9 @@ see "Already completed" for both.
    resolved, VIS-04, done) is still open.
 10. **GEO-07** — done, see "Already completed": integer palette cells.
     **GEO-08** the remaining one-offs onto the scale.
-11. **VIS-12 / VIS-14 / VIS-15 / VIS-16 / VIS-17** empty states, status
-    messages, `.field`/`.cell.add` classes, canvas indicators, missing-texture
-    treatment.
+11. **VIS-14 / VIS-15 / VIS-16 / VIS-17** status messages, `.field`/`.cell.add`
+    classes, canvas indicators, missing-texture treatment. **VIS-12** empty
+    states is done — see "Already completed".
 
 ### Phase 4 — Layout and interaction
 
@@ -3487,12 +3459,14 @@ tokens) and **UX-04** (zoom controls and a real fit, including the new View
 menu that also gives Toggle Full Screen a home again - see §12, "Full
 screen") are also done — see "Already completed" for both.
 
-13. **GEO-05 / GEO-06** content-driven list and inspector heights - the
-    splitters themselves no longer need building.
+13. **GEO-06** content-driven inspector height - the splitter itself no
+    longer needs building. **GEO-05**, the same treatment for the script/MIDI
+    list, is done — see "Already completed".
 14. **GEO-10** vertical scrollbar (NAT-11, its prerequisite, is done - the
     wheel already scrolls).
-15. **NAT-12** canvas context menu and Ctrl+click; **UX-12** gesture cancel
-    (**NAT-13** cursors is done — see "Already completed").
+15. **NAT-12** canvas context menu and Ctrl+click, and **UX-12** gesture
+    cancel, are both done — see "Already completed" (**NAT-13** cursors is
+    done too).
 16. **PERF-01** — done, see "Already completed": `Panel.update()` now exists
     and the drag hot path uses it. **ARCH-04**'s remaining scope (the
     `onchange` handlers, `esc()`) can reuse it. **PERF-02** cached rect and
@@ -3509,10 +3483,10 @@ this phase, now that native menus (NAT-05) and A11Y-01 together have deleted
 or fixed every inaccessible subsystem outside the canvas itself.
 
 19. **A11Y-02** semantics and landmarks. **A11Y-05** live regions is done —
-    see "Already completed".
-20. **A11Y-04** hit targets — the `li` row height piece is done (GEO-01,
-    done); the `.tab` close glyph and `.hdr button` remain.
-21. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
+    see "Already completed". **A11Y-04** hit targets is done too - the `li`
+    row height piece (GEO-01) and the `.tab` close glyph/`.hdr button`
+    padding both shipped.
+20. **A11Y-03** canvas keyboard cursor (its focus-ring dependency, VIS-06, is
     already in place); **A11Y-06** scaling; **A11Y-07** system preferences;
     **A11Y-08** non-colour cues.
 
@@ -3522,17 +3496,17 @@ or fixed every inaccessible subsystem outside the canvas itself.
 warnings) are also done - see "Already completed"; both built directly on
 BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
 
-22. **ARCH-08** — done, see "Already completed": lazy Monaco. **PERF-07**
+21. **ARCH-08** — done, see "Already completed": lazy Monaco. **PERF-07**
     show-after-ready; **PERF-05** refresh granularity.
-23. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
+22. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
     async I/O *if* measurement justifies it.
-24. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
+23. **UX-01 / UX-02 / UX-03 / UX-05 / UX-06 / UX-08 / UX-09 / UX-13 / UX-14 /
     UX-15 / UX-17** — the remaining workflow items, each independent. UX-03 is
     narrower than originally scoped: the menu items themselves already exist
     (NAT-01), only per-action labelling is left. UX-15 is also narrower: the
     contrast and MIDI-collision problems it cited are already fixed (VIS-01,
     BUG-06).
-25. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
+24. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
     NAT-17 is narrower too: the About panel already shipped (NAT-01), only the
     Dock menu and JumpList tasks are left.
 
@@ -3558,8 +3532,9 @@ unblocked NAT-03 and NAT-04 (both now done); NAT-05 deleted an entire
 inaccessible subsystem rather than fixing it in place, independently of the
 rest of this graph; NAT-11 unblocked GEO-10 (the wheel now scrolls) and named
 two of GEO-11's eight constants; A11Y-01 (also done, needing nothing from
-this graph) unblocked A11Y-02, A11Y-03 and A11Y-04, none of which depended on
-tokens either; BUG-12 and NAT-13 each shipped independently, needing nothing
+this graph) unblocked A11Y-02, A11Y-03 and A11Y-04 (also since done, needing
+nothing further from this graph), none of which depended on tokens either;
+BUG-12 and NAT-13 each shipped independently, needing nothing
 from this graph and unblocking nothing on it; **GEO-01 + VIS-04** (the token
 block - spacing, rows, type, radius, elevation, motion, z-index, colour
 consolidation, folding in GEO-02's and GEO-09's asks) is done and unblocked
@@ -3687,7 +3662,10 @@ demonstrably true. Each is checkable, not a matter of opinion.
       `"stable"` on all four)
 - [ ] Motion is tokenised and honours `prefers-reduced-motion`.
 - [ ] Every list has an empty state; every error has an icon, a colour and a
-      message that persists until acted on.
+      message that persists until acted on. (The empty-state half is done —
+      VIS-12, see "Already completed" — a `no scripts yet · new script` /
+      `no midi files · import…` row replaces each blank void; the error-icon
+      half is still open, VIS-14/A11Y-08, so the box stays unchecked)
 - [ ] The Monaco editor's palette matches the surrounding chrome, including
       scrollbars, widgets and lists.
 - [ ] `CLAUDE.md`'s "Deviations from the design file" section records every
@@ -3705,7 +3683,13 @@ demonstrably true. Each is checkable, not a matter of opinion.
       all control boundaries and focus indicators meet 3:1. Verified with a
       contrast checker, not by eye.
 - [ ] No state is communicated by colour alone.
-- [ ] All hit targets are at least 24 × 24 px.
+- [x] All hit targets are at least 24 × 24 px. (A11Y-04 — the tab-close glyph
+      and the MIDI header's `+` are padded to a `--space-7` (24px) hit box
+      without growing the visible glyph; `li` rows and window controls were
+      already there (GEO-01, NAT-02); `#hbar`'s own scrollbar track is exempt
+      as an inline control, per the finding's own text. Verified with the
+      probe harness: `getComputedStyle()` on both previously-undersized
+      targets now reads `24px` × `24px`)
 - [x] Status messages and errors are announced by a screen reader. (A11Y-05 —
       `#msg` carries `role="status"`, `App.fail()`'s error block carries
       `role="alert"`; verified with the probe harness: both roles present,
