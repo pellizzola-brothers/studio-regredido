@@ -218,7 +218,7 @@ function tab(id, label, closable)
 		x.type = 'button';
 		x.className = 'tabclose';
 		x.tabIndex = -1;			/* reachable by mouse; Ctrl+W covers keyboard */
-		x.textContent = '×';
+		x.appendChild(svgicon(false, 'M4.5 4.5l7 7M11.5 4.5l-7 7'));	/* VIS-11 */
 		x.setAttribute('aria-label', 'Close ' + label);
 		x.onclick = e => { e.stopPropagation(); App.closetab(id); };
 		t.appendChild(x);

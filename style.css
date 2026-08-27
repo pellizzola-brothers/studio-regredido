@@ -82,6 +82,10 @@
 	--sprite: 32px;
 	--cell: var(--sprite);		/* an integer multiple - x2 for a larger palette, never fractional */
 
+	/* ---- icons (VIS-11): one size for the small inline-SVG set, so every
+	   icon is a crisp, non-fractional square regardless of where it sits ---- */
+	--icon: 16px;
+
 	/* ---- panels: proportional and clamped, not fixed pixels (GEO-03) -----
 	   The percentage is the design's own ratio (Pellizzola Brothers.svg:
 	   157/1504 = 10.44%, 197/1505 = 13.09%), now stated as such instead of
@@ -254,17 +258,35 @@ button:disabled { color: var(--fg-disabled); cursor: default; }
 	padding: 0;
 }
 
+/* VIS-11: a small inline-SVG icon set - currentColor so an icon takes
+   whatever colour a state (VIS-07) already gives its parent, one size token
+   so every icon is a crisp, non-fractional square wherever it sits. Line-icon
+   (stroke) is the default, since that is what "+" and "x" both are; .icon.fill
+   switches to a filled shape for the one icon (play) that is one. */
+.icon {
+	width: var(--icon);
+	height: var(--icon);
+	flex: none;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linecap: round;
+}
+.icon.fill { fill: currentColor; stroke: none; }
+
 /* titlebar */
 #title {
 	display: flex;
 	align-items: center;
 	flex: 0 0 var(--row-lg);
-	gap: 10px;
+	gap: var(--space-5);			/* GEO-08: was 10px, on neither scale step
+						   either side of it - matches this row's
+						   own padding rather than picking a new one */
 	padding: 0 var(--space-5);
 	background: var(--frame);
 }
 #name { flex: 1; color: var(--dim); overflow: hidden; white-space: nowrap; }
-.acts { display: flex; gap: 14px; }
+.acts { display: flex; gap: var(--space-5); }	/* GEO-08: was 14px, 12 is the nearer step */
 
 /* NAT-02: real per-platform window controls replace the old hand-drawn
    traffic-light dots, so #title needs room to not sit underneath them - the
@@ -325,25 +347,39 @@ html[data-platform="darwin"] .acts { display: none; }
 	background: var(--acc);
 }
 .tab span { overflow: hidden; text-overflow: ellipsis; }
-/* A11Y-04: the × glyph itself stays the same size - only its hit area grows,
-   to --space-7 (24px), the platform minimum - so the visual density the
-   design wants is unchanged and only the clickable box around it is bigger. */
+/* A11Y-04: the icon itself stays the same size (--icon, VIS-11) - only its
+   hit area grows, to --space-7 (24px), the platform minimum - so the visual
+   density the design wants is unchanged and only the clickable box around
+   it is bigger. */
 .tab .tabclose {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	width: var(--space-7);
 	height: var(--space-7);
-	font-style: normal;
 	opacity: .6;
 	transition: opacity var(--dur-fast) var(--ease);
 }
 .tab .tabclose:hover { opacity: 1; }
 /* VIS-09: the standalone action buttons (this, the hotbar, .act, the two
    header "+"s) read as one step more prominent than an inline control -
-   --radius-2 rather than the generic button rule's --radius-1. */
-#add { padding: 0 var(--space-5); border-radius: var(--radius-2); }
-.run { padding: 0 var(--space-6); color: var(--acc-text); font-size: 13px; }
+   --radius-2 rather than the generic button rule's --radius-1. VIS-11: both
+   now hold an icon rather than a line of text, so they need to centre one
+   the way .hdr button/.tab .tabclose already do. */
+#add {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0 var(--space-5);
+	border-radius: var(--radius-2);
+}
+.run {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0 var(--space-6);
+	color: var(--acc-text);
+}
 
 /* body
  *

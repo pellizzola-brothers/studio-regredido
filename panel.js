@@ -14,6 +14,24 @@ function esc(s)
 		({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
 }
 
+/* VIS-11: the two icons a dynamically-built element still needs (the palette's
+ * add-definition "+" and a tab's own close "x" - everything else the icon set
+ * covers is static markup in index.html). `d` is one or more SVG path data
+ * strings; the shared .icon/.icon.fill classes (style.css) own colour and
+ * size, so nothing here is a presentation attribute. */
+function svgicon(fill, d)
+{
+	const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+
+	svg.setAttribute('viewBox', '0 0 16 16');
+	svg.setAttribute('class', fill ? 'icon fill' : 'icon');
+	svg.setAttribute('aria-hidden', 'true');
+	const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+	p.setAttribute('d', d);
+	svg.appendChild(p);
+	return svg;
+}
+
 /* A11Y-01: roving tabindex for a list of focusable items sharing one Tab
  * stop - exactly one carries tabindex 0 (the current item, if any, else the
  * first), the rest -1, and the arrow keys move both the tab stop and focus.
@@ -95,7 +113,7 @@ Panel.palette = function ()
 	const add = document.createElement('button');
 	add.type = 'button';
 	add.className = 'cell add';
-	add.textContent = '+';
+	add.appendChild(svgicon(false, 'M8 3v10M3 8h10'));
 	add.title = 'New custom entity definition';
 	add.setAttribute('aria-label', 'New custom entity definition');
 	add.onclick = newdef;

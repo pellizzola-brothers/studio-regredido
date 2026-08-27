@@ -15,10 +15,14 @@
 
 <div id="tabs">
 	<div id="tablist"></div>
-	<button id="add" title="New Lua script">+</button>
+	<button id="add" title="New Lua script">
+		<svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+	</button>
 	<div class="drag grow"></div>
 	<button id="run" class="run" disabled aria-disabled="true"
-		title="Playtest is inert: the game cannot load .lvl archives yet (game/todo.txt 3.1)">&#9654;</button>
+		title="Playtest is inert: the game cannot load .lvl archives yet (game/todo.txt 3.1)">
+		<svg class="icon fill" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>
+	</button>
 </div>
 
 <div id="body">
@@ -27,7 +31,9 @@
 		<ul id="scripts"></ul>
 		<div id="splitter-scripts" class="splitter h" role="separator" tabindex="0"
 			aria-orientation="horizontal" aria-label="Resize scripts list"></div>
-		<h2 class="hdr" id="hdr-midi">midi<button id="addmidi" title="Import MIDI">+</button></h2>
+		<h2 class="hdr" id="hdr-midi">midi<button id="addmidi" title="Import MIDI">
+			<svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+		</button></h2>
 		<ul id="midis"></ul>
 	</aside>
 
