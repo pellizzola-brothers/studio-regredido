@@ -8,28 +8,53 @@
 const Code = {ed: null, models: new Map(), path: null, ready: false, quiet: false,
 	loading: false, pending: []};
 
-/* VIS-04: four of these eleven colours used to be transcribed by hand from
- * style.css's tokens - a copy that could silently drift, and once already
- * had (b9a6d6/7b56ba were --fg/--acc restated, not read).  They now read
- * Tokens (tokens.js) instead.  The rest - 150f24, 2e2049, 1e1633 - are not
- * duplicates of anything else in the app, so there is nothing here for them
- * to drift out of sync with; giving the editor's own palette a considered
- * relationship to the surrounding chrome is VIS-18, not this finding. */
+/* VIS-04/VIS-18: every one of these now reads Tokens (tokens.js) instead of
+ * a hand-transcribed hex literal - the three that VIS-04 left alone
+ * (150f24/2e2049/1e1633, none of them a duplicate of anything else in the
+ * app, so nothing for them to drift out of sync with) now have a considered
+ * relationship to the surrounding chrome instead: the editor replaces the
+ * canvas on screen (#code sits where #wrap does, `body.text` toggles which
+ * one shows), so its own background is the canvas's, not one of the side
+ * panels'; the selection/bracket/occurrence highlights are accent-tinted
+ * overlays built from the same --acc-rgb triple grid.js's own selection
+ * ring and level-bounds outline already are, rather than a fourth
+ * unrelated violet; the indent guide reuses --line, the decorative-only
+ * separator token already scoped for exactly this weight of mark. Unset
+ * keys previously fell through to vs-dark's own blue - a colour with
+ * nothing to do with this app - for the scrollbar, the find/suggest
+ * widgets, the list states inside them, bracket matching, and error/warning
+ * squiggles; all of them are named below now. */
 const THEME = {
 	base: 'vs-dark',
 	inherit: true,
-	rules: [{token: '', foreground: Tokens.fg.replace('#', ''), background: '150f24'}],
+	rules: [{token: '', foreground: Tokens.fg.replace('#', ''), background: Tokens.canvasBg.replace('#', '')}],
 	colors: {
-		'editor.background': '#150f24',
+		'editor.background': Tokens.canvasBg,
 		'editor.foreground': Tokens.fg,
 		'editor.lineHighlightBackground': Tokens.tab,
-		'editor.selectionBackground': '#2e2049',
+		'editor.selectionBackground': 'rgba(' + Tokens.accRgb + ', .3)',
+		'editor.selectionHighlightBackground': 'rgba(' + Tokens.accRgb + ', .15)',
 		'editorCursor.foreground': Tokens.acc,
 		'editorLineNumber.foreground': Tokens.scrollThumb,
 		'editorLineNumber.activeForeground': Tokens.acc,
-		'editorGutter.background': '#150f24',
+		'editorGutter.background': Tokens.canvasBg,
 		'editorWidget.background': Tokens.tab,
-		'editorIndentGuide.background1': '#1e1633'
+		'editorWidget.border': Tokens.acc,
+		'editorIndentGuide.background1': Tokens.line,
+		'focusBorder': Tokens.acc,
+		'scrollbarSlider.background': 'rgba(' + Tokens.accRgb + ', .2)',
+		'scrollbarSlider.hoverBackground': 'rgba(' + Tokens.accRgb + ', .35)',
+		'scrollbarSlider.activeBackground': 'rgba(' + Tokens.accRgb + ', .5)',
+		'editorSuggestWidget.background': Tokens.tab,
+		'editorSuggestWidget.border': Tokens.acc,
+		'editorSuggestWidget.selectedBackground': Tokens.surfaceSelected,
+		'editorSuggestWidget.highlightForeground': Tokens.acc,
+		'list.hoverBackground': Tokens.surfaceHover,
+		'list.activeSelectionBackground': Tokens.surfaceSelected,
+		'editorBracketMatch.background': 'rgba(' + Tokens.accRgb + ', .25)',
+		'editorBracketMatch.border': Tokens.acc,
+		'editorError.foreground': Tokens.danger,
+		'editorWarning.foreground': Tokens.danger
 	}
 };
 
@@ -79,7 +104,14 @@ Code.init = function (done)
 			theme: 'pb',
 			automaticLayout: true,
 			fontFamily: "'JetBrains Mono','DejaVu Sans Mono',monospace",
-			fontSize: 12,
+			fontSize: Tokens.fontSize,
+			lineHeight: Tokens.lineHeight,		/* VIS-18 */
+			/* VIS-18: 'line' is Monaco's own default, made explicit so it
+			 * reads as a decision - it fills the current line with
+			 * editor.lineHighlightBackground (Tokens.tab, above), the same
+			 * "this row" fill treatment li.on/.tab.on already give a
+			 * selected row elsewhere in the app (VIS-07). */
+			renderLineHighlight: 'line',
 			minimap: {enabled: false},
 			scrollBeyondLastLine: false,
 			renderWhitespace: 'selection',

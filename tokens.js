@@ -14,7 +14,11 @@
  * A <link rel=stylesheet> blocks every <script> that follows it in the
  * document until the sheet has loaded, and index.html's <link> is first, so
  * the custom properties below are already resolvable by the time this file's
- * top-level code runs. */
+ * top-level code runs.
+ *
+ * VIS-18: code.js's own font size and line height are read the same way, for
+ * the same reason - Monaco's editor.create() options want plain numbers, not
+ * a live var(--font-size). */
 'use strict';
 
 /* exported Tokens */
@@ -25,16 +29,24 @@ const Tokens = (() => {
 	return {
 		fg: v('--fg'),
 		acc: v('--acc'),
+		accRgb: v('--acc-rgb'),		/* VIS-18: the raw triple, for code.js's
+						   own accent-tinted overlays - the same
+						   composition gridLine already does below,
+						   just with alphas only Monaco's theme needs */
 		tab: v('--tab'),
+		line: v('--line'),			/* VIS-18: code.js's indent guide */
+		danger: v('--danger'),			/* VIS-18: code.js's error/warning squiggles */
+		surfaceHover: v('--surface-hover'),	/* VIS-18: code.js's list hover */
+		surfaceSelected: v('--surface-selected'), /* VIS-18: code.js's list/suggest selection */
 		scrollThumb: v('--scroll-thumb'),
 		canvasBg: v('--canvas-bg'),
 		missingTex: v('--missing-tex'),
 		missingDef: v('--missing-def'),
 		gridLine: 'rgba(' + v('--acc-rgb') + ', .14)',
-		bounds: 'rgba(' + v('--acc-rgb') + ', .5)',
-		/* A lighter tint than --acc, for the hover cell's outline; distinct
-		 * enough from the selection ring that the two are not confused, and
-		 * has no CSS consumer of its own to read a token from yet. */
-		hoverCell: 'rgba(200, 170, 255, .75)'
+		/* VIS-18: code.js's own editor options - it cannot resolve a CSS
+		 * var() any more than it can resolve one for a colour, so the type
+		 * scale needs the same numeric read-out. */
+		fontSize: parseFloat(v('--font-size')),
+		lineHeight: parseFloat(v('--line-box'))
 	};
 })();
