@@ -44,10 +44,15 @@ App.recheck = function ()
  * edit exists. */
 App.syncmenu = function ()
 {
+	/* UX-03: the step at the top of each stack is the one Undo/Redo would
+	 * act on next - its label is what lets the menu read "Undo Paint"
+	 * instead of a generic "Undo" no matter what the last edit was. */
 	api.menustate({
 		tab: App.tab,
 		canUndo: Undo.past.length > 0,
-		canRedo: Undo.future.length > 0
+		canRedo: Undo.future.length > 0,
+		undoLabel: Undo.past.length ? Undo.past[Undo.past.length - 1].label : null,
+		redoLabel: Undo.future.length ? Undo.future[Undo.future.length - 1].label : null
 	});
 };
 
@@ -190,6 +195,13 @@ function tabs()
 		items.push(tab(p, p, true));
 	roving(el, items, 1);
 	document.body.classList.toggle('text', App.tab !== 'level');
+	/* UX-16: switching to a tab scrolled out of the strip's own width used
+	 * to leave it still out of sight - nothing scrolled it into view, and
+	 * nothing else does either. 'nearest' does not disturb tabs already
+	 * visible, matching how a browser's own tab strip behaves. */
+	const on = items.find(t => t.classList.contains('on'));
+	if (on)
+		on.scrollIntoView({block: 'nearest', inline: 'nearest'});
 }
 
 /* A11Y-01: role="tab" rather than a real <button>, because the closable ones
@@ -201,7 +213,10 @@ function tab(id, label, closable)
 {
 	const t = document.createElement('div');
 
-	t.className = 'tab' + (App.tab === id ? ' on' : '');
+	/* UX-16: the one non-closable tab is pinned outside the scrolling region
+	 * (style.css's .tab.pin) rather than just looking identical to every
+	 * closable one next to it. */
+	t.className = 'tab' + (App.tab === id ? ' on' : '') + (closable ? '' : ' pin');
 	t.setAttribute('role', 'tab');
 	t.setAttribute('aria-selected', App.tab === id ? 'true' : 'false');
 	t.innerHTML = '<span></span>';
@@ -221,6 +236,8 @@ function tab(id, label, closable)
 		x.appendChild(svgicon(false, 'M4.5 4.5l7 7M11.5 4.5l-7 7'));	/* VIS-11 */
 		x.setAttribute('aria-label', 'Close ' + label);
 		x.onclick = e => { e.stopPropagation(); App.closetab(id); };
+		/* UX-16: middle-click-to-close, which every tabbed editor supports. */
+		t.onauxclick = e => { if (e.button === 1) App.closetab(id); };
 		t.appendChild(x);
 	}
 	$('tablist').appendChild(t);
@@ -315,6 +332,15 @@ function list(ul, keys, isscript)
 		li.appendChild(b);
 		li.onclick = ev => rowmenu(ev, k, isscript);
 		li.oncontextmenu = ev => rowmenu(ev, k, isscript);
+		/* UX-01: left-click opening the menu instead of the row was a
+		 * documented, deliberate choice (CLAUDE.md), but it costs the file
+		 * manager's most frequent action - opening a script - two clicks and
+		 * a pointer traverse.  Double-click is the same gesture every other
+		 * file manager on every platform uses for "open", and it does not
+		 * cost the menu anything: dblclick fires after the second click's own
+		 * click/rowmenu() has already opened and dismissed it. */
+		if (isscript)
+			li.ondblclick = () => App.opentab(k);
 		li.onkeydown = ev => rowkeys(ev, li, k, isscript);
 		ul.appendChild(li);
 		items.push(li);
@@ -375,13 +401,40 @@ function rowbykey(k, isscript)
 	return null;
 }
 
+/* UX-15: what the typed name would become and, if it cannot commit, why - the
+ * same duplicate/empty checks renscript()/renmidi() make after the fact,
+ * moved earlier so edit() can show the problem while the user is still typing
+ * instead of after the field is already gone. `key === old` (renaming to the
+ * name it already has) is deliberately not an error - it is a no-op commit,
+ * not a collision with itself. */
+function badname(raw, old, isscript)
+{
+	const clean = isscript ? cleanscript(raw) : cleanmidi(raw, old);
+	if (!clean)
+		return 'name cannot be empty';
+	const key = (isscript ? 'scripts/' : 'midi/') + clean;
+	if (key === old)
+		return '';
+	const table = isscript ? App.doc.scripts : App.doc.midi;
+	return table[key] !== undefined ?
+		(isscript ? 'a script' : 'a MIDI file') + ' named ' + clean + ' already exists' : '';
+}
+
 /* Electron has no window.prompt, so names are typed in place.  `isscript` is
  * the row's own kind, forwarded by the caller rather than re-derived from
  * `old`'s prefix - `old === null` (a brand new row) is only ever a script,
- * since MIDI is always added by import, never by inline entry. */
+ * since MIDI is always added by import, never by inline entry.
+ *
+ * UX-15: validated as the user types (badname(), above) rather than only
+ * after commit, so a duplicate or empty name is visible - a --danger border
+ * plus a one-line message under the field - before Enter or blur is even
+ * tried.  A failed commit leaves the field open with the typed text intact
+ * instead of discarding it into sidebar()'s rebuild, which is what used to
+ * make a rejected rename indistinguishable from a silently ignored one. */
 function edit(li, b, old, isscript)
 {
 	const inp = document.createElement('input');
+	const err = document.createElement('div');
 
 	inp.value = b.textContent;
 	/* VIS-08: a bare fade-in marks the moment this field replaces the row's
@@ -389,33 +442,54 @@ function edit(li, b, old, isscript)
 	 * VIS-15: .field is the same shared text-input component #props uses,
 	 * so this is no longer a second, visually distinct input built by hand. */
 	inp.className = 'field rename';
+	err.className = 'rename-err';
+	err.setAttribute('role', 'alert');
+	li.classList.add('editing');
 	li.replaceChild(inp, b);
+	li.appendChild(err);
 	inp.focus();
 	inp.select();
+
+	function check()
+	{
+		const msg = badname(inp.value, old, isscript);
+		inp.classList.toggle('invalid', !!msg);
+		err.textContent = msg;
+		return !msg;
+	}
+	check();
+
+	function commit()
+	{
+		if (!check()) {
+			inp.focus();
+			return;
+		}
+		if (old === null)
+			App.newscript(cleanscript(inp.value), true);
+		else if (isscript) {
+			const v = cleanscript(inp.value);
+			if ('scripts/' + v !== old)
+				renscript(old, 'scripts/' + v);
+		} else {
+			const v = cleanmidi(inp.value, old);
+			if ('midi/' + v !== old)
+				renmidi(old, 'midi/' + v);
+		}
+		sidebar();
+	}
+
+	inp.oninput = check;
 	inp.onkeydown = e => {
-		if (e.key === 'Enter')
-			inp.blur();
-		else if (e.key === 'Escape') { inp.onblur = null; sidebar(); }
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			commit();
+		} else if (e.key === 'Escape') { inp.onblur = null; sidebar(); }
 		e.stopPropagation();
 	};
 	inp.onmousedown = e => e.stopPropagation();
 	inp.onclick = e => e.stopPropagation();
-	inp.onblur = () => {
-		if (old === null) {
-			const v = cleanscript(inp.value);
-			if (v)
-				App.newscript(v, true);
-		} else if (isscript) {
-			const v = cleanscript(inp.value);
-			if (v && 'scripts/' + v !== old)
-				renscript(old, 'scripts/' + v);
-		} else {
-			const v = cleanmidi(inp.value, old);
-			if (v && 'midi/' + v !== old)
-				renmidi(old, 'midi/' + v);
-		}
-		sidebar();
-	};
+	inp.onblur = commit;
 }
 
 function cleanscript(s)
@@ -469,7 +543,7 @@ App.newscript = function (name, opentoo)
 	Undo.act(() => {
 		App.doc.scripts[p] = '-- ' + p + '\n';
 		App.touch();
-	});
+	}, 'new script');
 	sidebar();
 	if (opentoo)
 		App.opentab(p);
@@ -489,7 +563,7 @@ function renscript(old, p)
 			if (d.script === old)
 				d.script = p;
 		App.touch();
-	});
+	}, 'rename script');
 	Code.drop(old);
 	App.open = App.open.map(v => v === old ? p : v);
 	if (App.tab === old)
@@ -510,7 +584,7 @@ function renmidi(old, p)
 		App.doc.midi[p] = App.doc.midi[old];
 		delete App.doc.midi[old];
 		App.touch();
-	});
+	}, 'rename midi');
 }
 
 function delscript(p)
@@ -523,7 +597,7 @@ function delscript(p)
 	Undo.act(() => {
 		delete App.doc.scripts[p];
 		App.touch();
-	});
+	}, 'delete script');
 	Code.drop(p);
 	App.closetab(p);
 	sidebar();
@@ -534,7 +608,7 @@ function delmidi(p)
 	Undo.act(() => {
 		delete App.doc.midi[p];
 		App.touch();
-	});
+	}, 'delete midi');
 	sidebar();
 }
 
@@ -550,7 +624,7 @@ async function addmidi()
 		for (const f of r.files)
 			App.doc.midi[f.name] = f.data;
 		App.touch();
-	});
+	}, 'import midi');
 	sidebar();
 	App.say('imported ' + r.files.length + ' file(s)');
 }
@@ -638,6 +712,21 @@ App.open_ = async function ()
 	App.say('opened ' + r.path);
 };
 
+/* NAT-06: File -> Open Recent (menu.js) already knows the path - still has to
+ * cross the same unsaved-changes guard as any other open before replacing the
+ * document. */
+App.openrecent = async function (p)
+{
+	if (!await guard())
+		return;
+	const r = await api.openpath(p);
+	if (!r.ok)
+		return App.fail(r.err);
+	App.setdoc(r.doc, r.path);
+	App.setwarnings(r.warnings);
+	App.say('opened ' + r.path);
+};
+
 App.save = async function ()
 {
 	Grid.commit();
@@ -687,6 +776,8 @@ const ACTS = {
 	saveas:		() => App.saveas(),
 	undo:		() => Undo.undo(),
 	redo:		() => Undo.redo(),
+	/* UX-05: the Edit menu's own duplicate command - ⌘D, offset by one cell. */
+	duplicate:	() => { if (App.tab === 'level') Grid.duplicate(); },
 	closetab:	() => { if (App.tab !== 'level') App.closetab(App.tab); },
 	/* Reload must cross the same unsaved-changes guard as closing the window
 	 * (BUG-01) - a bare location.reload() would silently discard the level
@@ -729,7 +820,7 @@ function keys(e)
 				App.doc.json.level.entities.splice(Grid.sel, 1);
 				Grid.sel = -1;
 				App.touch();
-			});
+			}, 'delete entity');
 			Panel.inspect();
 			Grid.redraw();
 		} else
@@ -739,8 +830,15 @@ function keys(e)
 	} else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
 			e.key === 'ArrowUp' || e.key === 'ArrowDown') {
 		e.preventDefault();
-		Grid.kmove(e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0,
-			e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0);
+		const dx = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+		const dy = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0;
+		/* UX-05: a selected entity takes the arrow keys - nudging it - over
+		 * moving the keyboard cursor, mirroring ondown()'s own precedence
+		 * (an existing selection always wins). */
+		if (Grid.sel >= 0)
+			Grid.nudge(dx, dy, e.shiftKey);
+		else
+			Grid.kmove(dx, dy);
 	} else if (e.key === 'Enter' || e.key === ' ') {
 		e.preventDefault();
 		Grid.kpaint();
@@ -825,6 +923,7 @@ addEventListener('DOMContentLoaded', () => {
 		App.setwarnings(r.warnings);
 		App.say('recovered unsaved changes - save to keep them', true);
 	});
+	api.onopenrecent(p => App.openrecent(p));
 
 	api.blank().then(r => {
 		App.setdoc(r.doc, null);
