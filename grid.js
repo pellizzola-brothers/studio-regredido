@@ -10,6 +10,12 @@
 
 const Grid = {
 	cv: null, g: null,
+	/* PERF-02: the canvas's own getBoundingClientRect(), cached rather than
+	 * re-read (a forced layout) by clamp()/fit()/at() and friends on every
+	 * call - refreshed only from doresize(), the already rAF-coalesced
+	 * resize handler (PERF-04), which is the only place the canvas's own
+	 * geometry can actually change. */
+	rect: null,
 	a: null, h: 0,			/* tiles, W columns by h rows */
 	cam: {x: 0, y: 0, z: 0.25},
 	tool: {kind: 'block', id: 2},	/* what the palette has selected */
@@ -18,6 +24,10 @@ const Grid = {
 	kcur: null,			/* A11Y-03: the keyboard cursor cell, or null before
 					   the canvas has ever been driven from the keyboard */
 	pan: null, paint: -1, last: null, moving: false, rdown: null,
+	/* UX-05: the rectangle-fill preview - set from ondown() to onup() while a
+	 * Shift-drag with the block tool is live; null the rest of the time, and
+	 * the signal Grid.draw() uses to know whether to show the preview. */
+	rectAnchor: null, rectCur: null,
 	need: false, rsz: false, fitted: false, dpr: 1,
 	hc: false			/* VIS-16: prefers-contrast: more, kept live */
 };
@@ -143,8 +153,17 @@ Grid.init = function (cv)
 	Grid.cv = cv;
 	Grid.g = cv.getContext('2d', {alpha: false});
 
+	/* PERF-02: the four scrollbar-track elements, looked up once instead of
+	 * by getElementById() on every Grid.syncbar()/syncvbar() call. */
+	Grid.hbar = document.getElementById('hbar');
+	Grid.hspace = document.getElementById('hspace');
+	Grid.vbar = document.getElementById('vbar');
+	Grid.vspace = document.getElementById('vspace');
+	Grid.corner = document.getElementById('corner');
+
 	new ResizeObserver(Grid.resize).observe(cv.parentElement);
-	document.getElementById('hbar').addEventListener('scroll', onbar);
+	Grid.hbar.addEventListener('scroll', onbar);
+	Grid.vbar.addEventListener('scroll', onvbar);	/* GEO-10 */
 	cv.addEventListener('wheel', onwheel, {passive: false});
 	cv.addEventListener('mousedown', ondown);
 	cv.addEventListener('contextmenu', e => e.preventDefault());
@@ -223,6 +242,11 @@ function doresize()
 	const h = Math.max(1, Math.round(r.height * dpr));
 
 	Grid.dpr = dpr;
+	/* PERF-02: #wrap has no border or padding and the canvas is its only
+	 * child, so #wrap's own rect - already read above - is the canvas's
+	 * rendered box too, once the style writes below take effect; reusing it
+	 * avoids a second forced layout to read the canvas's own rect back. */
+	Grid.rect = r;
 	cv.style.width = r.width + 'px';
 	cv.style.height = r.height + 'px';
 	if (cv.width !== w || cv.height !== h) {
@@ -296,7 +320,7 @@ Grid.setheight = function (h)
 		if (Grid.kcur)			/* A11Y-03: keep it inside the resized grid */
 			Grid.kcur.y = Math.min(Grid.kcur.y, h - 1);
 		App.touch();
-	});
+	}, 'resize level');
 	Grid.redraw();
 	/* UX-08: shrinking the level can silently delete entities below the new
 	 * bound - it is undoable (Undo.act, above), but the user was never told
@@ -328,7 +352,7 @@ function fitset(z, x)
  * the level's actual full height and resets x to the level's own start. */
 Grid.fitH = function ()
 {
-	const r = Grid.cv.getBoundingClientRect();
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	if (!r.height)			/* not laid out yet; the resize does it */
 		return;
 	fitset(r.height / (Grid.h * B + 2 * FITPAD), 0);
@@ -348,7 +372,7 @@ const SCENECOLS = W / SCENES;
  * user is actually looking at, not to column 0. */
 function curscene()
 {
-	const r = Grid.cv.getBoundingClientRect();
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	const cx = Grid.cam.x + r.width / Grid.cam.z / 2;
 	return Math.max(0, Math.min(SCENES - 1, Math.floor(cx / (SCENECOLS * B))));
 }
@@ -360,7 +384,7 @@ function curscene()
  * frame. */
 function fitscene(z)
 {
-	const r = Grid.cv.getBoundingClientRect();
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	const cz = Math.max(ZMIN, Math.min(1, z));
 	const left = curscene() * SCENECOLS * B;
 
@@ -369,7 +393,7 @@ function fitscene(z)
 
 Grid.fitW = function ()
 {
-	const r = Grid.cv.getBoundingClientRect();
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	if (!r.height)
 		return;
 	fitscene(r.width / (SCENECOLS * B + 2 * FITPAD));
@@ -377,7 +401,7 @@ Grid.fitW = function ()
 
 Grid.fit = function ()		/* fit the closest scene, not the whole level */
 {
-	const r = Grid.cv.getBoundingClientRect();
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	if (!r.height)
 		return;
 	fitscene(Math.min(r.height / (Grid.h * B + 2 * FITPAD), r.width / (SCENECOLS * B + 2 * FITPAD)));
@@ -395,7 +419,7 @@ const ZOOM_STEP = Math.SQRT2;
  * on the pointer instead, since it has one). */
 Grid.zoomto = function (z)
 {
-	const r = Grid.cv.getBoundingClientRect();
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	const mx = r.width / 2, my = r.height / 2;
 	const wx = Grid.cam.x + mx / Grid.cam.z, wy = Grid.cam.y + my / Grid.cam.z;
 
@@ -411,7 +435,7 @@ Grid.zoomby = function (factor) { Grid.zoomto(Grid.cam.z * factor); };
  * for the whole range of x. */
 Grid.clamp = function ()
 {
-	const r = Grid.cv.getBoundingClientRect();
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	const c = Grid.cam;
 
 	c.x = Math.max(0, Math.min(Math.max(0, W * B - r.width / c.z), c.x));
@@ -422,24 +446,68 @@ Grid.clamp = function ()
 
 /* The bar is a real overflow container: the browser draws and drives it, and
  * a spacer as wide as the level at the current zoom sets its range. */
+/* PERF-02: hspace's width is only written when it actually changes - during
+ * a plain pan (zoom and level width both unchanged) the old code rewrote an
+ * identical string on every one of dozens of frames a second, a style
+ * invalidation for no visual effect. */
+let lasthspace = null;
+
 Grid.syncbar = function ()
 {
-	const bar = document.getElementById('hbar');
+	const bar = Grid.hbar;
 	const want = Math.round(Grid.cam.x * Grid.cam.z);
+	const w = Math.round(W * B * Grid.cam.z) + 'px';
 
-	document.getElementById('hspace').style.width =
-		Math.round(W * B * Grid.cam.z) + 'px';
+	if (w !== lasthspace)
+		Grid.hspace.style.width = lasthspace = w;
 	if (Math.abs(bar.scrollLeft - want) >= BARSLOP)
 		bar.scrollLeft = want;
 };
 
 function onbar()
 {
-	const bar = document.getElementById('hbar');
+	const bar = Grid.hbar;
 
 	if (Math.abs(bar.scrollLeft - Grid.cam.x * Grid.cam.z) < BARSLOP)
 		return;				/* our own write coming back */
 	Grid.cam.x = bar.scrollLeft / Grid.cam.z;
+	Grid.redraw();
+}
+
+/* GEO-10: the vertical counterpart to Grid.syncbar()/onbar() above - same
+ * spacer technique, same BARSLOP re-entrancy tolerance.  Grid.clamp() already
+ * keeps Grid.cam.y within [-B, Grid.h * B + B - viewport height / z] (pinning
+ * it to -B when the level fits vertically, in which case FITPAD's own -B/2 is
+ * inside that range too), so the +B offset below maps that whole range onto a
+ * spacer starting at 0 rather than a negative scrollTop, which overflow: auto
+ * containers cannot represent.  Hidden (visibility, not display, so the row
+ * does not reflow) whenever the level fits the viewport on this axis - unlike
+ * #hbar, which always has 540 columns' worth of range to represent regardless
+ * of window size. */
+let lastvspace = null;
+
+Grid.syncvbar = function ()
+{
+	const bar = Grid.vbar;
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
+	const fits = Grid.h * B < r.height / Grid.cam.z;
+	const want = Math.round((Grid.cam.y + B) * Grid.cam.z);
+	const h = Math.round((Grid.h * B + 2 * B) * Grid.cam.z) + 'px';
+
+	if (h !== lastvspace)				/* PERF-02, mirroring syncbar() */
+		Grid.vspace.style.height = lastvspace = h;
+	if (Math.abs(bar.scrollTop - want) >= BARSLOP)
+		bar.scrollTop = want;
+	bar.style.visibility = Grid.corner.style.visibility = fits ? 'hidden' : 'visible';
+};
+
+function onvbar()
+{
+	const bar = Grid.vbar;
+
+	if (Math.abs(bar.scrollTop - (Grid.cam.y + B) * Grid.cam.z) < BARSLOP)
+		return;				/* our own write coming back */
+	Grid.cam.y = bar.scrollTop / Grid.cam.z - B;
 	Grid.redraw();
 }
 
@@ -459,6 +527,7 @@ Grid.draw = function ()
 
 	Grid.clamp();
 	Grid.syncbar();
+	Grid.syncvbar();
 	App.zoom(Math.round(Grid.cam.z * 100));
 	App.stats(W + '×' + Grid.h, elist().length);	/* VIS-14 */
 
@@ -537,6 +606,19 @@ Grid.draw = function ()
 		diffRect(g, sx + .5, sy + .5, s - 1, s - 1);
 	}
 
+	/* UX-05: the rectangle a Shift-drag would fill on release - shown before
+	 * anything actually changes, the same two-tone outline() the selection
+	 * ring uses, since this is exactly that: "here is what's about to be
+	 * affected". */
+	if (Grid.rectAnchor && Grid.rectCur) {
+		const x0 = Math.min(Grid.rectAnchor.x, Grid.rectCur.x);
+		const x1 = Math.max(Grid.rectAnchor.x, Grid.rectCur.x);
+		const y0 = Math.min(Grid.rectAnchor.y, Grid.rectCur.y);
+		const y1 = Math.max(Grid.rectAnchor.y, Grid.rectCur.y);
+		outline(g, Math.round(x0 * B * z - ox), Math.round(y0 * B * z - oy),
+			Math.round((x1 - x0 + 1) * B * z), Math.round((y1 - y0 + 1) * B * z));
+	}
+
 	/* A11Y-03: the keyboard cursor - drawn like the hover cell above, since
 	 * it means the same thing ("here is where the next action lands"), just
 	 * driven from the keyboard instead of the pointer. Only while the canvas
@@ -602,7 +684,7 @@ function drawbg(g, cw)
 /* Which cell, and which world point, the pointer is over. */
 function at(ev)
 {
-	const r = Grid.cv.getBoundingClientRect();
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	const z = Grid.cam.z;
 
 	const wx = (ev.clientX - r.left) / z + Grid.cam.x;
@@ -626,7 +708,7 @@ function onwheel(ev)
 {
 	ev.preventDefault();
 
-	const r = Grid.cv.getBoundingClientRect();
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	const c = Grid.cam;
 
 	/* Some Windows/Linux mice report whole lines or pages instead of pixels;
@@ -666,7 +748,7 @@ function onwheel(ev)
  * somewhere visible rather than off in a corner of the level. */
 function kdefault()
 {
-	const r = Grid.cv.getBoundingClientRect();
+	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	const cx = Math.floor((Grid.cam.x + r.width / Grid.cam.z / 2) / B);
 	const cy = Math.floor((Grid.cam.y + r.height / Grid.cam.z / 2) / B);
 
@@ -705,6 +787,58 @@ Grid.kmove = function (dx, dy)
 	Grid.redraw();
 };
 
+/* UX-05: nudge the selected entity with the arrow keys - one cell, or ten
+ * with Shift, the coarse-step convention every graphics editor uses.  Takes
+ * priority over Grid.kmove() above (app.js's keys()) whenever an entity is
+ * actually selected, mirroring ondown()'s own precedence: a selection an
+ * arrow key can act on wins over moving the keyboard cursor that has
+ * nothing selected to act on. */
+Grid.nudge = function (dx, dy, coarse)
+{
+	const e = elist()[Grid.sel];
+	if (!e)
+		return;
+	const step = (coarse ? 10 : 1) * B;
+	const nx = Math.max(0, Math.min((W - 1) * B, e.pos[0] + dx * step));
+	const ny = Math.max(0, Math.min((Grid.h - 1) * B, e.pos[1] + dy * step));
+	if (nx === e.pos[0] && ny === e.pos[1])
+		return;
+
+	Undo.act(() => {
+		e.pos[0] = nx;
+		e.pos[1] = ny;
+		setblock(nx / B, ny / B, 0);	/* the block under it gives way */
+		App.touch();
+	}, 'move entity');
+	App.inspect();
+	Grid.redraw();
+};
+
+/* UX-05: duplicate the selected entity, offset by one cell so the copy is
+ * never stacked invisibly on top of the original. */
+Grid.duplicate = function ()
+{
+	const e = elist()[Grid.sel];
+	if (!e) {
+		App.say('nothing selected to duplicate', true);
+		return;
+	}
+	const pos = [
+		Math.min((W - 1) * B, e.pos[0] + B),
+		Math.min((Grid.h - 1) * B, e.pos[1] + B)
+	];
+
+	Undo.act(() => {
+		App.usedef(e.def);
+		elist().push({def: e.def, pos: pos});
+		Grid.sel = elist().length - 1;
+		setblock(pos[0] / B, pos[1] / B, 0);
+		App.touch();
+	}, 'duplicate entity');
+	App.inspect();
+	Grid.redraw();
+};
+
 /* Return/Space: apply the current tool at the keyboard cursor, mirroring
  * ondown()'s own precedence exactly - an existing entity is always grabbed
  * (selected) first, regardless of which tool is active, and only the block
@@ -730,12 +864,12 @@ Grid.kpaint = function ()
 			Grid.sel = elist().length - 1;
 			setblock(c.x, c.y, 0);
 			App.touch();
-		});
+		}, 'place entity');
 	} else
 		Undo.act(() => {
 			Grid.sel = -1;
 			setblock(c.x, c.y, Grid.tool.id);
-		});
+		}, Grid.tool.id ? 'paint' : 'erase');
 	App.inspect();
 	Grid.redraw();
 };
@@ -756,7 +890,7 @@ Grid.kerase = function ()
 		} else
 			setblock(c.x, c.y, 0);
 		App.touch();
-	});
+	}, hit >= 0 ? 'delete entity' : 'erase');
 	App.inspect();
 	Grid.redraw();
 };
@@ -794,7 +928,7 @@ function ondown(ev)
 		return;
 
 	if (hit >= 0) {					/* grab an existing entity */
-		Undo.begin();
+		Undo.begin('move entity');
 		Grid.sel = hit;
 		Grid.moving = true;
 		Grid.cursor(c);
@@ -807,7 +941,7 @@ function ondown(ev)
 		 * creates one and the same gesture carries it to its cell. */
 		if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= Grid.h)
 			return;
-		Undo.begin();
+		Undo.begin('place entity');
 		App.usedef(Grid.tool.id);
 		elist().push({def: Grid.tool.id, pos: [c.x * B, c.y * B]});
 		Grid.sel = elist().length - 1;
@@ -820,7 +954,24 @@ function ondown(ev)
 		return;
 	}
 
-	Undo.begin();
+	/* UX-05: Shift-drag with the block tool fills (or, with the eraser,
+	 * clears) a rectangle instead of free-hand painting the drag path - the
+	 * most-missed verb a tile editor is expected to have. Committed once, on
+	 * release (onup()), rather than cell-by-cell like a free-hand stroke, so
+	 * dragging back over cells already "filled" by the preview does not
+	 * matter - nothing is actually painted until the gesture ends. */
+	if (ev.shiftKey) {
+		Undo.begin(Grid.tool.id ? 'rectangle fill' : 'rectangle erase');
+		Grid.sel = -1;
+		Grid.paint = Grid.tool.id;
+		Grid.rectAnchor = c;
+		Grid.rectCur = c;
+		App.inspect();
+		Grid.redraw();
+		return;
+	}
+
+	Undo.begin(Grid.tool.id ? 'paint' : 'erase');
 	Grid.sel = -1;
 	Grid.paint = Grid.tool.id;
 	Grid.last = c;
@@ -832,6 +983,18 @@ function onmove(ev)
 {
 	const c = at(ev);
 
+	/* UX-05: the rectangle-fill preview tracks the pointer; nothing is
+	 * painted until onup() commits it. */
+	if (Grid.rectAnchor) {
+		Grid.cursor(c);
+		if (c.x !== Grid.rectCur.x || c.y !== Grid.rectCur.y) {
+			Grid.rectCur = c;
+			App.status(c.x, c.y);
+			Grid.redraw();
+		}
+		return;
+	}
+
 	if (Grid.rdown) {
 		if (Grid.rdown.noerase)
 			return;			/* Ctrl+click never erases, moved or not */
@@ -840,7 +1003,7 @@ function onmove(ev)
 		/* The press just became a genuine erase-drag: apply it from the
 		 * cell the press itself was over, then fall through so this same
 		 * move also strokes to the current cell. */
-		Undo.begin();
+		Undo.begin(Grid.rdown.hit >= 0 ? 'delete entity' : 'erase');
 		if (Grid.rdown.hit >= 0) {
 			elist().splice(Grid.rdown.hit, 1);
 			Grid.sel = -1;
@@ -906,6 +1069,30 @@ function onup()
 {
 	const moved = Grid.moving;
 
+	/* UX-05: commit the rectangle preview - every cell in it, once, rather
+	 * than the free-hand stroke() path's cell-per-mousemove. Bounds are
+	 * clamped to the level rect the same way setblock() already refuses
+	 * anything outside it, so a drag that started or ended past an edge still
+	 * only ever fills what actually exists. */
+	if (Grid.rectAnchor) {
+		const x0 = Math.max(0, Math.min(Grid.rectAnchor.x, Grid.rectCur.x));
+		const x1 = Math.min(W - 1, Math.max(Grid.rectAnchor.x, Grid.rectCur.x));
+		const y0 = Math.max(0, Math.min(Grid.rectAnchor.y, Grid.rectCur.y));
+		const y1 = Math.min(Grid.h - 1, Math.max(Grid.rectAnchor.y, Grid.rectCur.y));
+
+		for (let y = y0; y <= y1; y++)
+			for (let x = x0; x <= x1; x++)
+				setblock(x, y, Grid.paint);
+		Grid.rectAnchor = null;
+		Grid.rectCur = null;
+		Grid.paint = -1;
+		Undo.end();
+		App.inspect();
+		Grid.cursor(Grid.hov);
+		Grid.redraw();
+		return;
+	}
+
 	if (Grid.rdown) {
 		const c = Grid.rdown.c, hit = Grid.rdown.hit;
 
@@ -926,7 +1113,7 @@ function onup()
 				} else
 					setblock(c.x, c.y, 0);
 				App.touch();
-			});
+			}, hit >= 0 ? 'delete entity' : 'erase');
 			Panel.inspect();
 			Grid.redraw();
 		} else
@@ -962,6 +1149,8 @@ Grid.cancel = function ()
 	Grid.paint = -1;
 	Grid.last = null;
 	Grid.moving = false;
+	Grid.rectAnchor = null;		/* UX-05: an open rectangle-fill preview */
+	Grid.rectCur = null;
 	Grid.cursor(Grid.hov);
 	return true;
 };
