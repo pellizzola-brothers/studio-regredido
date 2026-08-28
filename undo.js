@@ -50,12 +50,17 @@ function same(a, b)
 }
 
 /* Open a step.  Nested calls join the step already running, so a drag that
- * paints eighty cells still undoes in one go. */
-Undo.begin = function ()
+ * paints eighty cells still undoes in one go.
+ *
+ * UX-03: `label` names the step for the Edit menu ("Undo Paint") and the
+ * status bar ("undid paint") - the caller who knows what gesture this is
+ * supplies it; a step nobody named falls back to the generic 'edit' rather
+ * than leaving the label undefined. */
+Undo.begin = function (label)
 {
 	if (Undo.step || Undo.quiet)
 		return;
-	Undo.step = {before: shot(), cells: [], grid: null};
+	Undo.step = {before: shot(), cells: [], grid: null, label: label || 'edit'};
 };
 
 /* setblock() reports each cell it changes: index, what was there, what is. */
@@ -110,9 +115,9 @@ Undo.cancel = function ()
 };
 
 /* Run fn as a single undoable step. */
-Undo.act = function (fn)
+Undo.act = function (fn, label)
 {
-	Undo.begin();
+	Undo.begin(label);
 	try {
 		fn();
 	} finally {
@@ -147,7 +152,11 @@ function shift(from, to, side, what)
 	apply(s, side);
 	if (App.syncmenu)
 		App.syncmenu();
-	App.say(what + ' (' + Undo.past.length + ' left)');
+	/* UX-03: "3 left" is a count no other application reports and most users
+	 * read backwards ("3 things were undone") - naming the step itself is
+	 * both more useful and reads the way Undo/Redo menu items already do
+	 * ("Undo Paint"). */
+	App.say((what === 'undo' ? 'undid ' : 'redid ') + s.label);
 }
 
 function apply(s, side)
