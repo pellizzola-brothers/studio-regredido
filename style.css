@@ -310,12 +310,27 @@ html[data-platform="darwin"] .acts { display: none; }
 	flex: 0 0 var(--row-lg);
 	background: var(--chrome);
 }
-#tablist { display: flex; overflow: hidden; }
+/* UX-16: overflow: hidden simply deleted any tab past the strip's own width -
+   not scrollable, not stacked, not indicated, and App.closetab() had no way
+   to reach one either. overflow-x: auto makes every open tab reachable again
+   (wheel/trackpad, or the shared scrollbar below); app.js's App.select()
+   scrolls the active one into view on every switch, so opening or Tab-cycling
+   to a hidden tab does not leave it still out of sight. */
+#tablist { display: flex; overflow-x: auto; overflow-y: hidden; scrollbar-gutter: stable; }
+#tablist::-webkit-scrollbar { height: var(--scrollbar); }
+#tablist::-webkit-scrollbar-track { background: var(--chrome); }
+#tablist::-webkit-scrollbar-thumb {
+	border: var(--scrollbar-pad) solid var(--chrome);
+	border-radius: calc(var(--scrollbar-thumb) / 2);
+	background: var(--scroll-thumb);
+}
+#tablist::-webkit-scrollbar-thumb:hover { background: var(--acc); }
 .tab {
 	position: relative;		/* anchors .on's leading-edge marker */
 	display: flex;
 	align-items: center;
 	gap: var(--space-4);
+	flex: none;			/* never shrunk to fit - that is what the scrollbar is for */
 	/* GEO-08: tabs hold filenames, so a statement in ch (which tracks the
 	   actual font's metrics, the same reasoning --side-min already uses)
 	   is a statement about content; 260px was not. min-width is new - a
@@ -330,6 +345,14 @@ html[data-platform="darwin"] .acts { display: none; }
 	transition: background-color var(--dur-fast) var(--ease),
 		color var(--dur-fast) var(--ease);
 }
+/* UX-16: the Level Editor tab is not closable and semantically different from
+   every script tab next to it, but read identically before this - sticky
+   pins it to the strip's own left edge, outside the scrolling region, which
+   both marks it and solves "the Level Editor tab scrolled out of view" as the
+   same fix. The explicit background stops a scrolled-under tab showing
+   through where this one has none of its own (.tab.on's own background,
+   declared later, still wins while this tab is the active one). */
+.tab.pin { position: sticky; left: 0; z-index: var(--z-panel); background: var(--chrome); box-shadow: 1px 0 var(--line); }
 .tab:hover { color: var(--fg); background: var(--surface-hover); }
 .tab:active { background: var(--surface-active); }
 /* GEO-13: the design's own active-tab flare is a 26px corner radius - at the
@@ -519,21 +542,54 @@ li.empty button { color: var(--acc-text); text-decoration: underline; }
 	display: flex;			/* its own children's layout - #body's is a grid now (GEO-04) */
 	flex-direction: column;
 	min-width: 0;
+	/* GEO-10: #stage is itself a grid item of #body, whose own default
+	   automatic minimum size is content-based - #canvasrow's #vspace can be
+	   tens of thousands of px tall, and without this #stage grows to fit it
+	   instead of the grid row's actual height (the same class of bug
+	   min-width: 0 on #side/#right, above, already fixes on the other axis). */
+	min-height: 0;
 }
-#wrap { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+/* GEO-10: the horizontal scrollbar (#hbar, below) always had a real vertical
+   counterpart's worth of range to represent - Grid.setheight() permits up to
+   999 rows - but no bar to show it. #canvasrow puts #vbar beside #wrap the
+   same way #hbar already sits below it; #corner fills the square #hbar would
+   otherwise leave under #vbar, so the two read as one L-shaped frame around
+   the canvas instead of a stray gap. */
+#canvasrow { position: relative; display: flex; flex: 1; min-height: 0; }
+#wrap { position: relative; flex: 1; min-width: 0; overflow: hidden; }
 #code { position: absolute; inset: 0; display: none; }
 canvas { display: block; }
 
-/* The level scrollbar is a real overflow container driven by a spacer as wide
-   as the level; grid.js keeps it and the camera in step. */
+/* The level scrollbars are real overflow containers driven by a spacer as
+   large as the level; grid.js keeps each and the camera in step. #vbar is
+   hidden (visibility, not display, so neither the row nor the canvas
+   reflows) once the level fits the viewport vertically - Grid.syncvbar()
+   drives that; #hbar has no such state, since the level is 540 columns wide
+   regardless of window size. */
 #hbar {
 	overflow-x: auto;
 	overflow-y: hidden;
-	flex: 0 0 calc(var(--scrollbar) + var(--border));
+	flex: 1;
 	background: var(--chrome);
 	border-top: 1px solid var(--line);
 }
 #hspace { height: 1px; }
+#vbar {
+	overflow-y: auto;
+	overflow-x: hidden;
+	flex: 0 0 calc(var(--scrollbar) + var(--border));
+	/* A flex item's default min-height is auto (its content's own intrinsic
+	   height) - #vspace can be tens of thousands of px tall, so without this
+	   #vbar grows to fit it instead of the row's own height, and overflow
+	   never triggers (GEO-07 hit the same class of bug on the cross axis of
+	   a row flex, #side/#right's min-width: 0, above). */
+	min-height: 0;
+	background: var(--chrome);
+	border-left: 1px solid var(--line);
+}
+#vspace { width: 1px; }
+#hbarrow { display: flex; flex: 0 0 calc(var(--scrollbar) + var(--border)); }
+#corner { flex: 0 0 calc(var(--scrollbar) + var(--border)); background: var(--chrome); border-top: 1px solid var(--line); }
 
 /* NAT-20: one scrollbar treatment for every container that scrolls, not just
    #hbar - #scripts, #midis, #palette and #props used to fall back to
@@ -547,27 +603,27 @@ canvas { display: block; }
    too-large radius CSS silently clamps). */
 #scripts, #midis, #palette, #props { scrollbar-gutter: stable; }
 #scripts::-webkit-scrollbar, #midis::-webkit-scrollbar, #palette::-webkit-scrollbar,
-#props::-webkit-scrollbar, #hbar::-webkit-scrollbar {
+#props::-webkit-scrollbar, #hbar::-webkit-scrollbar, #vbar::-webkit-scrollbar {
 	width: var(--scrollbar);
 	height: var(--scrollbar);
 }
 #scripts::-webkit-scrollbar-track, #midis::-webkit-scrollbar-track, #palette::-webkit-scrollbar-track,
-#props::-webkit-scrollbar-track, #hbar::-webkit-scrollbar-track {
+#props::-webkit-scrollbar-track, #hbar::-webkit-scrollbar-track, #vbar::-webkit-scrollbar-track {
 	background: var(--chrome);
 }
 #scripts::-webkit-scrollbar-thumb, #midis::-webkit-scrollbar-thumb, #palette::-webkit-scrollbar-thumb,
-#props::-webkit-scrollbar-thumb, #hbar::-webkit-scrollbar-thumb {
+#props::-webkit-scrollbar-thumb, #hbar::-webkit-scrollbar-thumb, #vbar::-webkit-scrollbar-thumb {
 	border: var(--scrollbar-pad) solid var(--chrome);
 	border-radius: calc(var(--scrollbar-thumb) / 2);
 	background: var(--scroll-thumb);
 }
 #scripts::-webkit-scrollbar-thumb:hover, #midis::-webkit-scrollbar-thumb:hover,
 #palette::-webkit-scrollbar-thumb:hover, #props::-webkit-scrollbar-thumb:hover,
-#hbar::-webkit-scrollbar-thumb:hover {
+#hbar::-webkit-scrollbar-thumb:hover, #vbar::-webkit-scrollbar-thumb:hover {
 	background: var(--acc);
 }
 
-body.text #wrap, body.text #hbar { display: none; }
+body.text #canvasrow, body.text #hbarrow { display: none; }
 body.text #code { display: block; }
 body.text #right { display: none; }
 
@@ -672,10 +728,41 @@ body.text #right { display: none; }
 .field:focus, #props input:focus, #props select:focus, #props textarea:focus {
 	border-color: var(--acc);
 }
+/* NAT-16: appearance: auto left Chromium drawing its own platform popup
+   button (a rounded, light-bordered control with a system chevron on macOS)
+   inside a set of flat, square, dark fields - the most visually foreign
+   element in the panel. appearance: none restyles the closed *control* only;
+   the dropdown list itself stays native, so keyboard nav, type-ahead and a
+   screen reader's combobox semantics are all unaffected - the correct trade
+   between "prefer native" and "visual consistency" (POLISH.md). The chevron
+   is --dim's own colour as a literal, since a data-URI SVG cannot resolve a
+   CSS custom property; update both together if --dim changes. */
+#props select {
+	appearance: none;
+	padding-right: var(--space-6);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%239b7fd4' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right var(--space-3) center;
+}
 /* VIS-15: the rename field's own remaining concern, once .field above
    covers the rest - the fade-in it gets when it replaces a row's static
    label (VIS-08), which none of #props's own fields ever do. */
 .rename { animation: pb-fade-in var(--dur) var(--ease); }
+/* UX-15: a duplicate or empty name shown while the user is still typing,
+   not only after a rejected commit. li.editing switches the row from a
+   single line to wrapping so the message gets its own line under the field
+   instead of squeezing the row's own width; :empty hides it (and the line it
+   would otherwise force) the rest of the time, when there is nothing to say. */
+li.editing { flex-wrap: wrap; align-items: flex-start; }
+.rename.invalid { border-color: var(--danger); }
+.rename-err {
+	flex: 0 0 100%;
+	margin-top: var(--space-1);
+	color: var(--danger);
+	font-size: var(--font-size-sm);
+	white-space: normal;
+}
+.rename-err:empty { display: none; }
 /* VIS-07: disabled fields (the level's own read-only width, an entity's
    read-only cell coordinate) used to get whatever grey Chromium's UA
    stylesheet supplies for a bare <input disabled> - not a colour this app
