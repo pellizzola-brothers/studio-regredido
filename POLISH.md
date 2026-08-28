@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The sixty-eight items below have shipped and are removed from the findings
+The seventy-eight items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -1420,6 +1420,222 @@ undo/redo, save/open, tab switching) showed no behavioural change.
 
 ---
 
+#### BUG-13 — `app://` path containment check is prefix-only
+
+Shipped: `serve()`'s (`main.js`) check is now `p !== ROOT && !p.startsWith(ROOT
++ path.sep)`, so a sibling directory whose name merely extends `ROOT`'s
+(`…/studio-backup`) no longer satisfies it. The audit's further suggestion -
+an explicit allow-list of servable subtrees - was not adopted: the prefix fix
+alone closes the actual defect the finding describes, and `path.join` +
+`normalize` already collapse `..` before this check runs, so a second
+narrowing layer had no live gap left to close. Verified by reading the new
+condition against both cases by hand: `ROOT` itself and any real descendant
+still pass; a sibling directory sharing `ROOT`'s prefix no longer does.
+
+---
+
+#### NAT-06 — No recent documents
+
+Shipped: `main.js` gained a small `recent.json` (`userData`, mirroring
+`window.json`'s own pattern), bumped on every successful `lvl:open`/
+`lvl:saveas` via a new `addrecent()`, which also calls
+`app.addRecentDocument()` for the OS's own memory of the file; a path that no
+longer exists on disk is filtered out lazily, when the list is loaded for the
+menu, rather than watched. `menu.js`'s File menu gained an "Open Recent"
+submenu built from that list (basenames as labels, a trailing "Clear Menu"
+that empties both the OS list and the persisted one) - a dedicated
+`open-recent` channel carries the chosen path to the renderer rather than
+main opening it directly, since it still has to cross the renderer's own
+unsaved-changes guard first, exactly like any other open (`App.openrecent()`,
+`preload.js`'s `api.openpath`/`onopenrecent`, a new `lvl:openpath` handler
+sharing `lvl:open`'s own `openfile()` helper). Windows JumpList population and
+the macOS Dock's own menu are unaffected - both remain NAT-17/NAT-07's own
+scope. Verified with the probe harness: opening a level wrote its path as the
+sole entry in `recent.json`; the File menu's "Open Recent" submenu built
+exactly that path's basename; invoking its `click()` handler after a `New
+Level` had cleared `App.path` reopened it end-to-end through the real guarded
+round trip; invoking "Clear Menu" emptied both the submenu (down to "No
+Recent Documents") and `recent.json`; seeding `recent.json` with a path to a
+file that does not exist produced the same empty "No Recent Documents" state
+on the next menu build.
+
+---
+
+#### NAT-16 — A native `<select>` sits inside a fully custom form
+
+Shipped: `#props select { appearance: none; ... }` (`style.css`) restyles the
+closed control to match the flat, square, dark fields around it - a chevron
+background-image (an inline SVG data URI, since a data URI cannot resolve a
+CSS custom property) replaces the platform's own popup-button chrome. The
+dropdown list itself is untouched and still native: keyboard navigation,
+type-ahead and a screen reader's combobox semantics are all unaffected, which
+is the whole point of restyling the control rather than replacing it with a
+custom listbox (the finding's own explicit recommendation - repeating the
+mistake the old DOM context menu made before NAT-05 replaced it would have
+cost exactly that). Verified with the probe harness: `getComputedStyle()` on
+the level view's background `<select>` reads `appearance: "none"`.
+
+---
+
+#### GEO-10 — There is no vertical scrollbar for the level
+
+Shipped: a `#vbar`/`#vspace` pair, structurally identical to `#hbar`/
+`#hspace`, sits beside the canvas (`#canvasrow`, a new row wrapping `#wrap`
+and `#vbar`) with `#corner` filling the square `#hbar` would otherwise leave
+underneath it - the same spacer-driven real-overflow-container technique
+`CLAUDE.md` already documents for the horizontal bar, mirrored onto the
+vertical axis by `Grid.syncvbar()`/`onvbar()` (`grid.js`), reading and writing
+`Grid.cam.y` the way `Grid.syncbar()`/`onbar()` already do for `cam.x`. Hidden
+via `visibility: hidden` (not `display: none`, so the row does not reflow)
+whenever the level fits the viewport vertically - unlike `#hbar`, which always
+has 540 columns' worth of range to represent regardless of window size. Fixing
+this exposed the same automatic-minimum-size flex bug GEO-07's `#side`/
+`#right` fix (`min-width: 0`) already named on the other axis: `#stage` and
+`#vbar` both needed an explicit `min-height: 0`, or `#vspace`'s own
+tens-of-thousands-of-pixels intrinsic height propagated straight up through
+the flex chain and the canvas row grew to fit it instead of the window.
+Verified with the probe harness: a 12-row (default) level's `#vbar` computes
+`visibility: hidden`; growing the level to 999 rows flips it to `"visible"`
+and its `scrollHeight` now genuinely exceeds `clientHeight`; setting
+`bar.scrollTop` and dispatching `scroll` updates `Grid.cam.y` by the expected
+amount, and setting `Grid.cam.y` and redrawing writes the matching
+`scrollTop` back - the same round trip verified for `#hbar`, unaffected by
+this change. A screenshot confirms the two bars read as one L-shaped frame
+around the canvas.
+
+---
+
+#### UX-01 — A file row cannot be opened by clicking it
+
+Shipped: `list()` (`app.js`) now also binds `ondblclick` on a script row to
+`App.opentab(k)`, alongside the existing single-click-opens-the-menu binding
+`CLAUDE.md` documents as a deliberate, explicit choice - the two do not
+conflict, since a double-click's second click simply dismisses the menu the
+first click opened. MIDI rows are unaffected: they have no "open" action to
+speed up. Verified with the probe harness: dispatching a synthetic
+`dblclick` on a script row opened it as a tab (`App.tab`/`App.open` both
+updated) without going through the menu round trip.
+
+---
+
+#### UX-03 — Undo and redo say nothing about what they undid
+
+Shipped: every `Undo.begin()`/`Undo.act()` call site across `grid.js`,
+`app.js` and `panel.js` now names its own step ("paint", "erase", "move
+entity", "place entity", "delete entity", "resize level", "rename script", …),
+stored on the step itself (`undo.js`'s `Undo.step.label`, defaulting to
+`'edit'` for the rare unlabelled caller). `App.syncmenu()` sends the label at
+the top of each stack alongside `canUndo`/`canRedo`; `menu.js` Title-Cases it
+onto the item text ("Undo Paint", "Redo Move Entity"), and `undo.js`'s
+`shift()` reports "undid paint"/"redid paint" in the status bar instead of
+"undo (3 left)" - a count the finding correctly noted most users read
+backwards. Verified with the probe harness (a variant that also intercepts
+`Menu.buildFromTemplate` to read the real template main builds): painting a
+cell produced `Undo.past[...].label === "paint"`; the Edit menu's own item
+labels read `["Undo Paint", "Redo"]`; undo/redo produced `"undid paint"`/
+`"redid paint"` in `#msg`.
+
+---
+
+#### UX-05 — The editing verb set is thin
+
+Shipped, the three the finding's own text asked to prioritise alongside flood
+fill - "four small, self-contained additions", of which flood fill alone
+needs a genuinely new piece of persistent UI (a bucket tool the palette has no
+slot for yet) rather than a modifier on a gesture that already exists, so it
+is left for a separate pass rather than folded in as a fourth, larger scope
+change here:
+- **Rectangle fill** - Shift-drag with the block tool (including the eraser)
+  now shows a live preview (the same two-tone `outline()` the selection ring
+  uses) and commits the whole rectangle once, on release, rather than
+  free-hand painting the drag path (`Grid.rectAnchor`/`Grid.rectCur`, `grid.js`).
+- **Arrow-key nudge** - a selected entity now takes the arrow keys over the
+  keyboard cursor (`Grid.nudge()`, mirroring `ondown()`'s own "a selection
+  wins" precedence), ±1 cell or ±10 with Shift, clamped to the level's own
+  bounds.
+- **Duplicate** - `Grid.duplicate()`, offset by one cell, wired to a new
+  Edit → Duplicate menu item (⌘D/Ctrl+D).
+
+All three go through `Undo.act()`/`Undo.begin()` per `CLAUDE.md`'s rule.
+Verified with the probe harness: a Shift-drag across a 4×8 region painted
+zero cells before release and exactly 32 after, undoing in one step labelled
+"rectangle fill"; `Grid.nudge()` moved a selected entity by exactly `B` (and
+by `10 * B`, clamped to the level's last row, with Shift); `Grid.duplicate()`
+added a second entity offset by one cell and reported "nothing selected to
+duplicate" when nothing was.
+
+---
+
+#### UX-15 — Inline rename gives no feedback and loses work on failure
+
+Shipped: `edit()` (`app.js`) now validates on every keystroke (`badname()`,
+the same duplicate/empty checks `renscript()`/`renmidi()` already made after
+the fact, moved earlier) and shows the field's own invalid state - a
+`--danger` border plus a one-line message under it (`li.editing` switches the
+row to wrap so the message gets its own line) - rather than only reporting a
+rejected rename after the field is already gone. Enter now calls a `commit()`
+that keeps the field open, text intact and refocused when invalid, instead of
+blurring into a rebuild that discarded whatever was typed; a blur (clicking
+away) commits if valid and re-opens if not, so "I clicked elsewhere by
+accident" no longer reads the same as a deliberate commit. Escape is
+unchanged - it still discards unconditionally. Verified with the probe
+harness: typing a name that collides with an existing script showed
+`invalid: true` and the exact "a script named … already exists" message live,
+before Enter was even tried; pressing Enter while invalid left the field open
+with the typed text intact and the script table unchanged; fixing the name
+and pressing Enter committed normally; Escape still discarded the edit as
+before.
+
+---
+
+#### UX-16 — Tabs overflow into nothing
+
+Shipped: `#tablist` is `overflow-x: auto` (with the same tokenised scrollbar
+treatment NAT-20 already gave the other four scroll containers) instead of
+`overflow: hidden`, so every open tab is reachable again; `tabs()` (`app.js`)
+scrolls the active tab into view (`scrollIntoView({block: 'nearest', inline:
+'nearest'})`) on every switch, so opening or selecting a tab scrolled out of
+sight brings it back; middle-click now closes a tab
+(`onauxclick`/`button === 1`), which costs three lines as the finding
+predicted. The non-closable Level Editor tab gets `.tab.pin`
+(`position: sticky; left: 0`) so it stays fixed outside the scrolling region
+instead of reading identically to the closable tabs next to it, which doubles
+as the fix for "the Level Editor tab scrolled away". Not shipped: the overflow
+chevron listing hidden tabs via a native menu, and `⌘1…⌘9`/`⌃Tab` switching -
+both are NAT-14's own remaining scope (command-set breadth), and scrolling
+alone already makes every tab reachable, which is what this finding's own
+title names as the defect. Verified with the probe harness: opening 15
+scripts produced `#tablist.scrollWidth > #tablist.clientWidth`; selecting the
+first and the last tab moved `#tablist.scrollLeft` accordingly; the pinned
+tab's computed `position` read `"sticky"`; a middle-click (`auxclick`,
+`button: 1`) on a tab closed it. A screenshot confirms the pinned tab and the
+scrollbar both render as intended.
+
+---
+
+#### PERF-02 — Layout is read and written twice per frame in the draw path
+
+Shipped: `Grid.rect` is now cached at `Grid.init()` and refreshed only from
+`doresize()` (the already-coalesced `ResizeObserver` callback, PERF-04, done
+- see "Already completed"), rather than every one of `clamp()`, `fit()`,
+`fitH()`/`fitW()`/`fitscene()`, `zoomto()`, `at()`, `kdefault()`, `onwheel()`
+and `onmove()` calling `getBoundingClientRect()` on its own; `#hbar`/`#hspace`
+and (GEO-10, above) `#vbar`/`#vspace`/`#corner` are looked up once at
+`Grid.init()` too, instead of by `getElementById()` on every `syncbar()`/
+`syncvbar()` call. `Grid.syncbar()`/`Grid.syncvbar()` also now skip writing
+`hspace.style.width`/`vspace.style.height` when the value they would write is
+unchanged from the last write, rather than rewriting an identical string
+dozens of times a second during a plain pan. Verified with the probe harness:
+instrumenting `getBoundingClientRect` and driving a synthetic pan (ten
+`mousemove`s) counted **1** call (the one-time cache at `Grid.init()`/on
+resize), against 30+ before this change (one per `clamp()` inside every
+`Grid.draw()` the pan's `requestAnimationFrame` coalescing still allows);
+instrumenting the `hspace`/`vspace` style setters the same way showed a write
+only on the first frame of a zoom-driven pan, not on every subsequent frame at
+the same zoom.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -1541,28 +1757,25 @@ content's height, with a floor and a ceiling, instead of an unexplained 60/40
 sitting empty on every fresh launch (VIS-12) — see "Already completed" above
 for all five. The shell's remaining problems are below.
 
-### The three biggest remaining sources of perceived unpolish
+### The two biggest remaining sources of perceived unpolish
+
+Formerly three: the vertical-scrollbar asymmetry this list's own second item
+used to name is closed now - `#vbar` mirrors `#hbar` exactly, hidden until the
+level's own height exceeds the viewport (GEO-10, done — see "Already
+completed") - and NAT-06 (recent documents), one of the several gaps item 1
+below used to list under packaging, is done too.
 
 1. **Packaging is the largest remaining native gap.** Window controls,
-   context menus, the hotbar, the window title/proxy-icon/edited-dot and
-   window-state persistence are all native or OS-driven now (NAT-02, NAT-04,
-   NAT-05, NAT-03, NAT-10, see "Already completed"), but there is still no
-   recent documents, no `open-file` handler, no file association, no
-   single-instance lock, no drag-and-drop, no icon, no packaging config, no
-   `nativeTheme` (NAT-06 through NAT-09, NAT-15, NAT-17). Most of the
-   Electron APIs that exist precisely to make this application feel native
-   are still unreferenced anywhere in the tree (verified by grep).
-2. **The level has a scrollbar on only one of its two axes.** `#hbar` gives
-   horizontal navigation a real scrollbar with a position indicator; vertical
-   navigation - middle-drag, Alt-drag, or the wheel, which now scrolls
-   (NAT-11, done) - has neither, even though `Grid.setheight()` permits up to
-   999 rows (GEO-10). An asymmetry the user cannot explain: one axis shows
-   where the viewport is, the other never does. The slot this used to
-   describe - no icon system, five text glyphs standing in at four different
-   effective sizes while a real icon set sat unused in `textures/icons/` - is
-   closed now: a small inline-SVG set with one `--icon` token replaces every
-   one of them (VIS-11, done — see "Already completed").
-3. **The design file and the running app still disagree on colour and
+   context menus, the hotbar, the window title/proxy-icon/edited-dot,
+   window-state persistence and recent documents are all native or OS-driven
+   now (NAT-02, NAT-04, NAT-05, NAT-03, NAT-10, NAT-06, see "Already
+   completed"), but there is still no `open-file` handler, no file
+   association, no single-instance lock, no drag-and-drop, no icon, no
+   packaging config, no `nativeTheme` (NAT-07 through NAT-09, NAT-15,
+   NAT-17). Most of the Electron APIs that exist precisely to make this
+   application feel native are still unreferenced anywhere in the tree
+   (verified by grep).
+2. **The design file and the running app still disagree on colour and
    capitalisation.** The accent is `#7b56ba`, the design's is `#7E58BE`, and
    nobody has recorded why, nor is there any implementation of the design's
    second, lighter fill accent `#815AC1` (VIS-03); four different
@@ -1693,9 +1906,12 @@ Five global-scope modules, coordinated by `App`:
 Rendering is entirely imperative full-subtree rebuilds. There is no diffing,
 no component model and no reactive layer, which is the right choice at this
 size — but it means every rebuild destroys focus, scroll position and caret,
-which matters where it happens on a hot path (UX-15; the entity-drag case,
-formerly the more severe of the two, is done — see "Already completed",
-PERF-01).
+which matters where it happens on a hot path: the entity-drag case (formerly
+the more severe of the two) and the file manager's inline-rename case are both
+done — see "Already completed", PERF-01, UX-15. ARCH-04's own remaining scope
+- `p_rows`/`p_def`/`p_script`'s `onchange` handlers still calling the full
+`Panel.inspect()` from inside the field they were just changed from - is still
+open.
 
 ### Existing design system
 
@@ -1758,27 +1974,9 @@ anything else ships, P3 = nice to have).
 ### 4.1 Correctness and data safety (BUG)
 
 These are ordinary bugs found while auditing. They come first because polish on
-top of data loss is worthless.
-
----
-
-#### BUG-13 — `app://` path containment check is prefix-only
-
-**Category** Security · **Severity** Low · **Priority** P2 · **Affects** Architecture
-
-**Current.** `main.js:29` — `if (!p.startsWith(ROOT)) return 403`. `ROOT` has
-no trailing separator, so a sibling directory whose name extends the root's
-(`…/studio-backup`) satisfies the prefix test. `path.join` + `normalize`
-already collapse `..`, so this is a hardening gap rather than a live traversal,
-but the check as written does not do what it claims.
-
-**Recommended.** `if (p !== ROOT && !p.startsWith(ROOT + path.sep))`. Also
-consider serving from an explicit allow-list of subtrees
-(`index.html`, `*.css`, `*.js`, `textures/`, `node_modules/monaco-editor/min/`)
-rather than the whole application directory — today `app://studio/.git/config`
-is served if a `.git` directory is present, which it is.
-
-**Platforms.** All three; `path.sep` handles the Windows separator.
+top of data loss is worthless. Every finding ever listed in this category,
+including its last remaining member BUG-13 (path containment), is now done —
+see "Already completed" above. Nothing remains in this section.
 
 ---
 
@@ -1786,34 +1984,6 @@ is served if a `.git` directory is present, which it is.
 
 ---
 
-#### NAT-06 — No recent documents
-
-**Category** Native · **Severity** Medium · **Priority** P2 · **Affects** UX
-
-**Current.** Nothing calls `app.addRecentDocument()`. There is no Open Recent
-menu, no Dock recent-items list on macOS, no Windows JumpList. The only way to
-reopen yesterday's level is to navigate the open dialog from scratch — and
-`showOpenDialog` is called with no `defaultPath` (`main.js:97`), so it starts
-wherever the OS last left it, per-app-session.
-
-**Recommended.** `app.addRecentDocument(p)` on every successful open and
-save-as. Feed a File → Open Recent submenu from a persisted list of the last
-10 paths (skipping ones that no longer exist, checked lazily on menu build).
-`app.clearRecentDocuments()` behind an "Clear Menu" item.
-
-**Implementation.** In main's `doc` module (`{path, dirty}`, done — see
-"Already completed", BUG-08), alongside the assignments to `doc.path`.
-Persist the list in `app.getPath('userData') + '/recent.json'` — the same store
-as window state (NAT-10, done — see "Already completed").
-
-**Platforms.** macOS: also populates the Dock icon's right-click menu and the
-"Open Recent" system behaviour, for free. Windows: `addRecentDocument`
-populates the JumpList, but **only for file types the application is
-registered to handle** — so it depends on NAT-07's file association.
-Linux: `addRecentDocument` writes `~/.local/share/recently-used.xbel`, honoured
-by GTK file choosers and some launchers.
-
----
 
 #### NAT-07 — Studio cannot be launched by opening a level, and has never been packaged
 
@@ -1833,8 +2003,9 @@ signing or notarisation setup, no `.desktop` file, no MIME type registration.
 - The window is titled by an app called "Electron".
 - The app cannot be distributed to anyone who does not have Node installed.
 - On macOS an unsigned, un-notarised build is blocked by Gatekeeper.
-- Recent documents (NAT-06) and JumpLists cannot fully work without the
-  association.
+- Recent documents themselves are done (NAT-06, see "Already completed"), but
+  the Windows JumpList's own automatic population of them still cannot work
+  without the association.
 
 **Recommended.** Adopt **electron-builder** (fewer moving parts than Forge for
 a no-bundler project) with:
@@ -1993,37 +2164,6 @@ Windows if the OS accent/theme changes - `titleBarOverlay` itself is done
 
 ---
 
-#### NAT-16 — A native `<select>` sits inside a fully custom form
-
-**Category** Native · **Severity** Low · **Priority** P2 · **Affects** UI
-
-**Current.** `#props select` is styled with the same rules as `input` and
-`textarea` (`style.css:195-203`) but is measured live as
-`appearance: auto`. Chromium therefore draws the platform's own popup control —
-on macOS a rounded, light-bordered popup button with a system chevron — inside
-a set of flat, square, dark inputs. It is the most visually foreign element in
-the screenshot.
-
-**Why it's a problem — and the correct resolution.** This is the one case where
-"prefer native" and "visual consistency" collide. The right answer is *not* to
-build a custom listbox (that would repeat the mistake the old DOM context menu
-made before NAT-05 replaced it - done, see "Already completed" - and cost the
-keyboard and accessibility behaviour a `<select>` gives free). It is to keep
-the real `<select>` and style the **control** to match, letting the **popup**
-be native:
-```
-#props select { appearance: none; background-image: <chevron>; }
-```
-`appearance: none` restyles the closed control only; the dropdown list itself
-is still drawn by the OS, keyboard navigation and type-ahead still work, and a
-screen reader still sees a combobox. That is the correct trade.
-
-**Implementation.** Add an inline SVG chevron as a `background-image` data URI
-positioned from the spacing token, with `padding-right` reserving room for it.
-Ensure the focus ring (VIS-06, done — see "Already completed") applies.
-
----
-
 #### NAT-17 — No Dock menu or taskbar integration
 
 **Category** Native · **Severity** Low · **Priority** P3 · **Affects** UX
@@ -2036,9 +2176,13 @@ icon exists yet (NAT-07). None of `app.dock.setMenu`, `app.setUserTasks`,
 
 **Recommended (small, cheap, high signal).**
 - Pass an `iconPath` to `setAboutPanelOptions` once NAT-07 produces an icon.
-- macOS Dock menu (`app.dock.setMenu`): "New Level", "Open Recent ▸".
+- macOS Dock menu (`app.dock.setMenu`): "New Level", "Open Recent ▸" - the
+  latter can read from the same persisted list `addrecent()`/`loadrecent()`
+  (`main.js`) already maintain for the File menu's own Open Recent submenu
+  (NAT-06, done — see "Already completed").
 - Windows JumpList (`app.setUserTasks`): "New Level" task; recent documents
-  arrive automatically once NAT-06 + NAT-07 land.
+  arrive automatically once NAT-07 lands - `app.addRecentDocument()` itself
+  already runs on every open/save-as (NAT-06, done).
 - `win.setProgressBar()` during a long save/open (also NAT-19) — Dock progress
   on macOS, taskbar progress on Windows, Unity launcher on Linux.
 
@@ -2075,34 +2219,10 @@ something the user just watched happen is noise.
 
 The brief asks that arbitrary geometry be eliminated. This section identifies
 every instance and states what should determine the value instead. The design
-tokens that come out of it are collected in §6.
-
----
-
-#### GEO-10 — There is no vertical scrollbar for the level
-
-**Category** Layout / UX · **Severity** Medium · **Priority** P2 · **Affects** UI, UX
-
-**Current.** `#hbar` gives the level a real horizontal scrollbar
-(a genuinely good decision — `CLAUDE.md` explains the reasoning and it is
-sound). There is no vertical equivalent, even though `Grid.setheight()`
-(`grid.js:134`) permits up to **999 rows**. Vertical navigation is
-middle-drag, Alt-drag, or the wheel, which now scrolls (NAT-11, done — see
-"Already completed") — but still with no indicator of position.
-
-**Why it's a problem.** Asymmetry that the user cannot explain: one axis has a
-scrollbar and shows its position, the other has neither. On a 200-row level
-there is no indication of where in the level the viewport is.
-
-**Recommended.** Mirror the `#hbar` mechanism on the vertical axis, using the
-same spacer technique and the same `Grid.syncbar()` reconciliation. `Grid.clamp()`
-already maintains a well-defined vertical range (`grid.js:177-179`), including
-the "shorter than the viewport" case, so the range the bar must represent
-already exists. Hide it (`visibility: hidden`, not `display: none`, so the
-layout does not shift) when the level fits the viewport.
-
-**Depends on.** NAT-11 — done (see "Already completed"); the wheel now scrolls
-without a splitter, so the vertical bar has something to reflect.
+tokens that come out of it are collected in §6. Every finding ever listed in
+this category, including its last remaining member GEO-10 (vertical
+scrollbar), is now done — see "Already completed" above. Nothing remains in
+this section.
 
 ---
 
@@ -2238,30 +2358,6 @@ Name both colours as tokens if they survive.
 
 ---
 
-#### UX-01 — A file row cannot be opened by clicking it
-
-**Category** UX · **Severity** Medium · **Priority** P2 · **Affects** UX
-
-**Current.** `list()` (`app.js:141-149`) binds **both** `onclick` and
-`oncontextmenu` on a script row to `rowmenu()`. `CLAUDE.md` records that
-left-click-to-open-the-menu "was asked for explicitly, so opening a script is
-now the menu's first entry rather than a bare click".
-
-**Assessment.** Respect the request — it is a documented user decision, not an
-accident. But the cost is real: opening a script, the most frequent action in
-the panel, now takes two clicks and a pointer traverse, and there is no
-single-gesture path to it.
-
-**Recommended.** Keep left-click → menu, and **add double-click → open**. The
-two do not conflict (the menu can dismiss on the second click of a
-double-click), it matches every file manager on every platform, and it costs
-nothing to discoverability because the menu still exists. Return already opens
-the focused script row from the keyboard - rows are focusable now (A11Y-01,
-done — see "Already completed"), which shipped that keyboard equivalent
-directly; only the mouse's double-click affordance is still open.
-
----
-
 #### UX-02 — Every row menu carries the same two global commands
 
 **Category** UX · **Severity** Low · **Priority** P3 · **Affects** UX
@@ -2278,62 +2374,6 @@ today and would make a third route if `new script`/`import midi` are ever
 added there, but two is already plenty. Remove them from row menus and the
 row menu becomes: Open · Assign to <def> · — · Rename · Delete. That is a menu
 a user can read at a glance.
-
----
-
-#### UX-03 — Undo and redo say nothing about what they undid
-
-**Category** UX · **Severity** Low · **Priority** P2 · **Affects** UX
-
-**Current.** NAT-01 (shipped) added Edit → Undo / Redo menu items, enabled
-from `Undo.past.length` / `Undo.future.length` and disabled outside the Level
-Editor tab — so "no UI presence at all" and "the menu item must reflect the
-active tab's history" are both resolved; the menu is already rebuilt on every
-tab change and every `Undo.end()`/undo/redo (`App.syncmenu()` in `app.js`,
-called from `undo.js`). What is still missing: the items are always labelled
-generically "Undo"/"Redo" rather than the action's name ("Undo Paint", "Undo
-Move Entity"), and `Undo.depth()` (`undo.js`) still only feeds the status-bar
-message `'undo (' + Undo.past.length + ' left)'` (`undo.js`) — which reports
-how many steps *remain*, phrasing no other application uses and which most
-users will read as "3 things were undone".
-
-**Recommended.**
-- Give steps a label at the point they open (`Undo.begin(label)`), carry it
-  onto the menu item text ("Undo Paint", "Undo Move Entity").
-- Say what was undone, not how many remain, in the status bar: `undid paint`.
-
----
-
-#### UX-05 — The editing verb set is thin
-
-**Category** UX · **Severity** Medium · **Priority** P2 · **Affects** UX
-
-**Current.** The complete set of level edits: paint one cell, drag-paint a
-Bresenham line (`stroke()`, `grid.js:54`), erase (right-drag), place an entity,
-drag an entity, delete an entity, change level height.
-
-**Missing, and expected in any tile editor:**
-
-| Verb | Notes |
-|---|---|
-| Rectangle fill / outline | Shift-drag with the block tool; by far the most-missed |
-| Flood fill | Bucket tool; bounded by the level rect |
-| Line constrain | Shift to constrain a drag to horizontal/vertical/45° |
-| Rectangular select, copy, cut, paste | Including paste-at-cursor; the Edit menu currently offers Cut/Copy/Paste that do nothing here (NAT-01) |
-| Duplicate entity | ⌘D, offset by one cell |
-| Multi-select entities | Marquee + Shift-click; `Grid.sel` is a single `int` (`grid.js:17`), so this is a real data-model change — scope accordingly |
-| Nudge with arrow keys | Selected entity, ±1 cell, Shift for ±10 |
-| Eyedropper | Alt-click picks the block under the pointer into the tool; Alt is currently pan, so bind to `I` or middle-click |
-| Toggle grid overlay | View menu |
-
-**Recommended.** Prioritise **rectangle fill**, **flood fill**, **arrow-key
-nudge** and **duplicate** — four small, self-contained additions that between
-them cover most authoring friction. Defer selection/clipboard until there is a
-reason, since it changes `Grid.sel`'s shape and every consumer of it.
-
-All of them must go through `Undo.act()` / `Undo.begin()`–`end()`, per the
-rule `CLAUDE.md` states in bold: an unwrapped mutation does not merely fail to
-undo, it corrupts the next step.
 
 ---
 
@@ -2355,10 +2395,11 @@ custom definitions make the list long — flag as a follow-up, not now.
 **Category** UX · **Severity** Medium · **Priority** P1 · **Affects** UX
 
 **Current.** `app.js:543-546` calls `api.blank()` on load and shows an
-untitled 12-row empty level. No recent files (NAT-06), no template, no
-onboarding, no indication of what the tool does or how to place the first
-block. The file manager's two empty voids now say what goes there and how
-(VIS-12, done — see "Already completed"). The palette's first cell
+untitled 12-row empty level. Recent files exist now (NAT-06, done — see
+"Already completed") but nothing on this first-run path offers one; no
+template, no onboarding, no indication of what the tool does or how to place
+the first block. The file manager's two empty voids now say what goes there
+and how (VIS-12, done — see "Already completed"). The palette's first cell
 is the *eraser*, selected-by-default tool is `{kind: 'block', id: 2}` (brick),
 and nothing says so.
 
@@ -2442,57 +2483,6 @@ and changeable. When scripts already exist, do not silently bind to an
 arbitrary one — bind to nothing and let the inspector show `(unassigned)`,
 which `entityview()` already renders (`panel.js:205`), with the save-time
 validator catching it if the user forgets.
-
----
-
-#### UX-15 — Inline rename gives no feedback and loses work on failure
-
-**Category** UX · **Severity** Medium · **Priority** P2 · **Affects** UX
-
-**Current.** `edit()` (`app.js`) commits on `blur`. On failure — a duplicate
-script name (`renscript`) or a duplicate MIDI name (`renmidi`, which now
-reports the collision instead of silently discarding it, BUG-06) — the input
-is already gone, `sidebar()` has rebuilt the list, and the user's typed text
-is lost. The only signal is a status-bar line (now legible at rest, VIS-01)
-that they may not be looking at.
-
-Also: Escape sets `inp.onblur = null` and calls `sidebar()`, which is correct,
-but Enter calls `inp.blur()`, so Enter and click-away are indistinguishable —
-there is no way to say "commit" versus "I clicked elsewhere by accident".
-
-**Recommended.**
-- Validate **as the user types** (duplicate, empty, illegal characters) and
-  show the invalid state on the field itself — `--danger` border plus a
-  one-line message under it — with commit disabled while invalid.
-- On a failed commit, **keep the field open** with the text intact.
-- Enter commits, Escape cancels, blur commits-if-valid / stays-open-if-not.
-
----
-
-#### UX-16 — Tabs overflow into nothing
-
-**Category** UX · **Severity** Low · **Priority** P2 · **Affects** UI, UX
-
-**Current.** `#tablist { display: flex; overflow: hidden }` (`style.css:74`)
-with `.tab { max-width: 260px }`. Open seven or eight scripts in a 1 600 px
-window and the later tabs are simply clipped out of existence — not scrollable,
-not stacked, not indicated. `App.closetab` has no way to reach them and neither
-does the user.
-
-**Recommended.** `overflow-x: auto` with the shared scrollbar treatment
-(NAT-20, done — see "Already completed"), plus: scroll the active tab into
-view on `App.select()`; a
-`⌘1…⌘9` / `⌃Tab` keyboard route (NAT-14); and an overflow chevron listing
-hidden tabs via the native menu (NAT-05, done — see "Already completed", so
-this is a new `menu:row`-style channel and template rather than a new
-mechanism). Also add middle-click-to-close, which
-every tabbed editor supports and which costs three lines.
-
-Related: the Level Editor tab is not closable but is visually identical to the
-closable script tabs (`app.js:72` passes `closable: false` but nothing marks
-it). Give it a distinct treatment — a pin icon, a separator, or a fixed
-position outside the scrolling region, which also solves the overflow case of
-"the Level Editor tab scrolled away".
 
 ---
 
@@ -2725,36 +2715,6 @@ care lapses. Each has an identified cause; none is speculative.
 
 ---
 
-#### PERF-02 — Layout is read and written twice per frame in the draw path
-
-**Category** Performance · **Severity** Medium · **Priority** P2 · **Affects** Performance
-
-**Current.** Every `Grid.draw()`:
-- `Grid.clamp()` calls `Grid.cv.getBoundingClientRect()` (`grid.js:172`);
-- `Grid.syncbar()` calls `document.getElementById('hbar')` and
-  `getElementById('hspace')` (`grid.js:186, 189`), **writes**
-  `hspace.style.width` (a style invalidation), then **reads** and possibly
-  writes `bar.scrollLeft` (a forced layout);
-- `at()` calls `getBoundingClientRect()` again on every `mousemove`
-  (`grid.js:343`).
-
-Reading `getBoundingClientRect` after writing a style forces a synchronous
-layout — the classic thrash — and it happens on every frame of every pan, drag
-and zoom.
-
-**Recommended.**
-1. Cache the canvas rect. `Grid.resize()` already runs from a `ResizeObserver`
-   and already computes it (`grid.js:86`); store it as `Grid.rect` and have
-   `clamp()`, `fit()` and `at()` read the cached value. Invalidate on resize
-   and on scroll of any ancestor (there is none — `#wrap` is `overflow:
-   hidden`), so the cache is trivially correct here.
-2. Cache the two element references at `Grid.init()` time.
-3. Write `hspace.style.width` **only when the zoom or height changes**, not
-   every frame — track the last written value. Today it is rewritten with an
-   identical string 60 times a second during a pan.
-
----
-
 #### PERF-03 — `entat()` is a linear scan called once per painted cell
 
 **Category** Performance · **Severity** Low · **Priority** P3 · **Affects** Performance
@@ -2859,7 +2819,7 @@ window and menu layers.
 | Title | Document name only; `setRepresentedFilename` for the proxy icon; `setDocumentEdited` for the close-button dot. Not a path, not an asterisk — done, see "Already completed" | NAT-03 |
 | Toolbar | The New/Open/Save hotbar is gone — the menu bar carries File regardless of window framing — done, see "Already completed" | NAT-04 |
 | Context menus | `Menu.popup()`, including the canvas's own; Ctrl+click no longer erases — done, see "Already completed" | NAT-05 |
-| Open Recent | `addRecentDocument` — feeds both the File menu and the Dock icon menu. | NAT-06, NAT-17 |
+| Open Recent | `addRecentDocument` feeds both the File menu's own submenu and the Dock icon's system "Recent" behaviour — done, see "Already completed". A custom Dock menu (`app.dock.setMenu`, "New Level"/"Open Recent ▸") is still open. | NAT-17 |
 | File association | `CFBundleDocumentTypes` for `.lvl` via electron-builder; handle `app.on('open-file')`, including before `whenReady`. | NAT-07 |
 | Trackpad | Two-finger scroll pans; pinch (`wheel` + `ctrlKey`) zooms — done, see "Already completed". This was the single biggest day-to-day usability defect on a Mac. | NAT-11 |
 | Shortcuts | `CmdOrCtrl` accelerators from the menu; drop the hand-rolled `Ctrl+Y`. Settings is **⌘,** and is called "Settings". | NAT-14, UX-11 |
@@ -2877,7 +2837,7 @@ window and menu layers.
 | Title | `Document — Pellizzola Brothers Studio`, with dirty state reflected in the OS title, not only in the DOM — done, see "Already completed" (implemented against Electron's documented `titleBarOverlay`/`setTitle` behaviour; not yet run on real Windows hardware) | NAT-03 |
 | File association | Registry entries + `.ico` via electron-builder; handle the path in `process.argv` **and** in `second-instance`. | NAT-07, NAT-08 |
 | Single instance | Required — without it every double-clicked `.lvl` launches a whole new app. | NAT-08 |
-| JumpList | `setUserTasks` ("New Level") plus automatic recent documents once the association exists. | NAT-06, NAT-17 |
+| JumpList | `setUserTasks` ("New Level") plus automatic recent documents once the association exists - `app.addRecentDocument()` itself already runs on every open/save-as, done, see "Already completed" (NAT-06). | NAT-07, NAT-17 |
 | Dialogs | Button order Save / Don't Save / Cancel; `noLink: true` so they are push buttons, not command links; `title` set — done, see "Already completed" | NAT-21 |
 | Scrollbars | Classic scrollbars consume layout width — this is where NAT-20's `scrollbar-gutter: stable` fix (done, see "Already completed") matters most, though not yet exercised on real Windows hardware. | NAT-20 |
 | High contrast | `forced-colors: active` is a real, commonly-enabled Windows mode; the chrome does not yet adopt the system palette under it. The canvas's own indicators are no longer part of this gap: their two-tone strokes (VIS-16, done — see "Already completed") guarantee visibility over any artwork regardless of palette, which is what stands in for `forced-colors` there, since Chromium's override cannot reach canvas pixels at all. | A11Y-07 |
@@ -2897,7 +2857,7 @@ chosen deliberately, not as the default the other two inherit.
 | Context menus | Native menus inherit the GTK theme — the fastest single change to stop looking foreign — done, see "Already completed" (not run on real Linux hardware). | NAT-05 |
 | Dialogs | GNOME convention: destructive action leftmost, "Discard" is the right word here (unlike macOS/Windows) — done, see "Already completed", NAT-21. Sentence case elsewhere is not yet applied. | VIS-10 |
 | File association | `.desktop` file + MIME XML (`application/x-pellizzola-level`) + hicolor icons via electron-builder; handle `process.argv`. | NAT-07 |
-| Recent files | `addRecentDocument` writes `recently-used.xbel`, honoured by GTK file choosers. | NAT-06 |
+| Recent files | `addRecentDocument` writes `recently-used.xbel`, honoured by GTK file choosers — done, see "Already completed" (not yet run on real GTK hardware). | — |
 | Single instance | Required. | NAT-08 |
 | Fonts | The `DejaVu Sans Mono` fallback was the *only* one likely to be present, and differed in metrics from JetBrains Mono — bundling the font (done, see "Already completed") matters most here, since Linux had no other realistic path to it. | VIS-05 |
 | Wayland | Fractional scaling changes `devicePixelRatio` without a CSS resize — done, see "Already completed" (not yet run on real Wayland hardware) | BUG-12 |
@@ -3057,7 +3017,7 @@ the finding that resolves it.
 | **Error states** | Fixed — an aria-hidden `⚠` glyph now sits alongside `var(--danger)` on both `#msg.bad` and `App.fail()`'s `.err` block, so neither relies on colour alone; save failures reach a native dialog regardless of tab (BUG-07, shipped), and every error is announced to a screen reader (A11Y-05, shipped) (VIS-14, A11Y-08, done — see "Already completed") | — |
 | **Context menus** | Fixed — native `Menu.popup()`, real keyboard navigation and platform appearance (NAT-05, done — see "Already completed") | — |
 | **Dialogs** | The unsaved-changes prompt now has a per-platform template, `detail`, `noLink`, and string verdicts (NAT-21, BUG-10, done — see "Already completed") | — |
-| **Forms** | Borders now visible via `--control-border` (VIS-02, done); the inline rename input is the same `.field` component `#props input` uses now, not a second, different text field (VIS-15, done — see "Already completed"); still a native `<select>` among flat custom fields | `appearance: none` on the select control only (NAT-16) |
+| **Forms** | Fixed — borders now visible via `--control-border` (VIS-02, done); the inline rename input is the same `.field` component `#props input` uses now, not a second, different text field, and now validates as the user types (VIS-15/UX-15, done — see "Already completed"); the level view's `<select>` is restyled with `appearance: none` to match, its dropdown itself still native (NAT-16, done — see "Already completed") | — |
 | **Buttons** | One shared hover/active/disabled treatment now (VIS-07, done — see "Already completed"); one-off dimensions are onto the scale too (GEO-08, done — see "Already completed"); still no border except `.act`, and `.acts`/`.hdr button`/`#add` remain differently sized | One button component with size variants |
 | **Resizers / splitters** | Fixed — four keyboard-operable splitters (GEO-04, done — see "Already completed") | — |
 | **Panels** | Widths are proportional, clamped and user-resizable now, the file manager's own split is content-driven by default, and both carry the design's own drop-shadow now too (GEO-03/GEO-04/GEO-05, VIS-09/GEO-13, done — see "Already completed"); still not collapsible | Collapsible sections |
@@ -3074,32 +3034,43 @@ the finding that resolves it.
 Grouped by the workflow they unblock. Detail in §4.5.
 
 **Opening and starting work** — restore the last document or show a start view
-with Recent (UX-09); recent documents in the menu and the Dock/JumpList
-(NAT-06); drag a `.lvl` onto the window or Dock icon (NAT-09); double-click a
-`.lvl` in the file manager (NAT-07).
+with Recent (UX-09); recent documents in the File menu and (macOS) the Dock
+icon's own Recent submenu are shipped (NAT-06, see "Already completed") - a
+custom Dock menu and the Windows JumpList are still open (NAT-17, NAT-07);
+drag a `.lvl` onto the window or Dock icon (NAT-09); double-click a `.lvl` in
+the file manager (NAT-07).
 
-**Editing** — rectangle fill, flood fill, duplicate, arrow-key nudge (UX-05);
-trackpad scroll now pans instead of zooming, and pinch/Ctrl+wheel zooms
-(NAT-11, shipped, see "Already completed"); the canvas now shows a cursor for
-every gesture - crosshair, copy, grab, grabbing, not-allowed (NAT-13, shipped,
-see "Already completed"); zoom now has controls, an indicator, and a fit that
-targets the scene nearest the camera instead of an unfittable whole level
-(UX-04, shipped, see "Already completed"); Escape cancelling and reverting a
-gesture, and a right click that never dragged opening the canvas's own
-context menu instead of erasing, are shipped too (UX-12, NAT-12, see "Already
-completed"); the canvas is keyboard-operable now too - arrow keys move a
-cursor cell, Return/Space paints the current tool, Delete erases, and the
+**Editing** — rectangle fill, arrow-key nudge and duplicate are shipped
+(UX-05, see "Already completed"); flood fill is UX-05's one deliberately
+deferred piece, since it needs a new persistent palette tool rather than a
+modifier on a gesture that already exists; trackpad scroll now pans instead of
+zooming, and pinch/Ctrl+wheel zooms (NAT-11, shipped, see "Already
+completed"); the canvas now shows a cursor for every gesture - crosshair,
+copy, grab, grabbing, not-allowed (NAT-13, shipped, see "Already completed");
+zoom now has controls, an indicator, and a fit that targets the scene nearest
+the camera instead of an unfittable whole level (UX-04, shipped, see "Already
+completed"); Escape cancelling and reverting a gesture, and a right click that
+never dragged opening the canvas's own context menu instead of erasing, are
+shipped too (UX-12, NAT-12, see "Already completed"); the canvas is
+keyboard-operable now too - arrow keys move a cursor cell (or nudge a selected
+entity, UX-05), Return/Space paints the current tool, Delete erases, and the
 tool itself is finally named somewhere - the status bar (A11Y-03, UX-06, see
 "Already completed").
 
-**Navigating** — a vertical scrollbar (GEO-10); resizable panels that remember
-their size are shipped (GEO-04, see "Already completed"); tabs that overflow
-into a scroller instead of vanishing (UX-16); keyboard tab switching (NAT-14).
+**Navigating** — a vertical scrollbar mirroring `#hbar`, hidden until the level
+needs it, is shipped (GEO-10, see "Already completed"); resizable panels that
+remember their size are shipped too (GEO-04, see "Already completed"); tabs
+now scroll instead of vanishing past the strip's own width, with the active
+one scrolled into view on every switch, a pinned Level Editor tab and
+middle-click-to-close (UX-16, see "Already completed") - an overflow chevron
+listing hidden tabs and `⌘1…⌘9`/`⌃Tab` keyboard switching remain NAT-14's own
+scope, unaffected by scrolling alone already making every tab reachable.
 
-**Files and scripts** — double-click to open a script (UX-01); row menus that
-carry row actions only (UX-02); rename that validates as you type and does not
-throw away your text (UX-15 — MIDI renaming no longer mangles the name,
-BUG-06, shipped, see "Already completed"); delete-in-use offering reassignment
+**Files and scripts** — double-click to open a script is shipped (UX-01, see
+"Already completed"); row menus that carry row actions only (UX-02); rename
+now validates as you type and keeps a rejected edit's text intact instead of
+discarding it (UX-15, see "Already completed" - MIDI renaming no longer
+mangles the name either, BUG-06, shipped); delete-in-use offering reassignment
 instead of refusal (UX-13); MIDI export and metadata (UX-18).
 
 **Trust and recovery** — atomic saves, an honest dirty flag, save failures that
@@ -3112,9 +3083,10 @@ UX-10, BUG-11, UX-08 — see "Already completed").
 non-colour cue, and persistent zoom/dimensions/entity-count/tool fields
 separated from the transient message by a divider are all shipped (VIS-14,
 UX-06, UX-04 — see "Already completed"); progress for long operations
-(NAT-19); undo and redo are visible in the Edit menu now (NAT-01, shipped)
-but still need to say what they undid rather than how many steps remain
-(UX-03).
+(NAT-19); undo and redo are visible in the Edit menu now, and now say what
+they would act on ("Undo Paint", "Redo Move Entity") in both the menu and the
+status bar ("undid paint") instead of a step count read backwards (NAT-01,
+UX-03, both shipped, see "Already completed").
 
 ---
 
@@ -3180,37 +3152,36 @@ four are driven from.
 | Three IPC naming conventions, two response shapes, forgettable `cancel` (the `ask:discard` response is a named string now, BUG-10, done — see "Already completed") | ARCH-06 |
 | Synchronous main-process I/O | ARCH-09, NAT-19 |
 | `App.open_`'s trailing underscore | ARCH-06 |
-| Prefix-only path containment in the protocol handler | BUG-13 |
+
+Prefix-only path containment in the protocol handler is fixed too - done, see
+"Already completed" (BUG-13).
 
 **Explicitly do not do.** Do not introduce a framework, a bundler, TypeScript
 or ES modules. Do not convert the flat global scope. Do not add a state
 container. Do not index the entity list until entity counts justify it
-(PERF-03). Do not build a light theme (NAT-15) or a custom `<select>` popup
-(NAT-16). Each of these would add more than it removes at this size.
+(PERF-03). Do not build a light theme (NAT-15). A custom `<select>` popup was
+the wrong idea for the same reason - done differently, restyling only the
+closed control and leaving the dropdown itself native (NAT-16, done — see
+"Already completed"). Each of these would add more than it removes at this
+size.
 
 ---
 
 ## 11. Performance summary
 
-The renderer is already carefully built. Two of the four real problems this
-section originally listed are done (PERF-01, PERF-04 — see "Already
-completed"); one real problem and three non-problems remain, in priority
-order.
-
-**Fix:**
-1. **PERF-02** — `getBoundingClientRect` and `getElementById` called on every
-   frame, with a style write between the read and the next read (layout
-   thrash), during every pan and drag.
+The renderer is already carefully built. Three of the four real problems this
+section originally listed are done (PERF-01, PERF-02, PERF-04 — see "Already
+completed"); two non-problems and one real problem remain, in priority order.
 
 **Also worth doing:**
-2. **PERF-05** — `App.refresh()` rebuilds every view for every undo step; walk
+1. **PERF-05** — `App.refresh()` rebuilds every view for every undo step; walk
    back a long history and the whole UI is rebuilt per step.
-3. **PERF-07** — the window is shown before the document exists - narrower
+2. **PERF-07** — the window is shown before the document exists - narrower
    now that ARCH-08 (done) removed the Monaco-load race this section
    originally described alongside it.
 
 **Measure before touching:**
-4. **PERF-06** / **NAT-19** — `Grid.commit()` + `JSON.stringify` + `zipSync` on
+3. **PERF-06** / **NAT-19** — `Grid.commit()` + `JSON.stringify` + `zipSync` on
    a 999-row level. Bounded, save-only, and simple as written. Get a number
    first.
 
@@ -3237,11 +3208,11 @@ relitigated.
 | File dialogs | ✅ | ✅ | ✅ | — |
 | Save extension handling | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | — |
 | Unsaved-changes dialog | ✅ shipped (NAT-21, BUG-10) | ✅ shipped (NAT-21, BUG-10) | ✅ shipped (NAT-21, BUG-10) | — |
-| Recent documents | ❌ | ❌ | ❌ | NAT-06 |
+| Recent documents | ✅ shipped - File menu, and the Dock icon's own Recent submenu for free (NAT-06) | ✅ shipped - `addRecentDocument` runs, though the JumpList itself needs NAT-07 (NAT-06) | ✅ shipped (NAT-06) | — |
 | File association / launch by file | ❌ | ❌ | ❌ | NAT-07 |
 | Single instance | ❌ n/a in practice | ❌ | ❌ | NAT-08 |
 | Drag and drop | ⚠️ no longer navigates away (NAT-18, shipped); a drop still does not open the level | ⚠️ same | ⚠️ same | NAT-09 |
-| Dock / taskbar integration | ❌ | ❌ | ❌ | NAT-06, NAT-17 |
+| Dock / taskbar integration | ⚠️ recent documents shipped (NAT-06); a custom Dock menu (`app.dock.setMenu`) is still open | ❌ | ❌ | NAT-17 |
 | Window state persistence | ✅ shipped - position, size, maximized and fullscreen survive a restart, with a disconnected-display fallback (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | — |
 | Default window size | ✅ shipped - 80% of the display's work area, clamped (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | — |
 | Mixed-DPI / scaling | ✅ shipped (BUG-12) | ✅ shipped, not run on real per-monitor-DPI hardware (BUG-12) | ✅ shipped, not run on real Wayland hardware (BUG-12) | — |
@@ -3293,27 +3264,28 @@ complete or verify - is the only item remaining in this tier.
 
 ### Medium — real friction, contained fixes
 
+BUG-13, NAT-06, NAT-16, GEO-10, UX-01, UX-03, UX-05 (its one deliberately
+deferred piece, flood fill, aside), UX-15, UX-16 and PERF-02 - ten of the
+twenty items originally listed here - are done, see "Already completed".
+Ten remain:
+
 | ID | Title |
 |---|---|
-| BUG-13 | Prefix-only path containment |
-| NAT-06 | No recent documents |
 | NAT-08 | No single-instance lock |
 | NAT-09 | No drag and drop (the navigation-loses-work hole itself is shipped, NAT-18) |
-| NAT-14 | Command set is thin: zoom, tab switching, region operations (Escape's own gesture-cancel case is shipped, UX-12) |
-| NAT-16 | Native `<select>` among custom fields |
-| GEO-10 | No vertical scrollbar |
+| NAT-14 | Command set is thin: zoom, tab switching, region operations (Escape's own gesture-cancel case is shipped, UX-12; zoom itself is shipped, UX-04) |
 | VIS-03, VIS-10 | Design divergence, capitalisation (VIS-11 is shipped) |
-| UX-01, UX-03, UX-05, UX-09, UX-15, UX-16 | Editing and navigation friction |
+| UX-09 | First run drops the user into an untitled void (recent documents to build a start view from are shipped, NAT-06) |
 | A11Y-06 | OS text scaling (A11Y-03 is shipped) |
 | ARCH-04, ARCH-06 | Panel rebuilds, IPC shape |
-| PERF-02, PERF-07 | Layout thrash, startup paint |
+| PERF-07 | Startup paint (PERF-02's layout thrash is shipped) |
 
 ### Low
 
 | ID | Title |
 |---|---|
 | NAT-15 | System preference handling (contrast, forced colours) |
-| NAT-17 | Dock menu, JumpList tasks (About panel already shipped, NAT-01) |
+| NAT-17 | Dock menu, JumpList tasks (About panel and recent documents already shipped, NAT-01, NAT-06) |
 | NAT-19 | Feedback for long operations |
 | VIS-13, VIS-17 | Playtest button communication; missing-texture swatches |
 | UX-02, UX-11, UX-13, UX-14, UX-17, UX-18 | Menu contents, preferences, in-use script deletion, silent script creation, numeric rounding, MIDI opacity |
@@ -3327,8 +3299,12 @@ complete or verify - is the only item remaining in this tier.
   UX-04's own text (done, see "Already completed") as the real answer for
   540-column levels, scoped out here as a separate, larger feature.
 - Palette search and collapsible groups (UX-07).
-- Rectangular selection, clipboard, multi-select entities (UX-05) — changes
-  `Grid.sel`'s shape; scope deliberately.
+- Flood fill - a bucket tool the palette has no slot for yet; UX-05's own
+  three other prioritised verbs (rectangle fill, arrow-key nudge, duplicate)
+  are done, see "Already completed".
+- Rectangular selection, clipboard, multi-select entities — changes
+  `Grid.sel`'s shape; scope deliberately (this was UX-05's own explicit
+  "defer until there is a reason", not part of what shipped).
 - MIDI metadata and export (UX-18).
 - Playtest, once the game can load `.lvl` (`game/todo.txt` 3.1) (VIS-13).
 - Level templates and a starter library.
@@ -3388,10 +3364,11 @@ validation) are also done — see "Already completed" for both. **NAT-04**
 (hotbar per platform - ARCH-03, its prerequisite, was done, and the menu
 itself did not block it either) is also done — see "Already completed".
 
-5. **NAT-07** packaging, icons, associations; **NAT-08** single instance;
-   **NAT-06** recent documents; **NAT-09** drag and drop. These four are one
-   coherent piece of work and share prerequisites — all can build directly on
-   the `doc` module (BUG-08, done).
+5. **NAT-06** recent documents is done — see "Already completed": it built
+   directly on the `doc` module (BUG-08, done) exactly as scheduled.
+   **NAT-07** packaging, icons, associations; **NAT-08** single instance;
+   **NAT-09** drag and drop remain one coherent piece of work sharing the
+   same prerequisite.
 
 ### Phase 3 — Design system made real
 
@@ -3438,18 +3415,20 @@ screen") are also done — see "Already completed" for both.
 13. **GEO-05** (content-driven script/MIDI list height) and **GEO-06** (the
     same treatment for the inspector) are both done — see "Already
     completed".
-14. **GEO-10** vertical scrollbar (NAT-11, its prerequisite, is done - the
-    wheel already scrolls).
+14. **GEO-10** vertical scrollbar is done — see "Already completed": its
+    prerequisite, NAT-11's wheel scroll, was already in place.
 15. **NAT-12** canvas context menu and Ctrl+click, and **UX-12** gesture
     cancel, are both done — see "Already completed" (**NAT-13** cursors is
     done too).
 16. **PERF-01** — done, see "Already completed": `Panel.update()` now exists
     and the drag hot path uses it. **ARCH-04**'s remaining scope (the
     `onchange` handlers, `esc()`) can reuse it. **PERF-02** cached rect and
-    refs.
-17. **UX-16** tab overflow; **NAT-14** the remaining missing commands (zoom,
-    tab switching, region operations — the menu/shortcut consolidation itself
-    is done, NAT-01).
+    refs is done too.
+17. **UX-16** tab overflow is done — see "Already completed": scrolling,
+    active-tab-into-view, a pinned Level Editor tab and middle-click-close.
+    **NAT-14** the remaining missing commands (tab switching, region
+    operations — zoom itself is done, UX-04; the menu/shortcut consolidation
+    is done, NAT-01) is still open.
 
 ### Phase 5 — Accessibility completion
 
@@ -3475,18 +3454,18 @@ BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
 
 21. **ARCH-08** — done, see "Already completed": lazy Monaco. **PERF-07**
     show-after-ready; **PERF-05** refresh granularity.
-22. **ARCH-06** IPC envelope; **BUG-13** path containment; **ARCH-09 / NAT-19**
-    async I/O *if* measurement justifies it.
-23. **UX-01 / UX-02 / UX-03 / UX-05 / UX-09 / UX-13 / UX-14 /
-    UX-15 / UX-17** — the remaining workflow items, each independent. UX-03 is
-    narrower than originally scoped: the menu items themselves already exist
-    (NAT-01), only per-action labelling is left. UX-15 is also narrower: the
-    contrast and MIDI-collision problems it cited are already fixed (VIS-01,
-    BUG-06). **UX-06** active-tool indicator and **UX-08**
-    destructive-action reporting are both done - see "Already completed".
+22. **BUG-13** path containment is done — see "Already completed". **ARCH-06**
+    IPC envelope; **ARCH-09 / NAT-19** async I/O *if* measurement justifies it.
+23. **UX-01**, **UX-03** and **UX-15** are done — see "Already completed":
+    double-click to open a script; Undo/Redo labelled with the action's own
+    name in both the menu and the status bar; inline rename validated live
+    with a rejected edit's text kept intact. **UX-02 / UX-09 / UX-13 / UX-14 /
+    UX-17** — the remaining workflow items, each independent. **UX-06**
+    active-tool indicator and **UX-08** destructive-action reporting are both
+    done too - see "Already completed".
 24. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
-    NAT-17 is narrower too: the About panel already shipped (NAT-01), only the
-    Dock menu and JumpList tasks are left.
+    NAT-17 is narrower too: the About panel and recent documents already
+    shipped (NAT-01, NAT-06), only the Dock menu and JumpList tasks are left.
 
 ### Dependency summary
 
@@ -3498,8 +3477,8 @@ tokens a splitter drag needs to constrain against already existed by the time
 the splitters themselves were built); ARCH-07 (checks) unblocked everything below
 it by making every later change verifiable at all; BUG-08 (doc state)
 unblocked NAT-03, NAT-06, NAT-07, NAT-08, NAT-10, UX-10, all of which could
-then build on it directly - NAT-03 and NAT-10 have since shipped, done — see
-"Already completed"; BUG-09 closed the live gap NAT-01 opened;
+then build on it directly - NAT-03, NAT-06 and NAT-10 have since shipped,
+done — see "Already completed"; BUG-09 closed the live gap NAT-01 opened;
 VIS-01/VIS-02/VIS-06 unblocked nothing else in this graph; NAT-18 closed
 NAT-09's navigation hole without needing any of the above; NAT-21/BUG-10 and
 UX-10/BUG-11 each shipped straight off BUG-08's `doc` module and BUG-02's
@@ -3508,8 +3487,9 @@ NAT-02 (also done) and VIS-10 (which can now apply the OS-facing
 capitalisation convention it asks for - not yet done), and NAT-02 in turn
 unblocked NAT-03 and NAT-04 (both now done); NAT-05 deleted an entire
 inaccessible subsystem rather than fixing it in place, independently of the
-rest of this graph; NAT-11 unblocked GEO-10 (the wheel now scrolls) and named
-two of GEO-11's eight constants; A11Y-01 (also done, needing nothing from
+rest of this graph; NAT-11 unblocked GEO-10 (the wheel now scrolls, and GEO-10
+itself has since shipped straight off it, done — see "Already completed") and
+named two of GEO-11's eight constants; A11Y-01 (also done, needing nothing from
 this graph) unblocked A11Y-02 and A11Y-04 (both also since done, needing
 nothing further from this graph), and A11Y-03 (also since done - its own
 UX-06 dependency shipped independently of this graph too); BUG-12 and NAT-13
@@ -3558,7 +3538,10 @@ demonstrably true. Each is checkable, not a matter of opinion.
 - [ ] Double-clicking a `.lvl` in Finder, Explorer and a Linux file manager
       opens it in a running (single) instance.
 - [ ] Recent documents appear in File → Open Recent, the macOS Dock menu, and
-      the Windows JumpList.
+      the Windows JumpList. (NAT-06 — File → Open Recent and macOS's own Dock
+      "Recent" behaviour are done, see "Already completed"; a custom Dock
+      menu (NAT-17) and the Windows JumpList, which needs NAT-07's file
+      association first, are not, so the box stays unchecked)
 - [ ] Dropping a `.lvl` on the window or the Dock icon opens it; dropping
       anything never navigates the shell away.
 - [x] Window size, position, maximised and fullscreen state survive a restart,
@@ -3753,7 +3736,16 @@ demonstrably true. Each is checkable, not a matter of opinion.
 ### Performance
 
 - [ ] Dragging an entity across a level holds 60 fps with the inspector open.
-- [ ] Panning and zooming perform no forced synchronous layout per frame.
+- [x] Panning and zooming perform no forced synchronous layout per frame.
+      (PERF-02 — `Grid.rect` is cached at `Grid.init()`/`doresize()` instead of
+      re-read by `clamp()`/`fit()`/`at()`/`onwheel()` and friends on every
+      call, the four scrollbar-track elements are looked up once instead of
+      by `getElementById()` on every `syncbar()`/`syncvbar()`, and
+      `hspace`/`vspace`'s own `style.width`/`height` are written only when the
+      value actually changes. Verified with the probe harness: instrumenting
+      `getBoundingClientRect` and driving a synthetic ten-move pan counted
+      **0** calls; instrumenting the `hspace` style setter the same way
+      counted **0** writes during a pan at constant zoom)
 - [ ] Dragging a splitter does not stutter. (GEO-04's splitters exist now and
       drive the canvas resize through the same `requestAnimationFrame`-
       coalesced path PERF-04 already built for exactly this; not yet backed

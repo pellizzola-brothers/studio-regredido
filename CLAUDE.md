@@ -220,13 +220,25 @@ cost more than a composite op. `watchcontrast()` mirrors `watchdpr()`'s
 stays valid indefinitely, unlike a `resolution: Xdppx` query tied to one
 exact value, so re-arming it on every change would only leak listeners.
 
-**The level scrollbar is a real overflow container.** `#hbar` holds a spacer
+**The level scrollbars are real overflow containers.** `#hbar` holds a spacer
 as wide as the level at the current zoom; the browser draws and drives the
 thumb, and `Grid.syncbar()` keeps it and `Grid.cam.x` in step. Neither side
 uses a re-entrancy flag — each ignores a value within a pixel of what it last
 wrote, which survives the asynchronous scroll events a flag would miss.
 `Grid.clamp()` holds the camera over the level so the bar can stand for the
 whole range of x. Middle-drag and Alt-drag still pan freely in both axes.
+`#vbar` mirrors the same technique on the vertical axis (`Grid.syncvbar()`/
+`Grid.cam.y`), the one asymmetry the horizontal-only version otherwise left:
+`Grid.setheight()` permits up to 999 rows with no way to see where the
+viewport sits among them. Hidden via `visibility: hidden` (not `display:
+none`, so the layout does not shift) whenever the level fits the viewport
+vertically, since unlike `#hbar` — always 540 columns wide regardless of
+window size — it has nothing to represent in that case. `#stage` and `#vbar`
+both need an explicit `min-height: 0`, or the vertical spacer's own
+tens-of-thousands-of-pixels intrinsic height propagates straight up through
+the flex chain and the canvas row grows to fit it instead of the window — the
+same automatic-minimum-size flex bug `--side`/`--right`'s own `min-width: 0`
+already guards against on the horizontal axis.
 
 **Pages are served from `app://studio/`, not `file://`.** Monaco's web workers
 cannot `importScripts` across a `file://` opaque origin. The custom protocol in
