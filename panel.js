@@ -190,7 +190,7 @@ function newdef()
 		defs.push({id: id, script: script});
 		Grid.tool = {kind: 'entity', id: id};
 		App.touch();
-	});
+	}, 'new definition');
 	Panel.palette();
 	Panel.inspect();
 }
@@ -252,14 +252,14 @@ function levelview(p)
 		'<p class="hint" id="p_rows_hint"></p>' +
 		'<button class="act" id="p_fit">fit view</button>';
 
-	bind('p_name', v => { i.name = v; App.retitle(); });
-	bind('p_desc', v => { i.description = v; });
-	bind('p_auth', v => { i.author = v; });
+	bind('p_name', v => { i.name = v; App.retitle(); }, 'rename level');
+	bind('p_desc', v => { i.description = v; }, 'edit description');
+	bind('p_auth', v => { i.author = v; }, 'edit author');
 	$('p_bg').onchange = e => Undo.act(() => {
 		l.backgrounds = [e.target.value];
 		App.touch();
 		Grid.redraw();
-	});
+	}, 'change background');
 	/* UX-08: warn before the destructive variant commits, rather than only
 	 * after - typing a smaller row count can delete entities well below the
 	 * visible viewport with nothing on screen to suggest it. */
@@ -311,14 +311,14 @@ function entityview(p, e)
 		App.touch();
 		Grid.redraw();
 		Panel.inspect();
-	});
+	}, 'change entity definition');
 	for (const [id, n] of [['p_x', 0], ['p_y', 1]])
 		$(id).onchange = ev => Undo.act(() => {
 			e.pos[n] = Math.round(+ev.target.value / B) * B;
 			App.touch();
 			Grid.redraw();
 			Panel.inspect();
-		});
+		}, 'move entity');
 	$('p_script').onchange = ev => Panel.assign(e.def, ev.target.value);
 	$('p_del').onclick = () => Undo.act(() => {
 		App.doc.json.level.entities.splice(Grid.sel, 1);
@@ -326,7 +326,7 @@ function entityview(p, e)
 		App.touch();
 		Grid.redraw();
 		Panel.inspect();
-	});
+	}, 'remove entity');
 
 	function script(id)
 	{
@@ -367,7 +367,7 @@ Panel.assign = function (def, path)
 			return;
 		d.script = path;
 		App.touch();
-	});
+	}, 'assign script');
 	Panel.inspect();
 	App.say(def + ' -> ' + path);
 };
@@ -405,7 +405,7 @@ function defview(p, id)
 		App.touch();
 		Panel.palette();
 		Panel.inspect();
-	});
+	}, 'rename definition');
 	$('p_script').onchange = ev => Panel.assign(d.id, ev.target.value);
 	$('p_rm').onclick = () => {
 		const es = App.doc.json.level.entities;
@@ -420,7 +420,7 @@ function defview(p, id)
 			Grid.tool = {kind: 'block', id: 2};
 			Grid.sel = -1;
 			App.touch();
-		});
+		}, 'remove definition');
 		Panel.palette();
 		Panel.inspect();
 		Grid.redraw();
@@ -436,11 +436,14 @@ function defview(p, id)
 /* Live-edit a text field without rebuilding the panel under the caret.  The
  * undo step spans the whole visit to the field, so typing a name undoes as a
  * name rather than as thirteen letters. */
-function bind(id, set)
+function bind(id, set, label)
 {
 	const el = $(id);
 
-	el.onfocus = Undo.begin;
+	/* UX-03: wrapped rather than `el.onfocus = Undo.begin` directly - a DOM
+	 * event handler is called with the Event as its first argument, which
+	 * would otherwise become the step's label. */
+	el.onfocus = () => Undo.begin(label);
 	el.oninput = e => { set(e.target.value); App.touch(); };
 	el.onblur = Undo.end;
 }
