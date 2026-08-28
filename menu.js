@@ -11,21 +11,39 @@
 'use strict';
 
 const {app, Menu} = require('electron');
+const path = require('path');
 const chrome = require('./chrome');
 
 const mac = chrome.mac;
 
-/* state: {tab, canUndo, canRedo} - mirrors what the renderer can currently do. */
-function template(win, state)
+/* state: {tab, canUndo, canRedo, undoLabel, redoLabel} - mirrors what the
+ * renderer can currently do. `recent` is main's own persisted path list
+ * (NAT-06) - existence-filtered by loadrecent() before it ever reaches here,
+ * so nothing further needs checking at build time. `onclear` empties it. */
+function template(win, state, recent, onclear)
 {
 	const send = name => () => win.webContents.send('cmd', name);
 	const onlevel = state.tab === 'level';
+
+	/* NAT-06: a path the menu already knows still has to reach the renderer's
+	 * own unsaved-changes guard before it replaces the open document - a
+	 * dedicated channel rather than 'cmd', which carries no arguments. */
+	const openrecent = {
+		label: 'Open Recent',
+		submenu: recent.length ?
+			recent.map(p => ({
+				label: path.basename(p),
+				click: () => win.webContents.send('open-recent', p)
+			})).concat([{type: 'separator'}, {label: 'Clear Menu', click: onclear}]) :
+			[{label: 'No Recent Documents', enabled: false}]
+	};
 
 	const file = {
 		label: 'File',
 		submenu: [
 			{label: 'New Level', accelerator: 'CmdOrCtrl+N', click: send('new')},
 			{label: 'Open…', accelerator: 'CmdOrCtrl+O', click: send('open')},
+			openrecent,
 			{type: 'separator'},
 			{label: 'Save', accelerator: 'CmdOrCtrl+S', click: send('save')},
 			{label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: send('saveas')},
@@ -36,11 +54,24 @@ function template(win, state)
 	if (!mac)
 		file.submenu.push({type: 'separator'}, {role: 'quit', label: 'Exit'});
 
+	/* UX-03: "Undo"/"Redo" alone said nothing about what they would act on -
+	 * cap() gives each step's own lowercase label ("paint", "move entity")
+	 * the Title Case the rest of this OS-facing menu already uses. */
+	const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 	const edit = {
 		label: 'Edit',
 		submenu: [
-			{label: 'Undo', accelerator: 'CmdOrCtrl+Z', enabled: onlevel && state.canUndo, click: send('undo')},
-			{label: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', enabled: onlevel && state.canRedo, click: send('redo')},
+			{label: 'Undo' + (state.undoLabel ? ' ' + cap(state.undoLabel) : ''),
+				accelerator: 'CmdOrCtrl+Z', enabled: onlevel && state.canUndo, click: send('undo')},
+			{label: 'Redo' + (state.redoLabel ? ' ' + cap(state.redoLabel) : ''),
+				accelerator: 'CmdOrCtrl+Shift+Z', enabled: onlevel && state.canRedo, click: send('redo')},
+			{type: 'separator'},
+			/* UX-05: duplicates the selected entity; a no-op with nothing
+			 * selected (App.say()s so, ACTS.duplicate -> Grid.duplicate()) -
+			 * the menu has no way to know whether one is selected, matching
+			 * how Undo/Redo are gated only by tab, not by document state the
+			 * renderer alone tracks. */
+			{label: 'Duplicate', accelerator: 'CmdOrCtrl+D', enabled: onlevel, click: send('duplicate')},
 			{type: 'separator'},
 			{role: 'cut'},
 			{role: 'copy'},
@@ -93,9 +124,9 @@ function template(win, state)
 
 /* Cheaper and far simpler than mutating items in place, and state changes
  * (tab switch, undo depth) are infrequent. */
-function set(win, state)
+function set(win, state, recent, onclear)
 {
-	Menu.setApplicationMenu(Menu.buildFromTemplate(template(win, state)));
+	Menu.setApplicationMenu(Menu.buildFromTemplate(template(win, state, recent || [], onclear)));
 }
 
 module.exports = {set};
