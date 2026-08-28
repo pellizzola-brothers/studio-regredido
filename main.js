@@ -131,7 +131,10 @@ function serve(req)
 	const u = new URL(req.url);
 	const p = path.normalize(path.join(ROOT, decodeURIComponent(u.pathname)));
 
-	if (!p.startsWith(ROOT))
+	/* BUG-13: a bare startsWith(ROOT) also matches a sibling directory whose
+	 * name happens to extend ROOT's (…/studio-backup) - path.sep after ROOT
+	 * is what makes this a real prefix-of-path-segments check. */
+	if (p !== ROOT && !p.startsWith(ROOT + path.sep))
 		return new Response('forbidden', {status: 403});
 	return net.fetch(pathToFileURL(p).toString());
 }
