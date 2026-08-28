@@ -94,6 +94,50 @@ function savewindowstate()
 	} catch (e) { /* best-effort: a failed write must not block closing */ }
 }
 
+/* NAT-06: the only way back to yesterday's level used to be navigating the
+ * open dialog from scratch, which also started wherever the OS last left it -
+ * no memory of anything Studio itself opened.  Persisted the same way window
+ * state is (a small JSON file in userData), most-recent-first, capped at 10
+ * and deduplicated by path; a path that no longer exists on disk is filtered
+ * lazily, at menu-build time, rather than watched or pruned eagerly. */
+function recentpath() { return path.join(app.getPath('userData'), 'recent.json'); }
+
+function loadrecent()
+{
+	try {
+		const list = JSON.parse(fs.readFileSync(recentpath(), 'utf8'));
+		return Array.isArray(list) ? list.filter(p => fs.existsSync(p)) : [];
+	} catch (e) {
+		return [];
+	}
+}
+
+function saverecent(list)
+{
+	try {
+		fs.writeFileSync(recentpath(), JSON.stringify(list));
+	} catch (e) { /* best-effort: a failed write must not block the caller */ }
+}
+
+/* macOS: also populates the Dock icon's own Recent submenu, for free.
+ * Windows: only feeds the taskbar JumpList once the app is registered as the
+ * .lvl handler (NAT-07, still open) - harmless, and correct now, either way. */
+function addrecent(p)
+{
+	app.addRecentDocument(p);
+	saverecent([p, ...loadrecent().filter(x => x !== p)].slice(0, 10));
+	if (win)
+		menu.set(win, menustate, loadrecent(), clearrecent);
+}
+
+function clearrecent()
+{
+	app.clearRecentDocuments();
+	saverecent([]);
+	if (win)
+		menu.set(win, menustate, [], clearrecent);
+}
+
 /* A saved rectangle may belong to a monitor that is no longer connected -
  * the classic bug in this area - so it is only trusted if it still overlaps
  * some currently-attached display's work area. */
@@ -225,7 +269,7 @@ function createwin()
 	win.webContents.on('unresponsive', () =>
 		deadrenderer('The window is not responding.'));
 	win.on('closed', () => { win = null; });
-	menu.set(win, menustate);
+	menu.set(win, menustate, loadrecent(), clearrecent);
 }
 
 app.whenReady().then(() => {
@@ -334,18 +378,32 @@ ipcMain.handle('lvl:new', guard(async () => {
 	return {doc: d, warnings: lvl.review(d)};
 }));
 
+/* Shared by lvl:open and lvl:openpath (NAT-06's Open Recent) - both end at the
+ * same document identity update and recent-list bump, one from a dialog's own
+ * choice and the other from a path the menu already knew. */
+function openfile(p)
+{
+	const d = lvl.read(p);
+	doc.path = p;
+	doc.name = d.json.level.information.name || null;
+	retitle();
+	addrecent(p);
+	return {path: doc.path, doc: d, warnings: lvl.review(d)};
+}
+
 ipcMain.handle('lvl:open', guard(async () => {
 	const r = await dialog.showOpenDialog(win, {
 		title: 'Open level', filters: OPENFILTERS, properties: ['openFile']
 	});
 	if (r.canceled)
 		return {cancel: true};
-	const d = lvl.read(r.filePaths[0]);
-	doc.path = r.filePaths[0];
-	doc.name = d.json.level.information.name || null;
-	retitle();
-	return {path: doc.path, doc: d, warnings: lvl.review(d)};
+	return openfile(r.filePaths[0]);
 }));
+
+/* NAT-06: File -> Open Recent (menu.js) sends the chosen path to the
+ * renderer rather than calling this directly - it still has to cross the
+ * renderer's own unsaved-changes guard first, exactly like any other open. */
+ipcMain.handle('lvl:openpath', guard(async (e, p) => openfile(p)));
 
 /* A save failure is otherwise easy to miss entirely: the Text Editor tab
  * hides the whole inspector, where the validator's output normally lands
@@ -513,6 +571,7 @@ ipcMain.handle('lvl:saveas', guard(async (e, d, name) => {
 	doc.path = p;
 	doc.name = d.json.level.information.name || null;
 	retitle();
+	addrecent(p);
 	return {path: p, warnings: lvl.review(d)};
 }));
 
@@ -548,7 +607,7 @@ ipcMain.on('doc:name', (e, name) => { doc.name = name || null; retitle(); });
 ipcMain.on('menu:state', (e, state) => {
 	menustate = state;
 	if (win)
-		menu.set(win, menustate);
+		menu.set(win, menustate, loadrecent(), clearrecent);
 });
 
 ipcMain.on('forceclose', () => {
