@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('api', {
 	forceclose:	() => ipcRenderer.send('forceclose'),
 	blank:		() => ipcRenderer.invoke('lvl:new'),
 	open:		() => ipcRenderer.invoke('lvl:open'),
+	/* NAT-06: File -> Open Recent (menu.js) sends the chosen path here rather
+	 * than opening it directly in main - it still has to cross the
+	 * renderer's own unsaved-changes guard first, like any other open. */
+	openpath:	p => ipcRenderer.invoke('lvl:openpath', p),
+	onopenrecent:	fn => ipcRenderer.on('open-recent', (e, p) => fn(p)),
 	save:		doc => ipcRenderer.invoke('lvl:save', doc),
 	saveas:		(doc, name) => ipcRenderer.invoke('lvl:saveas', doc, name),
 	midi:		() => ipcRenderer.invoke('midi:import'),
