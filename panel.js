@@ -172,8 +172,19 @@ function cell(parent, kind, id, name, file)
 	return c;
 }
 
-/* A custom definition needs a script to point at, so make one if the level has
- * none yet: an empty definition would fail validation on the game's side. */
+/* A custom definition needs a script to point at - an empty one fails
+ * validation on the game's side (lvl.js requires a non-empty string), so
+ * "leave it unassigned" is not a state the schema can represent.
+ *
+ * UX-14: always its own fresh script now, rather than whichever existing one
+ * happened to come first out of Object.keys(App.doc.scripts) - silently
+ * binding a brand new entity kind to an unrelated script it did not choose
+ * was the actual complaint, not the fact that *some* script gets created.
+ * App.newscript() call is outside the Undo.act() below rather than nested in
+ * it: Undo.begin()/end() are not reentrant (a nested begin() joins the open
+ * step, but the inner call's own end() would still close it early), so this
+ * lands as two undo steps - the same pattern the previous, sometimes-taken
+ * "create a script" branch already used. */
 function newdef()
 {
 	const defs = App.doc.json.level.entity_definitions;
@@ -182,17 +193,20 @@ function newdef()
 		n++;
 
 	const id = 'custom_' + n;
-	let script = Object.keys(App.doc.scripts)[0];
-	if (!script)
-		script = App.newscript(id + '.lua');
+	const script = App.newscript(id + '.lua');
 
 	Undo.act(() => {
 		defs.push({id: id, script: script});
+		/* Whatever was selected on the canvas before is not what "+" was
+		 * about - without this, Panel.inspect() below would keep showing
+		 * that entity instead of the definition just created. */
+		Grid.sel = -1;
 		Grid.tool = {kind: 'entity', id: id};
 		App.touch();
 	}, 'new definition');
 	Panel.palette();
 	Panel.inspect();
+	App.say('created ' + id + ' with ' + script);
 }
 
 /* PERF-01: onmove()'s entity-drag branch used to call the full Panel.inspect()
@@ -214,10 +228,44 @@ Panel.update = function (e)
 	return true;
 };
 
+/* ARCH-04: every rebuild below replaces #props's own subtree wholesale, so a
+ * field the user is mid-edit in (p_rows, p_def, p_id, the p_script/p_bg
+ * selects) is destroyed and a new, unfocused element takes its place - Tab or
+ * a screen reader loses its position entirely, not just the caret.  Saving
+ * which field (by id) held focus before the rebuild and restoring it after
+ * fixes every onchange call site at once, rather than patching each by hand;
+ * a text field's own selection range is restored too, so it is only the
+ * caret's *position*, not the caret itself, that a rebuild can still move. */
+function savefocus(p)
+{
+	const el = document.activeElement;
+	if (!el || !p.contains(el) || !el.id)
+		return null;
+	const r = {id: el.id};
+	if (typeof el.selectionStart === 'number') {
+		r.start = el.selectionStart;
+		r.end = el.selectionEnd;
+	}
+	return r;
+}
+
+function restorefocus(p, r)
+{
+	if (!r)
+		return;
+	const el = $(r.id);
+	if (!el)
+		return;
+	el.focus();
+	if (r.start != null && typeof el.setSelectionRange === 'function')
+		el.setSelectionRange(r.start, r.end);
+}
+
 Panel.inspect = function ()
 {
 	const p = $('props');
 	const es = App.doc.json.level.entities;
+	const focus = savefocus(p);
 
 	if (Grid.sel >= 0 && es[Grid.sel])
 		entityview(p, es[Grid.sel]);
@@ -225,6 +273,7 @@ Panel.inspect = function ()
 		defview(p, Grid.tool.id);
 	else
 		levelview(p);
+	restorefocus(p, focus);
 };
 
 function levelview(p)
@@ -312,12 +361,17 @@ function entityview(p, e)
 		Grid.redraw();
 		Panel.inspect();
 	}, 'change entity definition');
+	/* ARCH-04/PERF-01: Panel.update() over the full Panel.inspect() this used
+	 * to call - the same field this handler's own onchange just fired from
+	 * is exactly what a rebuild here would destroy mid-interaction (e.g.
+	 * Tab from p_x straight into p_y), and PERF-01 already gave this drag
+	 * hot path a helper that writes x/y/cell in place for precisely this. */
 	for (const [id, n] of [['p_x', 0], ['p_y', 1]])
 		$(id).onchange = ev => Undo.act(() => {
 			e.pos[n] = Math.round(+ev.target.value / B) * B;
 			App.touch();
 			Grid.redraw();
-			Panel.inspect();
+			Panel.update(e);
 		}, 'move entity');
 	$('p_script').onchange = ev => Panel.assign(e.def, ev.target.value);
 	$('p_del').onclick = () => Undo.act(() => {
