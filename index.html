@@ -5,7 +5,7 @@
 
 <header id="title">
 	<div id="name" class="drag"></div>
-	<div class="acts" role="toolbar" aria-label="File" aria-orientation="horizontal">
+	<div class="acts" role="toolbar" aria-label="file" aria-orientation="horizontal">
 		<button data-act="new">new</button>
 		<button data-act="open">open</button>
 		<button data-act="save">save</button>
@@ -15,35 +15,41 @@
 
 <div id="tabs">
 	<div id="tablist"></div>
-	<button id="add" title="New Lua script">
+	<button id="add" title="new Lua script">
 		<svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
 	</button>
 	<div class="drag grow"></div>
-	<button id="run" class="run" disabled aria-disabled="true"
-		title="Playtest is inert: the game cannot load .lvl archives yet (game/todo.txt 3.1)">
+	<button id="run" class="run" disabled aria-disabled="true" aria-describedby="run-help"
+		title="playtest is inert: the game cannot load .lvl archives yet (game/todo.txt 3.1)">
 		<svg class="icon fill" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z"/></svg>
 	</button>
 </div>
+<!-- VIS-13: aria-disabled alone (A11Y-08, done) says the button is
+     unavailable, not why - aria-describedby carries the same reason the
+     title= tooltip already gives a sighted, hovering user to every screen
+     reader too. -->
+<p id="run-help" class="sr-only">playtest is inert: the game cannot load
+	.lvl archives yet</p>
 
 <div id="body">
 	<aside id="side">
 		<h2 class="hdr" id="hdr-scripts">scripts</h2>
 		<ul id="scripts"></ul>
 		<div id="splitter-scripts" class="splitter h" role="separator" tabindex="0"
-			aria-orientation="horizontal" aria-label="Resize scripts list"></div>
-		<h2 class="hdr" id="hdr-midi">midi<button id="addmidi" title="Import MIDI">
+			aria-orientation="horizontal" aria-label="resize scripts list"></div>
+		<h2 class="hdr" id="hdr-midi">midi<button id="addmidi" title="import MIDI">
 			<svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
 		</button></h2>
 		<ul id="midis"></ul>
 	</aside>
 
 	<div id="splitter-side" class="splitter v" role="separator" tabindex="0"
-		aria-orientation="vertical" aria-label="Resize file manager"></div>
+		aria-orientation="vertical" aria-label="resize file manager"></div>
 
 	<main id="stage">
 		<div id="canvasrow">
 			<div id="wrap"><canvas id="cv" tabindex="0" role="application"
-				aria-label="Level canvas" aria-describedby="cv-help"></canvas></div>
+				aria-label="level canvas" aria-describedby="cv-help"></canvas></div>
 			<div id="vbar"><div id="vspace"></div></div>
 		</div>
 		<p id="cv-help" class="sr-only">Arrow keys move the keyboard cursor.
@@ -57,19 +63,19 @@
 	</main>
 
 	<div id="splitter-right" class="splitter v" role="separator" tabindex="0"
-		aria-orientation="vertical" aria-label="Resize inspector"></div>
+		aria-orientation="vertical" aria-label="resize inspector"></div>
 
 	<aside id="right">
 		<h2 class="hdr r" id="hdr-items">items</h2>
 		<div id="palette"></div>
 		<div id="splitter-props" class="splitter h" role="separator" tabindex="0"
-			aria-orientation="horizontal" aria-label="Resize palette"></div>
+			aria-orientation="horizontal" aria-label="resize palette"></div>
 		<h2 class="hdr r" id="hdr-props">properties</h2>
-		<div id="props" role="region" aria-label="Properties"></div>
+		<div id="props" role="region" aria-label="properties"></div>
 	</aside>
 </div>
 
-<div id="status"><span id="cursor"></span><button id="zoom" title="Zoom"></button><span id="dims"></span><span id="entcount"></span><span id="tool"></span><span id="warnings"></span><span id="msg" role="status" aria-atomic="true"></span></div>
+<div id="status"><span id="cursor"></span><button id="zoom" title="zoom"></button><span id="dims"></span><span id="entcount"></span><span id="tool"></span><span id="warnings"></span><span id="msg" role="status" aria-atomic="true"></span></div>
 
 <!-- NAT-09: shown only while a file drag is over the window (app.js's
      showdropzone()/hidedropzone()); pointer-events: none so the drop itself

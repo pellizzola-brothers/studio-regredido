@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('api', {
 	 * is on record and still on disk, otherwise the same blank lvl:new would
 	 * have produced. */
 	init:		() => ipcRenderer.invoke('lvl:init'),
+	/* UX-11: settings.json is main's to own, like every other on-disk file -
+	 * the renderer only ever sees it through this round trip. */
+	getsettings:	() => ipcRenderer.invoke('settings:get'),
+	setsettings:	s => ipcRenderer.invoke('settings:set', s),
 	/* PERF-07: sent once a real document is loaded and the level view has
 	 * rendered, so main can hold win.show() until there is something worth
 	 * showing instead of racing app.js's own api.init() round trip. */

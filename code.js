@@ -104,7 +104,12 @@ Code.init = function (done)
 			theme: 'pb',
 			automaticLayout: true,
 			fontFamily: "'JetBrains Mono','DejaVu Sans Mono',monospace",
-			fontSize: Tokens.fontSize,
+			/* UX-11: Settings.editorfontsize (app.js) - boot() fetches it
+			 * before the first script tab can possibly be open, so it is
+			 * always real by the time this runs; app.js's own
+			 * applysettings() calls Code.ed.updateOptions() directly for a
+			 * live change, since this line only runs once, at creation. */
+			fontSize: Settings.editorfontsize,
 			lineHeight: Tokens.lineHeight,		/* VIS-18 */
 			/* VIS-18: 'line' is Monaco's own default, made explicit so it
 			 * reads as a decision - it fills the current line with

@@ -36,6 +36,38 @@ const MINW = 960, MINH = 620, MAXW = 1600, MAXH = 950;
  * whenReady() to take effect there. */
 app.setName(NAME);
 
+/* NAT-08: without this, double-clicking a second .lvl (once NAT-07 registers
+ * the file association) launches a whole second copy of the app - a second
+ * Monaco, a second document, no knowledge of the first. Must run before
+ * whenReady() and before anything else touches app state, so a losing second
+ * instance quits as early as possible rather than doing any of that work
+ * only to throw it away. macOS does not strictly need this - Launch Services
+ * already routes a second open to the running instance via `open-file` - but
+ * taking the lock there too is harmless and keeps one code path on every
+ * platform rather than two. */
+/* Named so the app.whenReady() call far below (which actually shows a
+ * window) can be skipped outright rather than relying on quit()'s own
+ * timing - quit() only *schedules* a quit, and whether a 'ready' Electron
+ * has not yet fired can still land before that takes effect is not this
+ * file's to gamble on. Electron's own documented pattern for this same
+ * problem gates whenReady() the same way, for the same reason. */
+const singleinstance = app.requestSingleInstanceLock();
+if (!singleinstance)
+	app.quit();
+else
+	/* The argv this fires with is NAT-07's own to parse (a path arrives
+	 * there once file association exists); until then this only recovers
+	 * the one thing every platform can already promise - the existing
+	 * window comes forward instead of a second one opening silently behind
+	 * it. */
+	app.on('second-instance', () => {
+		if (!win)
+			return;
+		if (win.isMinimized())
+			win.restore();
+		win.focus();
+	});
+
 let win = null;
 let menustate = {tab: 'level', canUndo: false, canRedo: false};
 
@@ -123,6 +155,32 @@ function saverecent(list)
 	} catch (e) { /* best-effort: a failed write must not block the caller */ }
 }
 
+/* UX-11: the credible list the finding names - grid overlay, palette cell
+ * size, editor font size, the recovery-snapshot interval (fixed at 30s
+ * until now) - four real settings, which is what justified building this at
+ * all rather than adding a preference for one of them alone. View state
+ * (panel widths, the last zoom, open tabs) is deliberately not here - it
+ * belongs with window.json, silent and per-session, not a setting the user
+ * chooses once and expects to stick. */
+function settingspath() { return path.join(app.getPath('userData'), 'settings.json'); }
+const SETTINGS_DEFAULTS = {grid: true, cellsize: 1, editorfontsize: 12, snapshotinterval: 30};
+
+function loadsettings()
+{
+	try {
+		return Object.assign({}, SETTINGS_DEFAULTS, JSON.parse(fs.readFileSync(settingspath(), 'utf8')));
+	} catch (e) {
+		return Object.assign({}, SETTINGS_DEFAULTS);
+	}
+}
+
+function savesettings(s)
+{
+	try {
+		fs.writeFileSync(settingspath(), JSON.stringify(s));
+	} catch (e) { /* best-effort: a failed write must not block the caller */ }
+}
+
 /* macOS: also populates the Dock icon's own Recent submenu, for free.
  * Windows: only feeds the taskbar JumpList once the app is registered as the
  * .lvl handler (NAT-07, still open) - harmless, and correct now, either way. */
@@ -200,7 +258,7 @@ function deadrenderer(detail)
 		return;
 	doc.dirty = false;
 	dialog.showMessageBox(win, {
-		type: 'warning', buttons: ['Reopen', 'Close'], defaultId: 0, cancelId: 1,
+		type: 'warning', buttons: [chrome.oscase('Reopen'), chrome.oscase('Close')], defaultId: 0, cancelId: 1,
 		message: 'Studio stopped responding.', detail: detail
 	}).then(r => {
 		if (!win)
@@ -303,19 +361,24 @@ function createwin()
 	menu.set(win, menustate, loadrecent(), clearrecent);
 }
 
-app.whenReady().then(() => {
-	protocol.handle('app', serve);
-	app.setAboutPanelOptions({
-		applicationName: NAME,
-		applicationVersion: app.getVersion(),
-		copyright: 'Pellizzola Brothers'
+/* NAT-08: a losing second instance already called app.quit() above; not
+ * registering this at all, rather than trusting that call to win a race
+ * against Electron's own 'ready' event, is what actually guarantees no
+ * second window ever gets created. */
+if (singleinstance)
+	app.whenReady().then(() => {
+		protocol.handle('app', serve);
+		app.setAboutPanelOptions({
+			applicationName: NAME,
+			applicationVersion: app.getVersion(),
+			copyright: 'Pellizzola Brothers'
+		});
+		createwin();
+		app.on('activate', () => {
+			if (!BrowserWindow.getAllWindows().length)
+				createwin();
+		});
 	});
-	createwin();
-	app.on('activate', () => {
-		if (!BrowserWindow.getAllWindows().length)
-			createwin();
-	});
-});
 
 app.on('window-all-closed', () => {
 	if (!chrome.mac)
@@ -363,33 +426,46 @@ ipcMain.on('menu:row', (e, ctx) => {
 	/* NAT-12: the canvas's own menu, reached now only by a right click that
 	 * never dragged and had nothing under it to delete - one outside the
 	 * level's own bounds, where grid.js's onup() resolves every other right
-	 * click into an instant delete instead of asking first. "fit view" is
+	 * click into an instant delete instead of asking first. "Fit View" is
 	 * the one action that still applies out there. It does not fall through
-	 * to the "new script"/"import midi" pair every other menu carries
+	 * to the "New Script"/"Import MIDI" pair every other menu carries
 	 * below - neither belongs to a right click on the level. */
 	if (ctx.kind === 'canvas') {
 		Menu.buildFromTemplate([
-			{label: 'fit view', click: send('fitview')}
+			{label: chrome.oscase('Fit View'), click: send('fitview')}
 		]).popup({window: win});
 		return;
 	}
 
 	const items = [];
 
+	/* VIS-10: a native Menu.popup() is an OS-facing surface like the menu
+	 * bar (chrome.oscase(), above) - Title Case authored, Sentence case on
+	 * Linux. "Assign To " keeps its own capitalisation regardless of
+	 * platform; ctx.entityDef is user-authored content (a definition id),
+	 * not chrome text, so it is concatenated after the case conversion. */
 	if (ctx.kind === 'script') {
-		items.push({label: 'open', click: send('open')});
+		items.push({label: chrome.oscase('Open'), click: send('open')});
 		items.push({
-			label: ctx.entityDef ? 'assign to ' + ctx.entityDef : 'assign to entity',
+			label: ctx.entityDef ? chrome.oscase('Assign To') + ' ' + ctx.entityDef : chrome.oscase('Assign To Entity'),
 			enabled: !!ctx.entityDef, click: send('assign')
 		});
-	}
-	if (ctx.kind === 'script' || ctx.kind === 'midi') {
-		items.push({label: 'rename', click: send('rename')});
-		items.push({label: 'delete', click: send('delete')});
 		items.push({type: 'separator'});
 	}
-	items.push({label: 'new script', click: send('newscript')});
-	items.push({label: 'import midi', click: send('importmidi')});
+	if (ctx.kind === 'script' || ctx.kind === 'midi') {
+		items.push({label: chrome.oscase('Rename'), click: send('rename')});
+		items.push({label: chrome.oscase('Delete'), click: send('delete')});
+	}
+	/* UX-02: "New Script"/"Import MIDI" used to close every row's own menu
+	 * too, so a menu about one script or MIDI file also always offered two
+	 * commands that act on neither - global create actions belong only on
+	 * the panel background menu (`kind: 'panel'`, panelmenu() in app.js),
+	 * where they are still the whole menu, unchanged. A row's own menu is
+	 * now just the actions that act on that row. */
+	if (ctx.kind === 'panel') {
+		items.push({label: chrome.oscase('New Script'), click: send('newscript')});
+		items.push({label: chrome.oscase('Import MIDI'), click: send('importmidi')});
+	}
 	/* No x/y: popup() defaults to the current cursor position, which is
 	 * exactly where the click that triggered this happened. */
 	Menu.buildFromTemplate(items).popup({window: win});
@@ -408,7 +484,7 @@ ipcMain.on('menu:zoom', () => {
 		{label: '100%', click: send('zoom100')},
 		{label: '200%', click: send('zoom200')},
 		{type: 'separator'},
-		{label: 'Fit', click: send('fitall')}
+		{label: chrome.oscase('Fit'), click: send('fitall')}
 	]).popup({window: win});
 });
 
@@ -435,7 +511,7 @@ function openfile(p)
 
 ipcMain.handle('lvl:open', guard(async () => {
 	const r = await dialog.showOpenDialog(win, {
-		title: 'Open level', filters: OPENFILTERS, properties: ['openFile']
+		title: chrome.oscase('Open Level'), filters: OPENFILTERS, properties: ['openFile']
 	});
 	if (r.canceled)
 		return CANCEL;
@@ -467,6 +543,9 @@ ipcMain.handle('lvl:init', guard(async () => {
 	return {restored: false, doc: d, warnings: lvl.review(d), path: null};
 }));
 
+ipcMain.handle('settings:get', guard(async () => loadsettings()));
+ipcMain.handle('settings:set', guard(async (e, s) => { savesettings(s); return s; }));
+
 /* A save failure is otherwise easy to miss entirely: the Text Editor tab
  * hides the whole inspector, where the validator's output normally lands
  * (style.css `body.text #right { display: none }`).  A native dialog reaches
@@ -475,7 +554,7 @@ ipcMain.handle('lvl:init', guard(async () => {
 function saveerr(err)
 {
 	dialog.showMessageBox(win, {
-		type: 'error', title: 'Save failed',
+		type: 'error', title: chrome.oscase('Save Failed'),
 		message: 'Could not save the level',
 		detail: String(err.message || err)
 	});
@@ -533,11 +612,17 @@ function clearsnapshot(p)
 	}
 }
 
+/* NAT-19: lvl.write() is async now (done, see "Already completed") - this
+ * was already a fire-and-forget handler (ipcMain.on, not .handle), so
+ * nothing here had to start awaiting anything that did not already tolerate
+ * running in the background; the .catch() below is exactly the same
+ * silent-failure contract the old try/catch gave a snapshot write. */
 ipcMain.on('lvl:snapshot', (e, d) => {
 	try {
 		fs.mkdirSync(recoverydir(), {recursive: true});
-		const key = snapkey(doc.path);
-		lvl.write(snappath(key), d);
+	} catch (e) { return; /* a failed recovery snapshot must stay invisible to the user */ }
+	const key = snapkey(doc.path);
+	lvl.write(snappath(key), d).then(() => {
 		const idx = readindex();
 		idx[key] = {
 			path: doc.path,
@@ -545,7 +630,7 @@ ipcMain.on('lvl:snapshot', (e, d) => {
 			time: Date.now()
 		};
 		writeindex(idx);
-	} catch (e) { /* a failed recovery snapshot must stay invisible to the user */ }
+	}).catch(() => { /* a failed recovery snapshot must stay invisible to the user */ });
 });
 
 /* Asked once after the window first shows.  Studio edits one document at a
@@ -568,8 +653,8 @@ function maybeRecover()
 
 	const entry = idx[best];
 	dialog.showMessageBox(win, {
-		type: 'warning', buttons: ['Recover', 'Discard'], defaultId: 0,
-		cancelId: 1, noLink: true, title: 'Recover Level',
+		type: 'warning', buttons: [chrome.oscase('Recover'), chrome.oscase('Discard')], defaultId: 0,
+		cancelId: 1, noLink: true, title: chrome.oscase('Recover Level'),
 		message: 'Studio closed unexpectedly.',
 		detail: 'Recover unsaved changes to "' + (entry.name || 'untitled') + '"?'
 	}).then(r => {
@@ -596,7 +681,7 @@ ipcMain.handle('lvl:save', guard(async (e, d) => {
 		throw new Error('no file to save to');
 	try {
 		backup(doc.path);
-		lvl.write(doc.path, d);
+		await lvl.write(doc.path, d);
 	} catch (err) {
 		saveerr(err);
 		throw err;
@@ -616,7 +701,7 @@ function forcelvl(p)
 
 ipcMain.handle('lvl:saveas', guard(async (e, d, name) => {
 	const r = await dialog.showSaveDialog(win, {
-		title: 'Save level as', filters: SAVEFILTERS,
+		title: chrome.oscase('Save Level As'), filters: SAVEFILTERS,
 		defaultPath: (name || 'untitled') + '.lvl'
 	});
 	if (r.canceled)
@@ -624,7 +709,7 @@ ipcMain.handle('lvl:saveas', guard(async (e, d, name) => {
 	const p = forcelvl(r.filePath);
 	try {
 		backup(p);
-		lvl.write(p, d);
+		await lvl.write(p, d);
 	} catch (err) {
 		saveerr(err);
 		throw err;
@@ -639,7 +724,7 @@ ipcMain.handle('lvl:saveas', guard(async (e, d, name) => {
 
 ipcMain.handle('midi:import', guard(async () => {
 	const r = await dialog.showOpenDialog(win, {
-		title: 'Import MIDI', properties: ['openFile', 'multiSelections'],
+		title: chrome.oscase('Import MIDI'), properties: ['openFile', 'multiSelections'],
 		filters: [{name: 'MIDI', extensions: ['mid', 'midi']}]
 	});
 	if (r.canceled)
@@ -680,8 +765,8 @@ ipcMain.handle('script:importpaths', guard(async (e, paths) => ({
  * to detect it. */
 ipcMain.handle('script:confirmdelete', guard(async (e, name, users) => {
 	const r = await dialog.showMessageBox(win, {
-		type: 'warning', buttons: ['Cancel', 'Delete Anyway'], defaultId: 0,
-		cancelId: 0, noLink: true, title: 'Script In Use',
+		type: 'warning', buttons: [chrome.oscase('Cancel'), chrome.oscase('Delete Anyway')], defaultId: 0,
+		cancelId: 0, noLink: true, title: chrome.oscase('Script In Use'),
 		message: '"' + name + '" is still used by ' + users.join(', ') + '.',
 		detail: 'Deleting it leaves ' + (users.length > 1 ? 'those definitions' : 'that definition') +
 			' pointing at a missing script - reassign one from the inspector to fix it, or delete anyway.'
@@ -695,7 +780,7 @@ ipcMain.handle('ask:discard', async (e, name) => {
 	const b = chrome.discardbuttons();
 	const r = await dialog.showMessageBox(win, {
 		type: 'warning', buttons: b.buttons, defaultId: b.defaultId,
-		cancelId: b.cancelId, noLink: true, title: 'Unsaved Changes',
+		cancelId: b.cancelId, noLink: true, title: chrome.oscase('Unsaved Changes'),
 		message: '"' + name + '" has unsaved changes.',
 		detail: 'Your changes will be lost if you don\'t save them.'
 	});

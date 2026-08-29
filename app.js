@@ -11,6 +11,15 @@
 const App = {doc: null, path: null, dirty: false, textdirty: false, tab: 'level', open: [],
 	warnings: []};
 
+/* UX-11: main owns the file (settings.json); this is the renderer's own
+ * cached copy, fetched once at boot (boot(), below) and kept in step by
+ * setsetting() (panel.js's settingsview()) - the same shape settings:get/
+ * settings:set (main.js) answer with, defaulted here so every reader
+ * (Grid.draw()'s grid-overlay check, code.js's editor font size, the
+ * recovery-snapshot interval below) has a sane value even before that
+ * fetch resolves. */
+const Settings = {grid: true, cellsize: 1, editorfontsize: 12, snapshotinterval: 30};
+
 /* ARCH-03: the one platform fact the renderer has, driving [data-platform]
  * CSS selectors (macOS traffic-light padding, NAT-02's #title inset) - set
  * as early as possible, before the platform-dependent chrome first paints. */
@@ -75,6 +84,54 @@ function applyuiscale(v)
 }
 
 applyuiscale(+localStorage.getItem(UISCALE_KEY) || 1);
+
+/* UX-11: --cell (GEO-07) was already built to be an integer multiple of
+ * --sprite for exactly this - "x2 for a larger palette, never fractional",
+ * its own comment says - so the 2x step just writes the multiple this
+ * setting picks instead of the constant 1 it always was until now. */
+function applycellsize()
+{
+	document.documentElement.style.setProperty('--cell',
+		'calc(var(--sprite) * ' + Settings.cellsize + ')');
+}
+
+let snaptimer = null;
+
+/* UX-10's own interval, now a setting instead of the literal 30000 it was
+ * fixed at - restartable, since changing it while the app is running should
+ * take effect immediately rather than waiting for the next launch. */
+function applysnapshotinterval()
+{
+	clearInterval(snaptimer);
+	snaptimer = setInterval(() => {
+		if (!App.dirty || Grid.pan || Grid.paint >= 0 || Grid.moving)
+			return;
+		Grid.commit();
+		api.snapshot(App.doc);
+	}, Settings.snapshotinterval * 1000);
+}
+
+/* Applies every setting's own live effect - called once at boot with the
+ * fetched settings.json, and again by settingsview() (panel.js) each time
+ * the user changes one, so a setting is never only a value stored for next
+ * launch. */
+function applysettings()
+{
+	/* App.doc is still null the first time this runs, at boot, before
+	 * api.init()/api.blank() has resolved - nothing to redraw yet, and
+	 * App.setdoc()'s own Grid.load()/Grid.fit() draws the first frame
+	 * itself, reading whatever Settings.grid already is by then. Only a
+	 * live change from settingsview() (panel.js), with a document already
+	 * open, needs to ask for a redraw directly. */
+	applycellsize();
+	if (App.doc) {
+		Grid.redraw();		/* grid overlay on/off */
+		Panel.palette();	/* cell size */
+	}
+	if (Code.ready)
+		Code.ed.updateOptions({fontSize: Settings.editorfontsize});
+	applysnapshotinterval();
+}
 
 /* UX-09: the first-run hint (boot(), below) is sticky - it says so itself,
  * comparing #msg's own text rather than a separate flag, so it only ever
@@ -788,20 +845,36 @@ async function drop(ev)
 
 /* ---- documents ---- */
 
-/* Rebuild every view from the document.  Undo calls this after swapping the
- * level out from under the UI. */
-App.refresh = function ()
+/* Rebuild the views a step actually touched.  Undo calls this after swapping
+ * the level out from under the UI.
+ *
+ * PERF-05: `changed` names which of info/defs/ents/bgs/scripts/midi/cells
+ * this particular step's own before/after shots actually differ on
+ * (undo.js's diffparts()) - omitted (any other caller) defaults to "assume
+ * everything", the unconditional behaviour this used to always run. A
+ * single painted cell used to rebuild the tab strip, both file lists, the
+ * whole palette and the inspector, and re-sync every Monaco model on every
+ * step walked back through; now it touches only the canvas. */
+App.refresh = function (changed)
 {
-	App.open = App.open.filter(p => App.doc.scripts[p] !== undefined);
-	if (App.tab !== 'level' && App.doc.scripts[App.tab] === undefined)
-		App.tab = App.open[0] || 'level';
+	changed = changed || {info: true, defs: true, ents: true, bgs: true,
+		scripts: true, midi: true, cells: true};
 
-	Code.sync();
-	tabs();
-	sidebar();
-	Panel.palette();
-	Panel.inspect();
-	Grid.redraw();
+	if (changed.scripts) {
+		App.open = App.open.filter(p => App.doc.scripts[p] !== undefined);
+		if (App.tab !== 'level' && App.doc.scripts[App.tab] === undefined)
+			App.tab = App.open[0] || 'level';
+		Code.sync();
+		tabs();
+	}
+	if (changed.scripts || changed.midi)
+		sidebar();
+	if (changed.defs)
+		Panel.palette();
+	if (changed.info || changed.defs || changed.ents || changed.bgs)
+		Panel.inspect();
+	if (changed.cells || changed.bgs || changed.ents)
+		Grid.redraw();
 	App.recheck();
 	if (App.tab !== 'level')
 		Code.show(App.tab);
@@ -988,7 +1061,13 @@ const ACTS = {
 	/* A11Y-06: View -> Increase/Decrease/Reset Text Size. */
 	uitextinc:	() => applyuiscale((+localStorage.getItem(UISCALE_KEY) || 1) * UISCALE_STEP),
 	uitextdec:	() => applyuiscale((+localStorage.getItem(UISCALE_KEY) || 1) / UISCALE_STEP),
-	uitextreset:	() => applyuiscale(1)
+	uitextreset:	() => applyuiscale(1),
+	/* UX-11: Settings lives in #props, the same element every other
+	 * Panel.inspect() view already owns - switching to the Level Editor tab
+	 * first is what makes it visible, since #right (and #props with it) is
+	 * hidden outright while a script tab is open (style.css `body.text
+	 * #right { display: none }`). */
+	settings:	() => { App.select('level'); Panel.showsettings = true; Panel.inspect(); }
 };
 
 /* Canvas-local keys only: Escape, Delete, and now the A11Y-03 keyboard-editing
@@ -1138,6 +1217,16 @@ addEventListener('DOMContentLoaded', () => {
 	 * visible frame shows a real document instead of an empty chrome. */
 	(async function boot()
 	{
+		/* UX-11: fetched alongside the document, before ui:ready (PERF-07) -
+		 * so the grid overlay, palette cell size and snapshot interval are
+		 * all already in effect on the very first frame the window shows,
+		 * the same reasoning that already governs when the document itself
+		 * has to be ready by. */
+		const s = await call(api.getsettings());
+		if (s)
+			Object.assign(Settings, s);
+		applysettings();
+
 		let r = await call(api.init());
 		if (!r)
 			r = await call(api.blank());
@@ -1146,15 +1235,4 @@ addEventListener('DOMContentLoaded', () => {
 		App.say(r.restored ? 'restored last session' : HINT, false, !r.restored);
 		api.uiready();
 	})();
-
-	/* Snapshot the document for crash recovery (UX-10) roughly every 30s while
-	 * dirty.  Idle-triggered - never mid-gesture - so it can never observe a
-	 * torn edit, and Grid.commit() runs first per CLAUDE.md's rule that every
-	 * save path must call it before touching level.block_data. */
-	setInterval(() => {
-		if (!App.dirty || Grid.pan || Grid.paint >= 0 || Grid.moving)
-			return;
-		Grid.commit();
-		api.snapshot(App.doc);
-	}, 30000);
 });

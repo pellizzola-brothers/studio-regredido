@@ -72,4 +72,22 @@ function discardbuttons()
 		map: ['discard', 'cancel', 'save'], defaultId: 2, cancelId: 1};
 }
 
-module.exports = {mac, win32, platform: process.platform, windowoptions, discardbuttons};
+/* VIS-10: OS-facing surfaces (the menu bar, native context menus, dialog
+ * titles and buttons) want each platform's own capitalisation convention -
+ * Title Case on macOS and Windows, Sentence case on GNOME - so every one of
+ * those strings is authored once, in Title Case, and this converts it for
+ * Linux at the one place each reaches the OS (menu.js's template, main.js's
+ * dialog/native-menu calls). Only the first word (already correctly
+ * capitalised) and an all-caps word are left alone - the same test that
+ * protects a real acronym (MIDI) also happens to leave a bare number or
+ * symbol token (a button's own "100%") untouched, since upper-casing either
+ * is a no-op. Never applied to user-authored content (a filename, an entity
+ * definition id) - callers concatenate that in afterward, unconverted. */
+function oscase(s)
+{
+	if (mac || win32)
+		return s;
+	return s.split(' ').map((w, i) => i === 0 || w === w.toUpperCase() ? w : w.toLowerCase()).join(' ');
+}
+
+module.exports = {mac, win32, platform: process.platform, windowoptions, discardbuttons, oscase};

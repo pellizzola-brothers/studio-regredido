@@ -4,7 +4,11 @@
  * on the canvas, a custom definition in the palette, or the level itself. */
 'use strict';
 
-const Panel = {};
+/* UX-11: showsettings is view state for #props, not canvas selection state -
+ * it has to survive a click on the canvas underneath it (the user is still
+ * looking at Settings until they say otherwise), which is exactly why it is
+ * checked first in Panel.inspect(), below, ahead of Grid.sel/Grid.tool. */
+const Panel = {showsettings: false};
 
 function $(id) { return document.getElementById(id); }
 
@@ -114,8 +118,8 @@ Panel.palette = function ()
 	add.type = 'button';
 	add.className = 'cell add';
 	add.appendChild(svgicon(false, 'M8 3v10M3 8h10'));
-	add.title = 'New custom entity definition';
-	add.setAttribute('aria-label', 'New custom entity definition');
+	add.title = 'new custom entity definition';
+	add.setAttribute('aria-label', 'new custom entity definition');
 	add.onclick = newdef;
 	el.appendChild(add);
 	items.push(add);
@@ -267,7 +271,9 @@ Panel.inspect = function ()
 	const es = App.doc.json.level.entities;
 	const focus = savefocus(p);
 
-	if (Grid.sel >= 0 && es[Grid.sel])
+	if (Panel.showsettings)
+		settingsview(p);
+	else if (Grid.sel >= 0 && es[Grid.sel])
 		entityview(p, es[Grid.sel]);
 	else if (Grid.tool.kind === 'entity' && !entdefs.has(Grid.tool.id))
 		defview(p, Grid.tool.id);
@@ -275,6 +281,47 @@ Panel.inspect = function ()
 		levelview(p);
 	restorefocus(p, focus);
 };
+
+/* UX-11: the fourth #props view - not chosen by canvas selection like the
+ * other three, but by the Settings command (ACTS.settings, app.js) until
+ * "done" clears Panel.showsettings again. setsetting() applies each
+ * control's own live effect immediately (applysettings(), app.js) and
+ * persists the whole object in one round trip, rather than one channel per
+ * field - four settings do not need four channels. */
+function setsetting(key, value)
+{
+	Settings[key] = value;
+	applysettings();
+	call(api.setsettings(Settings));	/* ARCH-06: fire-and-forget through the one envelope every invoke() answers */
+}
+
+function settingsview(p)
+{
+	p.innerHTML =
+		'<h4>settings</h4>' +
+		'<label><input id="p_grid" type="checkbox"' + (Settings.grid ? ' checked' : '') +
+			'> grid overlay</label>' +
+		'<label>palette cell size<select id="p_cellsize">' +
+			'<option value="1"' + (Settings.cellsize === 1 ? ' selected' : '') + '>1x</option>' +
+			'<option value="2"' + (Settings.cellsize === 2 ? ' selected' : '') + '>2x</option>' +
+		'</select></label>' +
+		'<label>editor font size<input id="p_editorfontsize" type="number" min="8" max="32" value="' +
+			Settings.editorfontsize + '"></label>' +
+		'<label>recovery snapshot interval (seconds)<input id="p_snapshotinterval" type="number" min="5" max="600" value="' +
+			Settings.snapshotinterval + '"></label>' +
+		'<button class="act" id="p_settings_done">done</button>';
+
+	$('p_grid').onchange = e => setsetting('grid', e.target.checked);
+	$('p_cellsize').onchange = e => setsetting('cellsize', +e.target.value);
+	$('p_editorfontsize').onchange = e => setsetting('editorfontsize',
+		Math.min(32, Math.max(8, +e.target.value)));
+	$('p_snapshotinterval').onchange = e => setsetting('snapshotinterval',
+		Math.min(600, Math.max(5, +e.target.value)));
+	$('p_settings_done').onclick = () => {
+		Panel.showsettings = false;
+		Panel.inspect();
+	};
+}
 
 function levelview(p)
 {
@@ -296,7 +343,10 @@ function levelview(p)
 		'<h4>size</h4>' +
 		'<div class="row">' +
 			'<label>width<input value="' + W + '" disabled aria-disabled="true"></label>' +
-			'<label>rows<input id="p_rows" type="number" min="1" max="999" value="' + Grid.h + '"></label>' +
+			/* UX-17: Grid.setheight() (onchange, below) clamps silently to
+			 * 1-999 - said here instead, rather than only discoverable by
+			 * typing past the edge and finding out. */
+			'<label>rows (1-999)<input id="p_rows" type="number" min="1" max="999" value="' + Grid.h + '"></label>' +
 		'</div>' +
 		'<p class="hint" id="p_rows_hint"></p>' +
 		'<button class="act" id="p_fit">fit view</button>';
@@ -341,9 +391,13 @@ function entityview(p, e)
 		'<label>definition<select id="p_def">' + known.map(id =>
 			'<option' + (id === e.def ? ' selected' : '') + '>' + esc(id) +
 			'</option>').join('') + '</select></label>' +
+		/* UX-17: x/y round silently to the nearest B on commit (the onchange
+		 * handlers below) since entities snap to the grid (CLAUDE.md) - the
+		 * label says so now, rather than a typed 137 turning into 100 with
+		 * no explanation anywhere on screen. */
 		'<div class="row">' +
-			'<label>x<input id="p_x" type="number" step="' + B + '" value="' + e.pos[0] + '"></label>' +
-			'<label>y<input id="p_y" type="number" step="' + B + '" value="' + e.pos[1] + '"></label>' +
+			'<label>x (snaps to ' + B + ')<input id="p_x" type="number" step="' + B + '" value="' + e.pos[0] + '"></label>' +
+			'<label>y (snaps to ' + B + ')<input id="p_y" type="number" step="' + B + '" value="' + e.pos[1] + '"></label>' +
 		'</div>' +
 		'<label>cell<input id="p_cell" value="' + Math.floor(e.pos[0] / B) + ', ' +
 			Math.floor(e.pos[1] / B) + '" disabled aria-disabled="true"></label>' +
