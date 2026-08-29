@@ -40,7 +40,6 @@ const Tokens = (() => {
 		surfaceSelected: v('--surface-selected'), /* VIS-18: code.js's list/suggest selection */
 		scrollThumb: v('--scroll-thumb'),
 		canvasBg: v('--canvas-bg'),
-		missingTex: v('--missing-tex'),
 		missingDef: v('--missing-def'),
 		gridLine: 'rgba(' + v('--acc-rgb') + ', .14)',
 		/* VIS-18: code.js's own editor options - it cannot resolve a CSS

@@ -27,8 +27,11 @@
 	--canvas-bg: #0b0813;			/* was a literal in grid.js */
 	--checker-a: #1d1530;			/* the palette's air/eraser checkerboard */
 	--checker-b: #120d1f;
-	--missing-tex: #4a3a6a;		/* blit(), grid.js: a known id whose sprite hasn't decoded */
-	--missing-def: #803050;		/* blit(), grid.js: an entity def the catalog doesn't know */
+	/* VIS-17: a known id that just hasn't decoded yet draws nothing (blit(),
+	   grid.js) - only a genuinely unknown one gets a swatch, hatch()'s own
+	   stroke colour, so --missing-tex (the old "still decoding" fill) has
+	   no consumer left and is retired rather than kept for no reader. */
+	--missing-def: #803050;		/* hatch(), grid.js: an id the catalog doesn't know */
 	--scroll-thumb: #3b285b;		/* shared by all five scroll containers, NAT-20 */
 
 	/* ---- text and lines ---- */
@@ -233,6 +236,41 @@ button:disabled { color: var(--fg-disabled); cursor: default; }
 		transition-duration: 1ms !important;
 		animation-duration: 1ms !important;
 	}
+}
+
+/* A11Y-07: VIS-16 (done) already gave the canvas's own drawn indicators a
+   response to this query - a thicker selection stroke, since two-tone and
+   difference-composited marks already stay visible at any contrast. This is
+   the chrome's own half: --control-border was already the app's one accent,
+   already clearing 3:1 (VIS-02) - --fg clears the AA text threshold (4.5:1)
+   everywhere it is used, a real step up rather than a cosmetic one. The
+   focus ring widens by the same 1px WCAG 2.4.11's own "at least as thick"
+   guidance for a stronger indicator implies. --fg-disabled becomes --dim's
+   own value, already verified at 5.12-5.91:1 (VIS-01) - clearing 4.5:1 with
+   real margin everywhere, not just the 3:1 the ordinary disabled state
+   settles for. */
+@media (prefers-contrast: more) {
+	:root {
+		--control-border: var(--fg);
+		--fg-disabled: var(--dim);
+	}
+	:focus-visible { outline-width: 3px; }
+}
+
+/* A11Y-07: forced-colors: active (Windows High Contrast) already overrides
+   ordinary background/text/border colours automatically, which is correct
+   for the chrome - fighting that with a hand-rolled system-colour palette
+   here would be the same over-correction NAT-15 already warns against for
+   a light theme. The one place automatic adjustment would actively break
+   something is .cell: forced-colors can strip an element's own
+   background-image along with its colours, and a palette cell's sprite is
+   content, not decoration - the only way to tell two blocks apart. The
+   level canvas cannot be reached by forced-colors at all (canvas pixels are
+   drawn, not styled) - forced-color-adjust: none here is documentation of
+   that fact, not a functional change, and VIS-16 (done) already gave its
+   own drawn indicators a guarantee that holds under literally any palette. */
+@media (forced-colors: active) {
+	canvas, .cell { forced-color-adjust: none; }
 }
 
 /* VIS-08: the inline rename field (edit(), app.js) replaces a row's label

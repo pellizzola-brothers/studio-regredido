@@ -566,7 +566,9 @@ Grid.draw = function ()
 		}
 	}
 
-	if (B * z >= GRIDMIN) {
+	/* UX-11: Settings.grid (app.js) - a preference, not a per-document field,
+	 * so it lives beside every other view of the level rather than in it. */
+	if (Settings.grid && B * z >= GRIDMIN) {
 		g.strokeStyle = Tokens.gridLine;
 		g.lineWidth = 1;
 		g.beginPath();
@@ -637,17 +639,41 @@ Grid.draw = function ()
 		Math.round(W * B * z), Math.round(Grid.h * B * z));
 };
 
-/* Fall back to a flat swatch until (or unless) the sprite decodes. */
+/* VIS-17: a known id whose texture has not decoded yet is not an error - it
+ * decodes in milliseconds from local disk, and tex() already re-triggers a
+ * redraw the moment it lands - so it draws nothing at all rather than a
+ * flat colour flash worse than the backdrop it would cover for one frame.
+ * A genuinely unknown id (t is falsy: no such block in the catalog) is the
+ * real authoring error and gets hatch(), below, plus the review() warning
+ * that names it (lvl.js). */
 function blit(g, t, x, y, w, h)
 {
 	const im = t ? tex(t.file, Grid.redraw) : null;
 
 	if (ready(im))
 		g.drawImage(im, x, y, w, h);
-	else {
-		g.fillStyle = t ? Tokens.missingTex : Tokens.missingDef;
-		g.fillRect(x, y, w, h);
+	else if (!t)
+		hatch(g, x, y, w, h);
+}
+
+/* A diagonal hatch reads as "nothing renders here", distinct from any flat
+ * fill a real texture could ever produce - unlike the fill it replaces,
+ * this cannot be mistaken for content. */
+function hatch(g, x, y, w, h)
+{
+	g.save();
+	g.beginPath();
+	g.rect(x, y, w, h);
+	g.clip();
+	g.strokeStyle = Tokens.missingDef;
+	g.lineWidth = Math.max(1, w / 8);
+	g.beginPath();
+	for (let o = -h; o < w; o += w / 4) {
+		g.moveTo(x + o, y + h);
+		g.lineTo(x + o + h, y);
 	}
+	g.stroke();
+	g.restore();
 }
 
 /* Scaled to the level's height and repeated along it, so the backdrop marks

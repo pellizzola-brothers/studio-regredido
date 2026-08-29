@@ -41,7 +41,7 @@ function collisions()
 
 /* A level that does not survive its own write/read is a bug lvl.js's
  * validator cannot catch, since it validates shape, not round-trip fidelity. */
-function roundtrip()
+async function roundtrip()
 {
 	const tmp = path.join(os.tmpdir(), 'pb-check-' + process.pid + '.lvl');
 	const doc = lvl.blank();
@@ -49,7 +49,8 @@ function roundtrip()
 	doc.scripts['scripts/probe.lua'] = '-- probe\n';
 	doc.midi['midi/probe.mid'] = new Uint8Array([1, 2, 3, 4]);
 
-	lvl.write(tmp, doc);
+	/* NAT-19: lvl.write() is async now (done, see "Already completed"). */
+	await lvl.write(tmp, doc);
 	const back = lvl.read(tmp);
 	fs.unlinkSync(tmp);
 
@@ -81,12 +82,14 @@ function migrations()
 	}
 }
 
-for (const check of [collisions, roundtrip, migrations]) {
-	try {
-		check();
-	} catch (e) {
-		console.error('FAIL ' + check.name + ': ' + (e.message || e));
-		process.exit(1);
+(async () => {
+	for (const check of [collisions, roundtrip, migrations]) {
+		try {
+			await check();
+		} catch (e) {
+			console.error('FAIL ' + check.name + ': ' + (e.message || e));
+			process.exit(1);
+		}
 	}
-}
-console.log('all checks passed');
+	console.log('all checks passed');
+})();

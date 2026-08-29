@@ -8,7 +8,7 @@
 'use strict';
 
 const fs = require('fs');
-const {zipSync, unzipSync, strToU8, strFromU8} = require('fflate');
+const {zip, unzipSync, strToU8, strFromU8} = require('fflate');
 const cat = require('./catalog');
 
 /* W, H and B are catalog.js's alone (ARCH-02) - this file used to redefine
@@ -100,11 +100,22 @@ function review(doc)
 	const w = [];
 	let starts = 0, ends = 0;
 
+	/* VIS-17: a 3-digit id validate() already accepts as *shape*-valid can
+	 * still name no block this build's catalog.js knows about (a level
+	 * authored against a newer catalog, or a hand-edited/corrupted one) -
+	 * grid.js renders that cell as a hatch rather than a texture, and this
+	 * is the warning that says why, the first time each unknown id turns up. */
+	const knownblocks = new Set(cat.BLOCKS.map(b => String(b.id).padStart(3, '0')));
+	const unknownblocks = new Set();
 	for (const row of l.block_data)
 		for (const id of row) {
 			if (id === '001') starts++;
 			else if (id === '004') ends++;
+			if (id !== '000' && !knownblocks.has(id))
+				unknownblocks.add(id);
 		}
+	for (const id of unknownblocks)
+		w.push('block id ' + id + ' is not in this build\'s catalog');
 	if (starts === 0)
 		w.push('no start block placed (tile 1 is required)');
 	else if (starts > 1)
@@ -238,17 +249,22 @@ function read(p)
 	let doc;
 
 	if (buf[0] === 0x50 && buf[1] === 0x4b) {		/* "PK": a real archive */
-		const zip = unzipSync(buf);
-		if (!zip['level.json'])
+		/* Named unzipped rather than zip - write() (below) imports fflate's
+		 * own async zip() at module scope, and this would otherwise shadow
+		 * it within this function only, which is exactly the kind of
+		 * same-name-different-thing confusion worth avoiding even where it
+		 * is not currently a bug. */
+		const unzipped = unzipSync(buf);
+		if (!unzipped['level.json'])
 			throw new Error(p + ' contains no level.json');
-		doc = {json: JSON.parse(strFromU8(zip['level.json'])), scripts: {}, midi: {}};
-		for (const k in zip) {
+		doc = {json: JSON.parse(strFromU8(unzipped['level.json'])), scripts: {}, midi: {}};
+		for (const k in unzipped) {
 			if (k.endsWith('/'))
 				continue;
 			if (k.startsWith('scripts/'))
-				doc.scripts[k] = strFromU8(zip[k]);
+				doc.scripts[k] = strFromU8(unzipped[k]);
 			else if (k.startsWith('midi/'))
-				doc.midi[k] = zip[k];
+				doc.midi[k] = unzipped[k];
 		}
 	} else {						/* a bare level.json */
 		doc = {json: JSON.parse(strFromU8(buf)), scripts: {}, midi: {}};
@@ -261,6 +277,22 @@ function read(p)
 	return doc;
 }
 
+/* NAT-19/ARCH-09/PERF-06: measured before touching, per this file's own
+ * "the synchronous code is simpler... measure, then convert if the
+ * measurement justifies it" rule (POLISH.md). A 999-row save, isolated from
+ * IPC and Grid.commit(), broke down as: JSON.stringify 11ms, zipSync 82ms,
+ * writeFileSync under 2ms, validate() 6ms - ~104ms total, crossing the
+ * ~100ms budget on this machine, and disk I/O was never the reason: it cost
+ * under 2% of the total. zipSync's own compression is what blocks the main
+ * process - confirmed by timing a 5ms setInterval against fflate's async
+ * zip() over the same payload: the timer kept firing throughout (proof the
+ * main thread stayed free), where it could not have during zipSync's own
+ * synchronous call. So only the compression step moves - fs.writeFileSync/
+ * renameSync stay exactly as they were, since fs.promises would not have
+ * addressed the measured bottleneck at all. (A 999-row *read* measured 70ms
+ * total, under the same threshold, so unzipSync is unconverted.) write()
+ * now returns a Promise; every caller (main.js) already awaits it inside an
+ * async handler. */
 function write(p, doc)
 {
 	const errs = validate(doc.json);
@@ -278,13 +310,22 @@ function write(p, doc)
 	 * full disk mid-write leaves the previous good file in place instead of
 	 * a truncated one. */
 	const tmp = p + '.tmp-' + process.pid;
-	try {
-		fs.writeFileSync(tmp, zipSync(files, {level: 6}));
-		fs.renameSync(tmp, p);
-	} catch (e) {
-		try { fs.unlinkSync(tmp); } catch (_) { /* nothing to clean up */ }
-		throw e;
-	}
+	return new Promise((resolve, reject) => {
+		zip(files, {level: 6}, (err, data) => {
+			if (err) {
+				reject(err);
+				return;
+			}
+			try {
+				fs.writeFileSync(tmp, data);
+				fs.renameSync(tmp, p);
+				resolve();
+			} catch (e) {
+				try { fs.unlinkSync(tmp); } catch (_) { /* nothing to clean up */ }
+				reject(e);
+			}
+		});
+	});
 }
 
 module.exports = {W: cat.W, H: cat.H, BG, blank, read, write, validate, migrate, review};
