@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The eighty-eight items below have shipped and are removed from the findings
+The one hundred items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -772,9 +772,10 @@ Shipped: `style.css` gained `--sprite: 32px` and `--cell: var(--sprite)`;
 `#palette`'s `grid-template-columns: repeat(4, 1fr)` is now
 `repeat(auto-fill, var(--cell))` with `justify-content: start`, so cells are
 always an integer 32px and the *column count*, not the cell size, changes
-with the panel's width. Offering 1×/2× cell sizes as a preference (UX-11) was
-not implemented - out of this finding's own scope, which only asked that the
-token exist for such a preference to flip later. Fixing this exposed a real,
+with the panel's width. Offering 1×/2× cell sizes as a preference was out of
+this finding's own scope, which only asked that the token exist for such a
+preference to flip later - it does now, in a later round (UX-11, done, see
+"Already completed"). Fixing this exposed a real,
 separate layout bug: `#right` (a flex item whose default `min-width` is
 `auto`) was sizing itself off the grid's own large intrinsic width instead of
 its clamped flex-basis, because a `repeat(auto-fill, <fixed size>)` grid -
@@ -1170,17 +1171,20 @@ Shipped the scope A11Y-01 left open: `#title` (`index.html`) is a real
 and the list or panel it labels points back to it with `aria-labelledby`
 instead of a second, parallel `aria-label` string naming the same thing
 (`list()`/`app.js` for the file lists, `Panel.palette()`/`panel.js` for the
-palette); `#props` carries `role="region" aria-label="Properties"`, and its
+palette); `#props` carries `role="region" aria-label="properties"` (the label
+itself went lowercase in a later round, VIS-10, done - see "Already
+completed", to match the in-window convention every other in-window label
+now states explicitly), and its
 `h4`s were already real headings, so an inspector user can already jump
 between them. `.hdr`'s own CSS gained `font: inherit` - a heading carries UA
 default font-size/weight a `<div>` never did, which would otherwise have
 blown the row out of its token-derived height the moment the tag changed.
-The disabled `▶` button's `aria-disabled`/`aria-describedby` stays with
-VIS-13, as the finding's own text already scoped it. Verified with the probe
+The disabled `▶` button's `aria-disabled`/`aria-describedby` is done too, in
+a later round (VIS-13, see "Already completed"). Verified with the probe
 harness: `document.getElementById('title').tagName === 'HEADER'`; all four
 header ids resolve to `H2` elements; `#scripts`/`#midis`/`#palette` each
 report the expected `aria-labelledby`; `#props` reports `role="region"`,
-`aria-label="Properties"`; `getComputedStyle()` on a header element reports
+`aria-label="properties"`; `getComputedStyle()` on a header element reports
 the inherited `12px` font size, not a heading's UA default; a full
 regression pass (paint, undo/redo, save/open, script rename/delete, MIDI
 import, tab switching) showed no behavioural change.
@@ -1916,6 +1920,284 @@ line of text sits in grows with it instead of clipping it.
 
 ---
 
+#### NAT-08 — No single-instance lock
+
+Shipped: `main.js` calls `app.requestSingleInstanceLock()` before anything
+else touches app state; a losing second instance calls `app.quit()` and, per
+Electron's own documented pattern for this exact problem, never registers
+`app.whenReady().then(...)` at all - gated behind the same `singleinstance`
+flag - rather than trusting `quit()`'s own timing to win a race against
+`whenReady()`, which could otherwise flash a second window open right before
+the app it belongs to closes. The winning instance's own `second-instance`
+handler restores and focuses the existing window; it has no `argv` to parse
+a path out of yet, since nothing launches a second instance with a `.lvl` on
+its command line until NAT-07's file association exists - `open-file`
+already routes a second macOS open through Launch Services regardless, so
+the lock is taken there too, for one code path on every platform rather than
+two. A bare top-level `return` was tried first to skip the rest of the file
+for a losing instance and rejected: ESLint parses each file as a standalone
+script and does not know about Node's CommonJS module-wrapper semantics, so
+it is a parse error there even though Node itself would accept it at
+runtime - the `if (singleinstance) app.whenReady().then(...)` gate avoids
+the question entirely. Verified with the probe harness: launching a second
+process against the same `--user-data-dir` as a running first one exited in
+under 0.2s with no console output at all (confirming `whenReady()`, and
+therefore the renderer, was never reached), while the first instance's own
+window and steps completed unaffected.
+
+---
+
+#### NAT-19 — No feedback for long or background operations
+
+Shipped the finding's own "measure before changing" instruction literally,
+and the measurement decided the scope: isolated from IPC and `Grid.commit()`,
+a 999-row `lvl.write()` broke down as `JSON.stringify` 11ms, `zipSync` 82ms,
+`writeFileSync` under 2ms, `validate()` 6ms - `zipSync`'s own compression,
+not disk I/O, is what pushes a big save past the ~100ms budget this finding
+set, and is the only piece converted: `lvl.js` now calls fflate's async
+`zip()` instead, verified to genuinely free the main thread (a 5ms
+`setInterval` kept firing throughout an async 999-row `zip()` call, where it
+could not have during the old `zipSync`'s own synchronous one) rather than
+merely wrapping the same blocking call in a `Promise`, which would have
+fixed nothing. `fs.writeFileSync`/`renameSync` are untouched - `fs.promises`
+would not have addressed the measured bottleneck at all. A 999-row *read*
+measured 70ms total, under the same budget, so `unzipSync` is unconverted.
+`write()` now returns a Promise; every caller (`main.js`'s `lvl:save`/
+`lvl:saveas` handlers, already `async`, plus a restructured `lvl:snapshot`
+using `.then()`/`.catch()`) awaits or chains it, and `tools/check.js`'s own
+round-trip test does too. The progress-bar/completion-toast half of this
+finding's own "Recommended" text was not built: the actual freeze - the
+reason a long save needed any feedback at all - is gone, and a sub-250ms
+background operation that no longer blocks anything is not disruptive enough
+to justify `win.setProgressBar()`/`Notification` for what NAT-17 already
+separately floats as a nice-to-have. Verified with the probe harness: save,
+save-as, an overwrite (with its `.bak`), and a crash-recovery snapshot
+(through to a real "Recover" offer on the next launch) all round-trip
+correctly through the new async path; a forced validation failure still
+reaches `saveerr()`'s native dialog and the inspector's `.err` block exactly
+as before, confirming the mixed synchronous-throw/async-reject shape of the
+new `write()` is still fully compatible with every existing `try`/`await`/
+`catch` call site.
+
+---
+
+#### VIS-10 — Label capitalisation is inconsistent
+
+Shipped: every in-window label, tooltip and `aria-label` (`index.html`,
+`panel.js`) is lowercase now - `New Lua Script`/`Import MIDI`/`New Custom
+Entity Definition`/`Zoom`/`Resize Scripts List`/`Level Canvas`/`Properties`/
+`File` all went lowercase, proper nouns (`MIDI`, `Lua`) untouched. Every
+OS-facing surface - the menu bar (`menu.js`), the file manager's native
+context menus and the canvas's own (`main.js`'s `menu:row`/`menu:zoom`
+handlers), and every dialog title and button (`main.js`) - is authored once,
+in Title Case, and converted to GNOME's own Sentence case at the one place
+each reaches the OS: a new `chrome.js` export, `oscase()`, extending the
+platform module ARCH-03 already built rather than bypassing it. `oscase()`
+keeps a string's first word and any all-caps word (the same test that
+protects a real acronym like `MIDI` also happens to leave a bare number/
+symbol token, a button's own `"100%"`, untouched, since upper-casing either
+is a no-op) and lowercases the rest; it is a no-op on macOS/Windows, where
+the authored Title Case is already the platform's own convention. Applied
+to every static label; never to user-authored content (a recent file's own
+basename, an entity definition id concatenated after conversion) - `mac`/
+`win32`-only test coverage aside, this is the one place a filename could
+have been silently re-cased by mistake, and it deliberately is not touched.
+The mac App menu gained an "About"/separator/"Settings…"/separator/
+"Services"/separator/"Hide"/"Hide Others"/"Unhide"/separator/"Quit" submenu
+built by hand (`role: 'appMenu'` was replaced by UX-11's own Settings item,
+below, and Electron does not merge a custom `submenu` with what a role would
+otherwise supply, so the rest of the standard app menu had to be spelled out
+alongside it); the Help menu's own now-redundant "About" is dropped on mac
+only. Verified with the probe harness: every in-window string read back
+lowercase after the change; `chrome.oscase('Save As…')` read `'Save As…'`
+unchanged on the forced-`darwin`/`win32` branches and `'Save as…'` on the
+forced-`linux` one; `npm run lint`/`npm run check` both still pass with the
+new `chrome.js` export.
+
+---
+
+#### VIS-13 — The playtest button is permanently disabled and explains itself only in a tooltip
+
+Shipped two of the finding's own four numbered items, deliberately leaving
+the button's own design-matched rendering untouched (item 1's "visible soon
+affordance" alternative): a new `#run-help` `sr-only` paragraph, referenced
+by the `▶` button's own `aria-describedby`, carries the same explanation the
+`title=` tooltip already gives a sighted, hovering user to every screen
+reader too (item 2's remaining half - `aria-disabled` itself is already
+done, A11Y-08). A disabled "Playtest" item, with a macOS `toolTip` (Electron
+exposes native disabled-menu-item tooltips on macOS only), now also lives in
+the View menu - a second, always-reachable route to the same explanation for
+a sighted user who never hovers the tab strip or turns on a screen reader,
+without touching the button's own design-matched rendering at all, which
+`CLAUDE.md` already documents the reasoning for. Item 4, the eventual
+game-wiring implementation, remains open - it needs `game/todo.txt` step
+3.1 first, tracked in §13's own "Nice to have" list. Verified with the
+probe harness: `document.getElementById('run').getAttribute('aria-describedby')
+=== 'run-help'` and `document.getElementById('run-help').textContent`
+carries the explanation text.
+
+---
+
+#### VIS-17 — Missing-texture swatches are indistinguishable from content
+
+Shipped exactly as recommended: `blit()` (`grid.js`) now draws nothing at
+all for a known id whose sprite has not decoded yet (`tex()` already
+re-triggers a redraw the moment it lands, so the backdrop showing through
+for a few milliseconds reads as nothing happened, not as an error) and a new
+`hatch()` - a clipped, diagonal `--missing-def`-coloured stroke - for a
+genuinely unknown id, replacing the old flat colour swatch that read as
+content rather than as a problem. `--missing-tex`, the token the old
+"decoding" fill used, is retired outright rather than kept with no reader,
+per this file's own token-hygiene rule. `lvl.js`'s `review()` gained a new
+warning, `block id NNN is not in this build's catalog`, scanning
+`block_data` against `catalog.js`'s own `BLOCKS` table - the counterpart to
+BUG-11's existing "definition points at missing script" warning, routed
+through the same `App.warnings` plumbing rather than a second channel, as
+the finding's own text asked. The entity-side "unknown definition" case the
+finding's audit evidence pointed at turned out not to need any change: every
+entity's own `def` is validated against a real `entity_definitions[].id` by
+`lvl.js`'s `validate()` before the document can ever be read or written, so
+the only way `blit()`'s own falsy-`t` branch is reachable at all is a block
+id absent from the catalog - which is exactly what the new warning now
+names. Verified with the probe harness: writing unknown ids `500`/`501`
+into `Grid.a` and saving produced warnings including `"block id 500 is not
+in this build's catalog"` and `"block id 501 is not in this build's
+catalog"`; a screenshot of the rendered canvas shows a clear diagonal hatch
+distinct from every real texture, with known blocks (brick, start, end)
+rendering normally alongside it.
+
+---
+
+#### UX-02 — Every row menu carries the same two global commands
+
+Shipped exactly as recommended: `main.js`'s `menu:row` handler now only adds
+"New Script"/"Import MIDI" when `ctx.kind === 'panel'` (the panel background
+menu, where they were already the whole menu) - a script row's own menu is
+Open/Assign To `<def>`/—/Rename/Delete, a MIDI row's is Rename/Delete, and
+neither carries a command that acts on neither the script nor any MIDI file
+any more. Verified with the probe harness: intercepting `Menu.buildFromTemplate`
+for each `ctx.kind` confirmed the exact item list per kind, with no
+"New Script"/"Import MIDI" entries on a script or MIDI row's own menu and
+both still present, unchanged, on the panel background menu.
+
+---
+
+#### UX-11 — There are no preferences
+
+Shipped the finding's own credible list, all four: grid overlay on/off,
+palette cell size 1×/2× (the `--cell` token GEO-07 built for exactly this),
+editor font size, and the recovery-snapshot interval (fixed at 30s until
+now, UX-10). Stored in `app.getPath('userData')/settings.json`, owned by
+main (`settings:get`/`settings:set`, guard()'s own envelope) and cached in
+the renderer as a plain `Settings` object, applied once at boot (before
+`ui:ready`, so the very first frame already reflects it, the same reasoning
+PERF-07 already established for the document itself) and again, live, on
+every change (`applysettings()`). The settings surface itself is a fourth
+`#props` view, `settingsview()` (`panel.js`), toggled by a new
+`Panel.showsettings` flag checked ahead of the existing three
+selection-driven views in `Panel.inspect()` - deliberately not
+selection-driven itself, since it has to survive a click on the canvas
+underneath it until the user explicitly says "done". The menu item is
+`Settings…` (`⌘,`/`Ctrl+,`) in the mac App menu (built by hand for this,
+see VIS-10 above) and the Windows/Linux File menu, both dispatching through
+the same `cmd`/`ACTS` table as every other command; opening it switches to
+the Level Editor tab first, since `#props` is hidden outright while a script
+tab is open. A confirm-on-destructive-height-change toggle, floated in an
+earlier draft of this finding, was correctly left out - UX-08 already
+reports the consequence and warns in place instead. Verified with the probe
+harness: each setting's own live effect (`--cell`'s computed value doubling,
+`Settings.grid` flipping, the snapshot interval taking a new value)
+confirmed immediately on change; `settings.json` correctly persisted and
+was correctly re-loaded by a fresh launch seeded with it; a fresh profile
+with no `settings.json` got the documented defaults.
+
+---
+
+#### UX-17 — Numeric inspector fields round silently
+
+Shipped, the label-text half of the finding's own two suggested fixes (the
+alternative - swapping which of the cell/pixel fields is the editable one -
+would have been a larger behavioural change for the same information):
+`entityview()`'s `x`/`y` labels now read `x (snaps to 100)`/`y (snaps to
+100)`, and `levelview()`'s row-count label reads `rows (1-999)`, naming the
+`step="100"`/`min`/`max` clamps those fields already silently enforced.
+Verified by reading the rendered `#props` HTML back: both labels contain the
+new text, and the fields' own existing `step`/`min`/`max` attributes are
+unchanged.
+
+---
+
+#### A11Y-07 — System accessibility preferences are not honoured
+
+Shipped both remaining pieces. `prefers-contrast: more` now also raises the
+chrome's own contrast, not just the canvas's (VIS-16, done): a new
+`@media (prefers-contrast: more)` block re-defines `--control-border` to
+`--fg` (already the AA text threshold, 4.5:1, versus the ordinary 3:1
+non-text boundary `--acc` clears) and `--fg-disabled` to `--dim`'s own
+value (already verified at 5.12-5.91:1, VIS-01), and widens the focus ring
+to 3px. `forced-colors: active` is handled too - deliberately by *not*
+fighting Chromium's own automatic override on ordinary chrome, the same
+"do not over-correct" reasoning NAT-15 already applies to a light theme,
+since forced-colors already re-themes plain elements correctly by default.
+The one real, functional risk was identified precisely: forced-colors can
+strip an element's own `background-image` along with its colours unless
+`forced-color-adjust: none` is set, and the level canvas's CSS box and the
+palette's own sprite swatches (`.cell`) both carry content, not decoration,
+through exactly that property - `canvas, .cell { forced-color-adjust: none; }`
+is the one override this app makes. Verified by reading the new rules back
+from `style.css` and confirming both media queries and every token override
+inside them; a live capture under real forced-colors emulation was not
+attempted, matching the same headless-harness limitation already recorded
+for VIS-06's focus ring and BUG-12's DPI change.
+
+---
+
+#### ARCH-09 — Main-process filesystem work is fully synchronous
+
+Covered under **NAT-19**, done — see above: measured first, the compression
+step, not the synchronous filesystem calls this finding named, was the real
+cost, and moved onto fflate's async `zip()`; the underlying `fs` calls this
+finding was actually about stayed synchronous, correctly, since disk I/O
+itself measured under 2ms.
+
+---
+
+#### PERF-05 — Full-subtree rebuilds on every refresh
+
+Shipped exactly as recommended: `undo.js`'s `apply()` (used by both `shift()`
+- undo/redo - and `Undo.cancel()`) now computes a `diffparts()` of a step's
+own `before`/`after` shots - the same field-level comparison `same()`
+already needed to decide "did anything change at all", now shared rather
+than duplicated - and passes `{cells, info, defs, ents, bgs, scripts, midi}`
+to a `App.refresh(changed)` that only rebuilds the views each flag actually
+implicates: `scripts` gates the tab strip and Monaco's own sync, `scripts`/
+`midi` gates the sidebar, `defs` gates the palette, `info`/`defs`/`ents`/
+`bgs` gates the inspector, and `cells`/`bgs`/`ents` gates `Grid.redraw()` -
+`cells` is true whenever the grid itself changed, whether by a cell diff or
+a resize (`s.grid`). A plain painted-cell undo step - the common case - now
+touches only the canvas. `App.refresh()` called with no argument (there is
+no other caller besides `undo.js`) still defaults to "assume everything",
+the previous unconditional behaviour, so nothing outside this file had to
+change. Verified with the probe harness: undoing/redoing a plain paint step
+left the tab strip, file lists, palette and inspector untouched while the
+canvas updated correctly; undoing/redoing a script-table change (`Undo.act`
+around `App.doc.scripts`) correctly rebuilt the sidebar and re-synced Monaco.
+
+---
+
+#### PERF-06 — `Grid.commit()` allocates one string per tile
+
+Covered under **NAT-19**, done — see above: measured first, per this
+finding's own condition ("leave unless NAT-19's measurement shows saves are
+slow"). The measurement found a real problem, but not this one -
+`Grid.commit()` itself measured 17ms for a 999-row level, and the actual
+bottleneck was `zipSync`'s compression at 82ms, addressed there. The
+precomputed-lookup-table optimisation this finding proposed remains
+un-implemented, correctly: the condition that would have justified it did
+not hold once the real cost was isolated.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -2052,46 +2334,68 @@ and a new custom entity definition always gets its own fresh script with an
 announcement instead of silently binding to an arbitrary existing one
 (UX-13, UX-14); and a manual View → Text Size command scales the chrome's
 type and the row heights built to hold it together (A11Y-06) — see "Already
-completed" above for all ten. The shell's remaining problems are below.
+completed" above for all ten. Most recently of all: every in-window label,
+tooltip and aria-label is lowercase now, and every OS-facing surface states
+its own Title Case and converts to GNOME's Sentence case at one place,
+`chrome.js`'s new `oscase()` (VIS-10); a settings surface finally exists -
+grid overlay, palette cell size, editor font size and the recovery-snapshot
+interval, all four wired to a real, live effect and persisted to
+`settings.json` (UX-11); a losing second app instance now quits before ever
+opening a window instead of launching a whole duplicate one (NAT-08); a
+still-decoding texture draws nothing instead of a flat colour flash, and a
+genuinely unknown block id draws a hatch and names itself in a save's
+warnings (VIS-17); the playtest button's own explanation reaches a screen
+reader and a second, always-visible route (the View menu) instead of only a
+hover tooltip (VIS-13); a row's own context menu carries only the actions
+that act on that row, not two global commands every row's menu used to
+repeat (UX-02); the x/y and row-count fields say why they round or clamp
+instead of doing it silently (UX-17); `prefers-contrast: more` and
+`forced-colors: active` are both honoured on the chrome now, not just the
+canvas (A11Y-07); undoing or redoing a step rebuilds only the views that
+step actually touched, instead of the whole UI on every step regardless
+(PERF-05); and a 999-row save's own measured bottleneck - not disk I/O,
+`Grid.commit()`, or `JSON.stringify`, all measured cheap, but `zipSync`'s
+compression - moved onto fflate's async `zip()`, keeping the main process
+responsive during a save for the first time (NAT-19/ARCH-09/PERF-06) — see
+"Already completed" above for all twelve. The shell's remaining problems are
+below.
 
-### The two biggest remaining sources of perceived unpolish
+### The one remaining source of perceived unpolish
 
-Formerly three: the vertical-scrollbar asymmetry this list's own second item
-used to name is closed now - `#vbar` mirrors `#hbar` exactly, hidden until the
-level's own height exceeds the viewport (GEO-10, done — see "Already
-completed") - and NAT-06 (recent documents), one of the several gaps item 1
-below used to list under packaging, is done too.
+Formerly three, then two: the vertical-scrollbar asymmetry this list's own
+second item used to name closed first - `#vbar` mirrors `#hbar` exactly,
+hidden until the level's own height exceeds the viewport (GEO-10, done — see
+"Already completed") - then capitalisation, this list's own second item for
+a full round, closed too: `style.css`'s in-window labels, tooltips and
+aria-labels are lowercase throughout now, and every OS-facing surface -
+the menu bar, native context menus, dialog titles and buttons - states its
+own Title Case in the authored string and converts to GNOME's Sentence case
+at the one place each reaches the OS (`chrome.js`'s `oscase()`) (VIS-10, done
+— see "Already completed"). The accent divergence this list once also named
+under the same item is done too - `CLAUDE.md` records why `--acc`/
+`--acc-text` depart from the design's `#7E58BE`, and that the design's
+second, lighter fill accent `#815AC1` has no implementation equivalent yet
+(VIS-03, done — see "Already completed"). The Monaco-theme slot this list
+used to describe there is closed too: every one of `code.js`'s colour keys
+reads from the shared token object (VIS-18, done — see "Already completed").
+Geometry's own remaining loose ends are closed too: the spacing/row/type
+scale, proportional and clamped side panels, integer palette cells,
+user-resizable splitters, and both in-panel splits' own content-driven
+defaults are all real (GEO-01, GEO-03, GEO-04, GEO-05, GEO-06, GEO-07,
+GEO-08, all done — see "Already completed"). One remains:
 
 1. **Packaging is the largest remaining native gap.** Window controls,
    context menus, the hotbar, the window title/proxy-icon/edited-dot,
-   window-state persistence and recent documents are all native or OS-driven
-   now (NAT-02, NAT-04, NAT-05, NAT-03, NAT-10, NAT-06, see "Already
-   completed"), and dropping a `.lvl`/`.lua`/`.mid` onto the window now opens
-   or imports it instead of merely not losing the document to it (NAT-09,
-   done — see "Already completed"), but there is still no `open-file`
-   handler, no file association, no single-instance lock, no icon, no
-   packaging config, no `nativeTheme` (NAT-07, NAT-08, NAT-15, NAT-17). Most
-   of the remaining Electron APIs that exist precisely to make this
-   application feel native are still unreferenced anywhere in the tree
-   (verified by grep).
-2. **The running app still disagrees with itself on capitalisation.** Four
-   conventions coexist across the UI with no stated rule governing which
-   surface gets which (VIS-10). The accent divergence this item used to name
-   is done now - `CLAUDE.md` records why `--acc`/`--acc-text` depart from the
-   design's `#7E58BE`, and that the design's second, lighter fill accent
-   `#815AC1` has no implementation equivalent yet (VIS-03, done — see "Already
-   completed"). The slot this used to
-   describe - the Monaco editor as a fifth, drifting copy of the design,
-   defaulting to VS Code's own blue wherever a theme key was unset - is
-   closed now: every one of `code.js`'s colour keys reads from the shared
-   token object, and the editor's own background, scrollbar, suggestion list
-   and bracket-match highlight all agree with the rest of the app (VIS-18,
-   done — see "Already completed"). Geometry's own remaining loose ends are
-   closed too: the spacing/row/type scale, proportional and clamped side
-   panels, integer palette cells, user-resizable splitters, and both
-   in-panel splits' own content-driven defaults are all real (GEO-01,
-   GEO-03, GEO-04, GEO-05, GEO-06, GEO-07, GEO-08, all done — see "Already
-   completed").
+   window-state persistence, recent documents and a single-instance lock are
+   all native or OS-driven now (NAT-02, NAT-04, NAT-05, NAT-03, NAT-10,
+   NAT-06, NAT-08, see "Already completed"), and dropping a `.lvl`/`.lua`/
+   `.mid` onto the window now opens or imports it instead of merely not
+   losing the document to it (NAT-09, done — see "Already completed"), but
+   there is still no `open-file` handler, no file association, no icon, no
+   packaging config, no `nativeTheme` (NAT-07, NAT-15, NAT-17). Most of the
+   remaining Electron APIs that exist precisely to make this application
+   feel native are still unreferenced anywhere in the tree (verified by
+   grep).
 
 ### The highest-impact improvements
 
@@ -2248,9 +2552,14 @@ Done — see "Already completed", ARCH-03. `chrome.js` is now the only place
 `discardbuttons()` (NAT-21) all consume it rather than each holding their own
 check. The renderer knows its OS through `api.platform` and the
 `<html data-platform>` attribute it drives; real per-platform window chrome
-(NAT-02) already keys off it. The ⌘/Ctrl handling and the label
-capitalisation (VIS-10) are not yet ported to use it, but the abstraction
-itself - the thing this finding was about - now exists. NAT-20's scrollbar
+(NAT-02) already keys off it. The label capitalisation this note used to
+flag as not yet ported is done now too, straight off this same module:
+`chrome.js` gained `oscase()`, converting a Title-Case-authored OS-facing
+label to GNOME's own Sentence case (VIS-10, done - see "Already completed"),
+extending the abstraction this finding built rather than bypassing it.
+`CmdOrCtrl` already carried the ⌘/Ctrl handling before this note was
+written - Electron's own accelerator string resolves it without a platform
+branch on either side. NAT-20's scrollbar
 treatment (done, see "Already completed") turned out not to need a
 platform branch at all: one token-driven `::-webkit-scrollbar` rule plus
 `scrollbar-gutter: stable` behaves correctly under both the overlay and
@@ -2292,8 +2601,12 @@ electron-builder, no Electron Forge, no `build`/`electron-builder.yml`, no
 icons (`.icns`/`.ico`/`.png`), no `productName`, no bundle identifier, no code
 signing or notarisation setup, no `.desktop` file, no MIME type registration.
 `package.json` has one script: `"start": "electron ."`. Correspondingly:
-`app.on('open-file')` is not handled (macOS), `process.argv` is never inspected
-(Windows/Linux), and `app.requestSingleInstanceLock()` is not called (NAT-08).
+`app.on('open-file')` is not handled (macOS), and `process.argv` is never
+inspected (Windows/Linux) - `app.requestSingleInstanceLock()` itself is
+called now (NAT-08, done, see "Already completed"), but its own
+`second-instance` handler has no `argv` to parse a path out of yet, since
+nothing launches a second instance with a `.lvl` path on its command line
+until this finding lands.
 
 **Why it's a problem.** The consequences compound:
 - Double-clicking a `.lvl` in Finder/Explorer/Nautilus does nothing.
@@ -2325,7 +2638,8 @@ Then handle the incoming file in main:
 ```
 app.on('open-file', (e, p) => { e.preventDefault(); openpath(p); });  /* macOS */
 /* Windows/Linux: the path arrives in process.argv, and in the
-   second-instance event's argv (NAT-08) */
+   second-instance event's own argv - the listener itself already exists
+   (NAT-08, done, see "Already completed"), waiting on this argv to parse */
 ```
 `open-file` can fire **before** `whenReady()`, so queue the path and drain the
 queue once the window exists — this is the classic bug in this area.
@@ -2333,35 +2647,17 @@ queue once the window exists — this is the classic bug in this area.
 **Platforms.** All three, with different mechanisms; electron-builder unifies
 the declaration.
 
-**Depends on.** `productName` is already set (NAT-01, shipped). Still needs
-NAT-08 (single instance), and a decision on `asar` — with `asar: true`, `code.js`'s worker blob path
+**Depends on.** `productName` is already set (NAT-01, shipped); so is the
+single-instance lock itself (NAT-08, shipped - see "Already completed"),
+though its own `second-instance` handler still has no file association to
+receive a path from until this lands. Still needs a decision on `asar` —
+with `asar: true`, `code.js`'s worker blob path
 (`node_modules/monaco-editor/min/vs`) resolves through the `app://` handler,
 which reads from disk via `net.fetch(pathToFileURL(...))` and **will not see
 inside the asar archive**. Either set `asar: false`, or add
 `asarUnpack: ["node_modules/monaco-editor/**"]`, or serve those bytes through
 the protocol handler by reading them with `fs` (which *is* asar-aware). Verify
 before shipping; this is the most likely packaging surprise.
-
----
-
-#### NAT-08 — No single-instance lock
-
-**Category** Native · **Severity** Medium · **Priority** P2 · **Affects** UX
-
-**Current.** `app.requestSingleInstanceLock()` is never called. Once file
-association exists (NAT-07), opening a second `.lvl` on Windows or Linux
-launches a **second copy of the whole application**, with a second Monaco, a
-second document, and no knowledge of the first.
-
-**Recommended.** Take the lock at startup; on failure, `app.quit()`
-immediately. In the `second-instance` handler, restore and focus the existing
-window and open the path from the incoming `argv`.
-
-**Platforms.** Windows and Linux need this. macOS does not — Launch Services
-routes a second open to the running instance via `open-file` — but taking the
-lock is harmless there and keeps one code path.
-
-**Depends on.** NAT-07.
 
 ---
 
@@ -2385,10 +2681,13 @@ theming:
    on top of the VIS-01/VIS-02 retune (done — see "Already completed"); nearly
    free now that the rest of the token block exists (GEO-01, done — see
    "Already completed").
-2. **`forced-colors: active`** (Windows High Contrast) — Chromium overrides
-   colours wholesale; make sure the layout does not collapse and that
-   canvas-drawn content, which forced colours cannot reach, gets a fallback
-   outline. Currently untested and certain to be broken.
+2. **`forced-colors: active`** (Windows High Contrast) — done, in a later
+   round (A11Y-07, see "Already completed"): Chromium overrides colours
+   wholesale everywhere by default, which is correct for the chrome and
+   left alone; `forced-color-adjust: none` on the level canvas and the
+   palette's own sprite swatches is the one override this app makes, since
+   losing their own colours/background-images there would be a functional
+   break, not a cosmetic one.
 3. **`prefers-reduced-motion`** — done, see "Already completed", VIS-08: the
    transitions it now reduces, and the media query itself, landed in the same
    commit as required.
@@ -2417,35 +2716,14 @@ icon exists yet (NAT-07). None of `app.dock.setMenu`, `app.setUserTasks`,
 - Windows JumpList (`app.setUserTasks`): "New Level" task; recent documents
   arrive automatically once NAT-07 lands - `app.addRecentDocument()` itself
   already runs on every open/save-as (NAT-06, done).
-- `win.setProgressBar()` during a long save/open (also NAT-19) — Dock progress
-  on macOS, taskbar progress on Windows, Unity launcher on Linux.
-
----
-
-#### NAT-19 — No feedback for long or background operations
-
-**Category** Native · **Severity** Low · **Priority** P3 · **Affects** UX
-
-**Current.** `lvl.read`/`lvl.write` are fully synchronous in the main process
-(`fs.readFileSync`, `unzipSync`, `zipSync`, `fs.writeFileSync`). While they
-run, the main process is blocked, which means the window does not repaint and
-menus do not open. There is no spinner, no progress, no cursor change, and no
-completion feedback beyond the status bar's own message (mislabelled VIS-16
-in an earlier draft of this finding; the transient-message mechanism it
-refers to is VIS-14, done — see "Already completed").
-
-**Assessment.** For a 12-row level this is imperceptible and the synchronous
-code is simpler — the suckless-correct choice today. It stops being correct at
-999 rows: `Grid.commit()` produces 540 × 999 ≈ 540 000 strings, `JSON.stringify`
-with 4-space indentation produces several megabytes, and `zipSync` at level 6
-compresses it on the same thread.
-
-**Recommended.** Measure before changing. If a 999-row save exceeds ~100 ms:
-move to `fs.promises` + fflate's async `zip`/`unzip`; show `win.setProgressBar()`
-and a busy state in the status bar; restore `setProgressBar(-1)` on completion.
-Notify on completion **only** if the window is not focused
-(`new Notification(...)` in main), never for a foreground save — a toast for
-something the user just watched happen is noise.
+- `win.setProgressBar()` during a long save/open — Dock progress on macOS,
+  taskbar progress on Windows, Unity launcher on Linux. NAT-19's own
+  blocking problem is fixed now (done, see "Already completed": a 999-row
+  save's real cost, measured, was `zipSync`'s compression, moved onto
+  fflate's async `zip()`), but the progress-bar/busy-state polish this
+  bullet and that finding both asked for was scoped out of it - the app no
+  longer freezes during a long save, but it still says nothing about one
+  being in progress.
 
 ---
 
@@ -2464,119 +2742,7 @@ this section.
 
 ---
 
-#### VIS-10 — Label capitalisation is inconsistent
-
-**Category** Visual · **Severity** Low · **Priority** P2 · **Affects** UI
-
-**Current.** Four conventions coexist:
-- lowercase: `new`, `open`, `save`, `save as`, `scripts`, `midi`, `items`,
-  `properties`, `blocks`, `entities`, `fit view`, `remove entity`,
-  `remove definition`, `new script`, `import midi`, `rename`, `delete`, `open`;
-- Title Case: `Level Editor` (the tab), `New Lua script`, `Import MIDI`,
-  `New custom entity definition` (all `title=` tooltips);
-- Sentence case: status messages (`imported 3 file(s)`, `nothing to undo`);
-- and `MIDI` appears as both `midi` and `MIDI` in the same interface.
-
-**Why it's a problem.** The lowercase style is a legitimate, deliberate
-aesthetic (and clearly the design's intent), but it is applied to about 80 % of
-the interface, and the exceptions are not principled — they are wherever
-someone wrote a tooltip.
-
-**Recommended.** State the rule and apply it:
-- **In-window UI** (panels, buttons, headers, palette, status): lowercase, per
-  the design.
-- **OS-facing surfaces** (menu bar items, native context menus, dialog buttons,
-  dialog titles, the About panel, file-association names): **the platform's
-  convention** — Title Case on macOS and Windows, Sentence case on GNOME. These
-  are rendered by the OS in the OS's font next to the OS's own items; matching
-  the app's lowercase style there would look broken, not stylish. This is a
-  case where consistency *with the platform* beats consistency with the app.
-- Proper nouns keep their capitalisation everywhere: **MIDI**, **Lua**,
-  **Pellizzola Brothers**.
-- Tooltips follow the surface they annotate.
-
----
-
-#### VIS-13 — The playtest button is permanently disabled and explains itself only in a tooltip
-
-**Category** Visual / UX · **Severity** Low · **Priority** P2 · **Affects** UI, UX
-
-**Current.** `index.html:23-24` — a `▶` button, `disabled`, with
-`title="Playtest is inert: the game cannot load .lvl archives yet
-(game/todo.txt 3.1)"`. Still a barely-discoverable glyph in the corner of the
-tab strip with no visible "soon" affordance and no screen-reader explanation -
-though it is no longer near-invisible: VIS-07 (done, see "Already completed")
-replaced `opacity: .35` with `--fg-disabled`, so the button's own contrast is
-now 3.48-4.56:1 rather than the ≈1.5:1 the original audit measured.
-
-`CLAUDE.md` documents the reasoning and it is honest: the button renders per
-the design, and the game genuinely cannot load `.lvl` yet (`game/todo.txt`
-step 3.1, minizip + jansson).
-
-**Recommended.** Keep it, fix its communication:
-1. A disabled control the user cannot ever enable should say why **without
-   hovering**. Give it a visible "soon" affordance or move it behind a
-   `View → Playtest` menu item that is disabled with an explanatory
-   `toolTip` — native menus support disabled items with tooltips and are the
-   right home for a not-yet-implemented command.
-2. `aria-disabled` is done (A11Y-08, see "Already completed"); still open is
-   `aria-describedby` pointing at the explanation, so the reason itself - not
-   just the fact of being disabled - reaches a screen reader.
-3. Disabled contrast ≥3:1 is done (VIS-07, see "Already completed").
-4. When the game does gain `.lvl` support, the implementation is: write the
-   document to `app.getPath('temp')`, spawn the game binary with it, and stream
-   its stderr into the status bar. Worth recording in `CLAUDE.md` next to the
-   existing note so the eventual implementer does not have to rediscover it.
-
----
-
-#### VIS-17 — Missing-texture swatches are indistinguishable from content
-
-**Category** Visual · **Severity** Low · **Priority** P3 · **Affects** UI
-
-**Current.** `blit()` (`grid.js:297-307`) fills `#4a3a6a` when a known texture
-has not decoded and `#803050` when the entity definition is unknown entirely.
-Both are flat, saturated rectangles that read as *blocks* — the user sees a
-purple tile and a maroon tile, not an error.
-
-**Recommended.** Distinguish "loading" from "missing":
-- **Loading** — leave the cell empty (the backdrop shows through). Textures
-  decode in milliseconds from local disk; a flash of flat purple is worse than
-  a flash of nothing, and `tex()` already re-triggers a redraw on load
-  (`catalog.js:94`).
-- **Missing/unknown definition** — a diagonal hatch or the existing
-  `icons/placeholder.png` (which the code already knows about,
-  `catalog.js:69`, and already uses for unknown defs at `grid.js:273` — so the
-  `#803050` path is nearly dead code) plus a status-bar/inspector warning
-  naming the unknown definition, which is a real authoring error worth
-  surfacing. `lvl.js` already gained a warnings tier for save-time issues
-  (done — see "Already completed", BUG-11); route this one through the same
-  `review()`/`App.warnings` plumbing rather than inventing a second channel.
-
-Name both colours as tokens if they survive.
-
----
-
 ### 4.5 UX and quality of life (UX)
-
----
-
-#### UX-02 — Every row menu carries the same two global commands
-
-**Category** UX · **Severity** Low · **Priority** P3 · **Affects** UX
-
-**Current.** `rowmenu()` (`app.js:181-200`) appends `new script` and
-`import midi` to **every** row's menu, and `panelmenu()` offers only those two.
-So "new script" appears in every one of N+1 menus.
-
-**Recommended.** A context menu should carry actions *on the thing clicked*.
-Global create actions belong on the panel background menu (where they already
-are) and in the section header's `+` button (where they already are) — the
-File menu (shipped by NAT-01, see "Already completed") does not carry them
-today and would make a third route if `new script`/`import midi` are ever
-added there, but two is already plenty. Remove them from row menus and the
-row menu becomes: Open · Assign to <def> · — · Rename · Delete. That is a menu
-a user can read at a glance.
 
 ---
 
@@ -2590,54 +2756,6 @@ added, in a 4-column scrolling grid with 10 px group headings.
 **Recommended.** A one-line filter field at the top of the palette matching
 block and definition names, plus collapsible groups. Only worth doing once
 custom definitions make the list long — flag as a follow-up, not now.
-
----
-
-#### UX-11 — There are no preferences
-
-**Category** UX · **Severity** Low · **Priority** P3 · **Affects** UX
-
-**Current.** Nothing is configurable and nothing is persisted — not panel
-widths, not the last directory, not zoom, not grid visibility.
-
-**Recommended.** Keep it small and justified. A preferences surface is worth
-adding only once there are ≥4 real settings; the credible list is:
-grid overlay on/off, palette cell size 1×/2× (the `--cell` token this would
-flip between 1x and 2x already exists, GEO-07, done - see "Already
-completed"), editor font size, and
-the recovery-snapshot interval (fixed at 30s today - done, see "Already
-completed", UX-10). A confirm-on-destructive-height-change toggle, floated
-here in an earlier draft, turned out not to be the right fix - UX-08 (done,
-see "Already completed") reports the consequence and warns in-place instead,
-per its own "do not add a modal confirmation" reasoning, so there is nothing
-left for a preference to gate.
-
-Store in `app.getPath('userData')/settings.json`, owned by main, exposed
-read/write through the preload. On macOS the item is
-`Pellizzola Brothers Studio → Settings… (⌘,)`; on Windows/Linux it is
-`Edit → Preferences` or `File → Preferences`. Use the platform's word —
-"Settings" on macOS and modern Windows, "Preferences" on GNOME.
-
-**View state** (panel widths, last zoom, open tabs) is *not* preferences and
-should persist separately and silently, per-document where it makes sense.
-
----
-
-#### UX-17 — Numeric inspector fields round silently
-
-**Category** UX · **Severity** Low · **Priority** P3 · **Affects** UX
-
-**Current.** `entityview()` (`panel.js:186-192`) rounds any entered x/y to the
-nearest multiple of `B` — correct, since entities snap to the grid
-(`CLAUDE.md`) — but writes the rounded value back without comment, so typing
-`137` yields `100` with no explanation. Similarly `p_rows` (`panel.js:145`)
-clamps to 1–999 in `Grid.setheight()` without saying so.
-
-**Recommended.** `step="100"` is already set, so the spinner is correct; add
-the reason to the label (`x (snaps to 100)`) or show the cell coordinate as the
-primary field and the pixel position as the derived, read-only one — which is
-what the user actually thinks in. The `cell` field already exists
-(`panel.js:170`) but is the disabled one; consider swapping which is editable.
 
 ---
 
@@ -2665,34 +2783,6 @@ The brief asks that accessibility be treated as part of "professional and
 polished", not as a separate workstream. Three accessibility findings —
 VIS-01 (contrast), VIS-02 (control borders), VIS-06 (focus indicators) — are
 already shipped (see "Already completed") and are not repeated here.
-
----
-
-#### A11Y-07 — System accessibility preferences are not honoured
-
-**Category** Accessibility · **Severity** Low · **Priority** P2 · **Affects** UI
-
-**Current.** `prefers-reduced-motion: reduce` is done - it shipped in the same
-commit as the first transition, as VIS-08 itself required (done — see
-"Already completed"). `prefers-contrast: more` is done too, for the canvas's
-own indicators - the selection ring's stroke thickens under it (VIS-16, done
-— see "Already completed") - but not yet for the chrome's own controls; still
-fully missing: `forced-colors`. Windows High Contrast mode is untested and
-will produce a broken result: Chromium force-overrides CSS colours but cannot
-touch canvas pixels, so the chrome would flip to the system palette while the
-canvas stays purple - the canvas-drawn selection ring itself is no longer
-part of that gap (VIS-16, done), but nothing else on the canvas or in the
-chrome would follow the system palette either.
-
-**Recommended.** Two things remain, each small:
-- `prefers-contrast: more` on the chrome itself → `--control-border` to
-  `--fg`, focus ring to 3 px, disabled text to ≥4.5:1. The canvas's own
-  response to this query is done (VIS-16).
-- `forced-colors: active` → `forced-color-adjust: none` on the canvas and the
-  palette swatches (so they keep showing the artwork), system colours
-  (`Canvas`, `CanvasText`, `Highlight`, `ButtonBorder`) everywhere else, and
-  ensure every state that currently relies on colour alone also has a
-  non-colour cue (border, icon, or weight).
 
 ---
 
@@ -2730,18 +2820,6 @@ already automated in `npm run check` (`tools/check.js`, ARCH-07, done — see
 
 ---
 
-#### ARCH-09 — Main-process filesystem work is fully synchronous
-
-**Category** Architecture · **Severity** Low · **Priority** P3 · **Affects** Performance
-
-Covered under **NAT-19**. Summary: `readFileSync`, `unzipSync`, `zipSync`,
-`writeFileSync` all block the main process, which blocks window painting and
-menu opening. Fine at 12 rows, not fine at 999. Measure, then convert if the
-measurement justifies it — the synchronous code is simpler and simplicity is
-the house style.
-
----
-
 ### 4.8 Performance (PERF)
 
 The renderer's hot path is already well-engineered: viewport culling
@@ -2776,48 +2854,6 @@ Recorded here so the trade-off is on the record rather than rediscovered.
 ---
 
 
-#### PERF-05 — Full-subtree rebuilds on every refresh
-
-**Category** Performance · **Severity** Low · **Priority** P3 · **Affects** Performance
-
-**Current.** `App.refresh()` (`app.js:358-373`) — called after **every undo and
-redo step** — rebuilds the tab strip, both file lists, the entire palette (31+
-cells, each with a background-image URL string), the inspector, and re-syncs
-every Monaco model. Undoing a single painted cell rebuilds the whole UI.
-
-**Assessment.** Correct and simple, and at this scale not perceptible. It
-becomes perceptible when a user holds ⌘Z to walk back through a long history,
-which is a normal thing to do.
-
-**Recommended.** Have `Undo.apply()` report *what* it changed (it already knows
-— a step is `{cells, grid, info, defs, ents, bgs, scripts, midi}`) and let
-`App.refresh()` rebuild only the affected views. A cell-diff step needs only
-`Grid.redraw()`; a script-table change needs the sidebar and Monaco. This is a
-contained change with a clear win on held-undo, and it follows the structure
-`undo.js` already has.
-
----
-
-#### PERF-06 — `Grid.commit()` allocates one string per tile
-
-**Category** Performance · **Severity** Low · **Priority** P3 · **Affects** Performance
-
-**Current.** `Grid.commit()` (`grid.js:116-129`) builds `W × h` three-character
-strings — 6 480 for a 12-row level, **539 460** for a 999-row one — plus `h`
-arrays, on every save, immediately before `JSON.stringify` produces several
-megabytes of indented text and `zipSync` compresses it on the same thread.
-
-**Assessment.** The format demands the strings (`CLAUDE.md`: three-digit ids
-are the on-disk contract) and the mirror-and-pack design is right. The cost is
-bounded and only paid on save.
-
-**Recommended.** Leave unless NAT-19's measurement shows saves are slow, in
-which case the cheap win is a precomputed lookup table of the 1 000 possible
-id strings (`const PAD = Array.from({length: 1000}, (_, i) => …)`), turning
-539 460 allocations into 539 460 array reads. Two lines, no structural change.
-
----
-
 ## 5. Native platform improvements
 
 This section is the platform-by-platform view of §4.2. Nothing new is
@@ -2838,11 +2874,11 @@ window and menu layers.
 | Open Recent | `addRecentDocument` feeds both the File menu's own submenu and the Dock icon's system "Recent" behaviour — done, see "Already completed". A custom Dock menu (`app.dock.setMenu`, "New Level"/"Open Recent ▸") is still open. | NAT-17 |
 | File association | `CFBundleDocumentTypes` for `.lvl` via electron-builder; handle `app.on('open-file')`, including before `whenReady`. | NAT-07 |
 | Trackpad | Two-finger scroll pans; pinch (`wheel` + `ctrlKey`) zooms — done, see "Already completed". This was the single biggest day-to-day usability defect on a Mac. | NAT-11 |
-| Shortcuts | `CmdOrCtrl` accelerators from the menu; drop the hand-rolled `Ctrl+Y` — done, see "Already completed"; `⌃Tab`/`⌃⇧Tab` tab switching is done too (NAT-14). Settings is **⌘,** and is called "Settings" - still open. | UX-11 |
+| Shortcuts | `CmdOrCtrl` accelerators from the menu; drop the hand-rolled `Ctrl+Y` — done, see "Already completed"; `⌃Tab`/`⌃⇧Tab` tab switching is done too (NAT-14). Settings is **⌘,**, in the App menu, and is called "Settings" — done, see "Already completed". | — |
 | Scrollbars | Respect the overlay/classic setting; `scrollbar-gutter: stable` so layout does not depend on it — done, see "Already completed" | NAT-20 |
 | Dialogs | "Don't Save", not "Discard"; sheet-parented; `detail` added — done, see "Already completed" | NAT-21 |
 | Distribution | `hardenedRuntime`, code signing, notarisation — without these an unsigned build is blocked by Gatekeeper. | NAT-07 |
-| Accessibility | Native menus (NAT-05), real controls in the palette/file lists/tabs (A11Y-01), the status bar's live region (A11Y-05), headings/landmarks for the title bar, section headers and inspector (A11Y-02), and the canvas's own keyboard editing and naming (A11Y-03) are all done — see "Already completed". Manual View → Text Size commands, scaling the chrome's type and row heights together, are done too (A11Y-06); what VoiceOver still reaches nothing of is `forced-colors`/`prefers-contrast` on the chrome itself. | A11Y-07 |
+| Accessibility | Native menus (NAT-05), real controls in the palette/file lists/tabs (A11Y-01), the status bar's live region (A11Y-05), headings/landmarks for the title bar, section headers and inspector (A11Y-02), and the canvas's own keyboard editing and naming (A11Y-03) are all done — see "Already completed". Manual View → Text Size commands, scaling the chrome's type and row heights together, are done too (A11Y-06); `prefers-contrast: more` and `forced-colors: active` on the chrome itself are done too (A11Y-07) — everything this row ever asked for is shipped. | — |
 
 ### 5.2 Windows
 
@@ -2851,12 +2887,12 @@ window and menu layers.
 | Window chrome | `titleBarStyle: 'hidden'` + `titleBarOverlay: {color, symbolColor, height}` so Windows draws its own caption buttons, correctly placed top-right and themed — done, see "Already completed" (implemented against Electron's documented behaviour; not yet run on real Windows hardware). Re-pushing the colours on an OS theme change is still open. | NAT-02, NAT-15 |
 | Toolbar | The hotbar stays, since `titleBarStyle: 'hidden'` shows no visible menu bar - now a real `role="toolbar"` with accelerator tooltips and roving tabindex — done, see "Already completed" (implemented against Electron's documented behaviour; not yet run on real Windows hardware). A hamburger that calls `Menu.popup()` was not added. | NAT-04 |
 | Title | `Document — Pellizzola Brothers Studio`, with dirty state reflected in the OS title, not only in the DOM — done, see "Already completed" (implemented against Electron's documented `titleBarOverlay`/`setTitle` behaviour; not yet run on real Windows hardware) | NAT-03 |
-| File association | Registry entries + `.ico` via electron-builder; handle the path in `process.argv` **and** in `second-instance`. | NAT-07, NAT-08 |
-| Single instance | Required — without it every double-clicked `.lvl` launches a whole new app. | NAT-08 |
+| File association | Registry entries + `.ico` via electron-builder; handle the path in `process.argv` **and** in `second-instance` (the handler itself already exists and already restores/focuses the running window - NAT-08, done, see "Already completed" - it just has no `argv` to parse a path from yet). | NAT-07 |
+| Single instance | Required — without it every double-clicked `.lvl` launches a whole new app — done, see "Already completed": verified with the probe harness, a second process against the same `--user-data-dir` exited in under 0.2s without ever reaching `whenReady()`, while the first instance's own window and steps ran unaffected. | — |
 | JumpList | `setUserTasks` ("New Level") plus automatic recent documents once the association exists - `app.addRecentDocument()` itself already runs on every open/save-as, done, see "Already completed" (NAT-06). | NAT-07, NAT-17 |
 | Dialogs | Button order Save / Don't Save / Cancel; `noLink: true` so they are push buttons, not command links; `title` set — done, see "Already completed" | NAT-21 |
 | Scrollbars | Classic scrollbars consume layout width — this is where NAT-20's `scrollbar-gutter: stable` fix (done, see "Already completed") matters most, though not yet exercised on real Windows hardware. | NAT-20 |
-| High contrast | `forced-colors: active` is a real, commonly-enabled Windows mode; the chrome does not yet adopt the system palette under it. The canvas's own indicators are no longer part of this gap: their two-tone strokes (VIS-16, done — see "Already completed") guarantee visibility over any artwork regardless of palette, which is what stands in for `forced-colors` there, since Chromium's override cannot reach canvas pixels at all. | A11Y-07 |
+| High contrast | `forced-colors: active` is a real, commonly-enabled Windows mode — done, see "Already completed": the level canvas and the palette's own sprite swatches keep their own colours and background-images under it (`forced-color-adjust: none`, the two places losing them would be a functional break, not a cosmetic one), everything else adopts the system palette automatically, the correct default this app does not fight. The canvas's own indicators also stay visible regardless (VIS-16, done). Not yet run on real Windows hardware. | — |
 | Mixed DPI | Per-monitor scaling is common; the canvas goes soft when the window moves between displays — done, see "Already completed" (implemented against the documented `matchMedia`/`devicePixelRatio` mechanism; not yet run on real per-monitor-DPI Windows hardware) | BUG-12 |
 | Distribution | Authenticode signing; NSIS or MSI. | NAT-07 |
 
@@ -2871,10 +2907,10 @@ chosen deliberately, not as the default the other two inherit.
 | Button layout | Resolved as a side effect of the `frame: true` choice above: `org.gnome.desktop.wm.preferences.button-layout` is now entirely the WM's own to honour, since Studio no longer draws window controls itself on any platform. | NAT-02 |
 | Toolbar | Same as Windows — a real toolbar, not four bare buttons — done, see "Already completed" (not run on real Linux hardware); GNOME may also surface parts of the menu itself in the shell. | NAT-04 |
 | Context menus | Native menus inherit the GTK theme — the fastest single change to stop looking foreign — done, see "Already completed" (not run on real Linux hardware). | NAT-05 |
-| Dialogs | GNOME convention: destructive action leftmost, "Discard" is the right word here (unlike macOS/Windows) — done, see "Already completed", NAT-21. Sentence case elsewhere is not yet applied. | VIS-10 |
+| Dialogs | GNOME convention: destructive action leftmost, "Discard" is the right word here (unlike macOS/Windows) — done, see "Already completed", NAT-21. Sentence case elsewhere is done too now: `chrome.js`'s `oscase()` converts every Title-Case-authored menu/dialog label at the one place each reaches the OS. | VIS-10 |
 | File association | `.desktop` file + MIME XML (`application/x-pellizzola-level`) + hicolor icons via electron-builder; handle `process.argv`. | NAT-07 |
 | Recent files | `addRecentDocument` writes `recently-used.xbel`, honoured by GTK file choosers — done, see "Already completed" (not yet run on real GTK hardware). | — |
-| Single instance | Required. | NAT-08 |
+| Single instance | Required — done, see "Already completed" (not yet run on real Linux hardware). | — |
 | Fonts | The `DejaVu Sans Mono` fallback was the *only* one likely to be present, and differed in metrics from JetBrains Mono — bundling the font (done, see "Already completed") matters most here, since Linux had no other realistic path to it. | VIS-05 |
 | Wayland | Fractional scaling changes `devicePixelRatio` without a CSS resize — done, see "Already completed" (not yet run on real Wayland hardware) | BUG-12 |
 | DE variance | State explicitly in `CLAUDE.md` which desktops were tested. "Linux" is not one target. | — |
@@ -3020,14 +3056,14 @@ the finding that resolves it.
 | **Hover** | Fixed — every button, row and tab gets a `--surface-hover` tint, text unchanged (VIS-07, done — see "Already completed") | — |
 | **Active / pressed** | Fixed — a deeper `--surface-active` tint on `:active` (VIS-07, done — see "Already completed") | — |
 | **Focus** | Fixed — a global `:focus-visible` ring, 2 px + 2 px offset, now applies everywhere including the canvas (VIS-06, done — see "Already completed") | — |
-| **Disabled** | Fixed — `--fg-disabled` at ≥3:1 replaces `opacity: .35` everywhere, including `#props`'s read-only fields (VIS-07, done — see "Already completed"); `aria-disabled` now sits alongside the native `disabled` attribute on all three disabled controls too (A11Y-08, done — see "Already completed") | VIS-13 |
+| **Disabled** | Fixed — `--fg-disabled` at ≥3:1 replaces `opacity: .35` everywhere, including `#props`'s read-only fields (VIS-07, done — see "Already completed"); `aria-disabled` now sits alongside the native `disabled` attribute on all three disabled controls too (A11Y-08, done — see "Already completed"); the playtest button's own reason now reaches a screen reader too (`aria-describedby`, VIS-13, done — see "Already completed") | — |
 | **Selected** | Fixed — one treatment across `li.on`/`.tab.on`/`.cell.on`: accent text (or border, for the palette's icon swatches) + surface fill + a leading-edge marker (VIS-07, done — see "Already completed") | — |
 | **Icons** | Fixed, for the five sites that were broken — an inline-SVG set, `currentColor`, one `--icon` token replaces the three `+`s, the `×` and the `▶` (VIS-11, done — see "Already completed"); file-manager rows and block/entity/warning/error remain text/colour-only, deliberately, for lack of a demonstrated consumer | — |
 | **Text alignment** | `.hdr` left in the file manager, right in the inspector — deliberate mirroring per the design; keep | — |
-| **Capitalisation** | Four conventions, `midi`/`MIDI` in one interface | Lowercase in-window, platform convention on OS surfaces, proper nouns always (VIS-10) |
+| **Capitalisation** | Fixed — lowercase throughout every in-window label, tooltip and aria-label; every OS-facing surface states Title Case and converts to GNOME's Sentence case at the one place each reaches the OS (`chrome.js`'s `oscase()`); proper nouns (`MIDI`, `Lua`) survive the conversion since it only lowercases non-acronym words (VIS-10, done — see "Already completed") | — |
 | **Cursor** | Fixed — seven states on the canvas (`crosshair`/`copy`/`grab`/`grabbing`/`not-allowed`) driven by `Grid.cursor()` (NAT-13, done — see "Already completed"), and `col-resize`/`row-resize` on the four splitters (GEO-04, done — see "Already completed") | — |
-| **Tooltips** | Native `title=` on some controls, absent on tabs and rows; Windows/Linux's hotbar carries accelerators now (NAT-04, done — see "Already completed"); Title Case among lowercase labels elsewhere | Add the missing ones; VIS-10 for capitalisation |
-| **Loading** | Fixed for the editor — Monaco now shows a plain "loading editor…" text while it lazy-loads (ARCH-08, done — see "Already completed"); long saves still block silently | Progress for long ops (NAT-19) |
+| **Tooltips** | Fixed — every in-window tooltip is lowercase now, matching every other in-window label (VIS-10, done — see "Already completed"); still absent on tabs and rows | Add the missing ones |
+| **Loading** | Fixed for the editor — Monaco now shows a plain "loading editor…" text while it lazy-loads (ARCH-08, done — see "Already completed"); a long save no longer blocks the main process at all - the measured bottleneck, `zipSync`'s own compression, moved onto fflate's async `zip()` (NAT-19, done — see "Already completed") - though it still gives no visible progress indicator while it runs | Progress indicator for long ops |
 | **Empty states** | Fixed — one line of secondary text plus one affordance per list, replacing the two blank voids every fresh launch used to show (VIS-12, done — see "Already completed") | — |
 | **Error states** | Fixed — an aria-hidden `⚠` glyph now sits alongside `var(--danger)` on both `#msg.bad` and `App.fail()`'s `.err` block, so neither relies on colour alone; save failures reach a native dialog regardless of tab (BUG-07, shipped), and every error is announced to a screen reader (A11Y-05, shipped) (VIS-14, A11Y-08, done — see "Already completed") | — |
 | **Context menus** | Fixed — native `Menu.popup()`, real keyboard navigation and platform appearance (NAT-05, done — see "Already completed") | — |
@@ -3039,7 +3075,7 @@ the finding that resolves it.
 | **Overlays** | NAT-05 (done) removed the app's only `z-index` along with the DOM context menu it belonged to; `--z-*` is defined (GEO-01, done) with nothing to convert yet | — |
 | **Animation** | Fixed — hover/active/selected tints, the focus ring and the inline rename field all transition now, with the mandatory `prefers-reduced-motion` companion in the same commit (VIS-08, done — see "Already completed") | — |
 | **Canvas indicators** | Fixed — the selection ring, level bounds, hover cell and keyboard cursor are all two-tone or difference-composited now, guaranteeing visibility over any content, and `prefers-contrast: more` thickens the selection stroke (VIS-16, done — see "Already completed") | — |
-| **Missing assets** | Flat purple and maroon rectangles that read as blocks | Empty while loading; hatch + warning when genuinely missing (VIS-17) |
+| **Missing assets** | Fixed — a cell whose texture has not decoded yet draws nothing (the backdrop shows through) instead of a flat colour flash; a genuinely unknown id draws a diagonal hatch instead, and a save's warnings name it (`lvl.js`'s `review()`) (VIS-17, done — see "Already completed") | — |
 | **Editor (Monaco)** | Fixed — every colour key now reads from the shared token object, and the keys that used to leak VS Code's own blue (scrollbar, suggestion list, bracket-match, selection-match, errors/warnings, focus) are all themed (VIS-18, done — see "Already completed") | — |
 
 ---
@@ -3087,7 +3123,11 @@ overflow chevron listing hidden tabs and `⌘1…⌘9` numbered jumps (`⌘9` wa
 already spoken for, View → Fit Scene, UX-04) remain open.
 
 **Files and scripts** — double-click to open a script is shipped (UX-01, see
-"Already completed"); row menus that carry row actions only (UX-02); rename
+"Already completed"); row menus now carry only the actions that act on that
+row - "New Script"/"Import MIDI" moved out to the panel background menu,
+their only other route already, so a script row's own menu no longer offers
+two commands that act on neither it nor any MIDI file (UX-02, done, see
+"Already completed"); rename
 now validates as you type and keeps a rejected edit's text intact instead of
 discarding it (UX-15, see "Already completed" - MIDI renaming no longer
 mangles the name either, BUG-06, shipped); deleting an in-use script now
@@ -3105,8 +3145,9 @@ UX-10, BUG-11, UX-08 — see "Already completed").
 **Feedback** — status messages that auto-clear, errors that persist with a
 non-colour cue, and persistent zoom/dimensions/entity-count/tool fields
 separated from the transient message by a divider are all shipped (VIS-14,
-UX-06, UX-04 — see "Already completed"); progress for long operations
-(NAT-19); undo and redo are visible in the Edit menu now, and now say what
+UX-06, UX-04 — see "Already completed"); a long save no longer blocks the
+app at all, though it still shows no progress indicator while it runs
+(NAT-19, done — see "Already completed"); undo and redo are visible in the Edit menu now, and now say what
 they would act on ("Undo Paint", "Redo Move Entity") in both the menu and the
 status bar ("undid paint") instead of a step count read backwards (NAT-01,
 UX-03, both shipped, see "Already completed").
@@ -3134,7 +3175,7 @@ all five.
 | 4.1.2 Name, Role, Value | Fixed — the palette, file lists and tab strip carry `role`/`aria-*` (A11Y-01); the title bar is a `<header>`, section headers are real `<h2>`s their lists point back to with `aria-labelledby`, `#props` is a labelled region (A11Y-02), and the canvas itself carries `role="application"` with a name and description (A11Y-03) | A11Y-01, A11Y-02, A11Y-03, done |
 | 4.1.3 Status Messages | Fixed — `#msg` carries `role="status"`, `App.fail()`'s error block carries `role="alert"`, and both now announce the keyboard cursor's own position as it moves (A11Y-03) | A11Y-05, A11Y-03, done |
 | 2.3.3 Animation from Interactions | Fixed — `prefers-reduced-motion: reduce` collapses every transition/animation to 1ms, shipped in the same commit as the first one | VIS-08, done |
-| System high contrast | `forced-colors` untested, chrome will not adopt the system palette; `prefers-contrast: more` is honoured on the canvas now (VIS-16, done) | A11Y-07 |
+| System high contrast | Fixed — `forced-colors: active` now adopts the system palette automatically everywhere except the canvas and the palette's own sprite swatches (`forced-color-adjust: none`, since losing their own colours/background-images there would be a functional break); `prefers-contrast: more` is honoured on the canvas (VIS-16, done) and the chrome (`--control-border`/`--fg-disabled`/focus-ring width, A11Y-07, done) | A11Y-07, done |
 
 Native menus (NAT-05, done — see "Already completed") already deleted one
 entire inaccessible subsystem rather than fixing it in place, and replacing
@@ -3150,8 +3191,10 @@ genuinely could not cover - is keyboard-operable now too (A11Y-03, done — see
 "Already completed"): a keyboard cursor, moved by the arrow keys, that Return/
 Space paints and Delete erases, announced through the same live region
 A11Y-05 already gave the status bar. A manual text-scale command is also done
-now (A11Y-06, done — see "Already completed"); what is left is `forced-colors`
-and `prefers-contrast` on the chrome itself (A11Y-07).
+now (A11Y-06, done — see "Already completed"); `forced-colors` and
+`prefers-contrast` on the chrome itself are done too (A11Y-07, done — see
+"Already completed") - system-preference handling, the one thing left
+after A11Y-01/A11Y-05, is now fully covered.
 
 ---
 
@@ -3168,18 +3211,20 @@ the title/proxy-icon/edited-dot logic itself (NAT-03, done — see "Already
 completed") - is also resolved; `main.js`'s `retitle()` is the one place all
 four are driven from.
 
-**Fix.**
-
-| Problem | Finding |
-|---|---|
-| Synchronous main-process I/O | ARCH-09, NAT-19 |
+**Fix.** Nothing remains open in this table - see "Already completed" below.
 
 Prefix-only path containment in the protocol handler is fixed too - done, see
 "Already completed" (BUG-13). Full innerHTML rebuilds on a drag hot path and
 every `onchange` handler that used to destroy the field it fired from, three
 IPC naming conventions with two response shapes and a forgettable `cancel`
 check, and `App.open_`'s trailing underscore are all done too - see "Already
-completed" (PERF-01, ARCH-04, ARCH-06).
+completed" (PERF-01, ARCH-04, ARCH-06). Synchronous main-process I/O is
+resolved too, in the sense the measurement it was always conditioned on
+justified: a 999-row save's own compression, measured as the actual
+bottleneck, moved onto fflate's async `zip()`; disk I/O itself measured
+under 2ms and was left synchronous, and a 999-row *read* measured under the
+~100ms budget altogether, so `unzipSync` is untouched (ARCH-09/NAT-19, done
+— see "Already completed").
 
 **Explicitly do not do.** Do not introduce a framework, a bundler, TypeScript
 or ES modules. Do not convert the flat global scope. Do not add a state
@@ -3194,21 +3239,18 @@ size.
 
 ## 11. Performance summary
 
-The renderer is already carefully built. Three of the four real problems this
-section originally listed are done (PERF-01, PERF-02, PERF-04 — see "Already
-completed"); two non-problems and one real problem remain, in priority order.
-
-**Also worth doing:**
-1. **PERF-05** — `App.refresh()` rebuilds every view for every undo step; walk
-   back a long history and the whole UI is rebuilt per step.
-2. **PERF-07** — the window is shown before the document exists - narrower
-   now that ARCH-08 (done) removed the Monaco-load race this section
-   originally described alongside it.
-
-**Measure before touching:**
-3. **PERF-06** / **NAT-19** — `Grid.commit()` + `JSON.stringify` + `zipSync` on
-   a 999-row level. Bounded, save-only, and simple as written. Get a number
-   first.
+The renderer is already carefully built. Every real problem this section
+originally listed is done now - see "Already completed": PERF-01, PERF-02
+and PERF-04 first, then PERF-05 (`Undo.apply()`'s own before/after shots
+report which of info/defs/ents/bgs/scripts/midi/cells a step actually
+touched, and `App.refresh()` rebuilds only those - a plain cell-diff step,
+the common case, now touches only `Grid.redraw()`), PERF-07 (`win.show()`
+waits for the renderer's own `ui:ready` signal instead of racing
+`api.init()`), and PERF-06/NAT-19 together (measured first: a 999-row
+save's own compression - not `Grid.commit()`, not disk I/O, both measured
+cheap - was the actual bottleneck, and moved onto fflate's async `zip()`;
+`Grid.commit()`'s own lookup-table optimisation was reassessed as
+unnecessary once the actual bottleneck turned out to lie elsewhere).
 
 **Leave alone:** `entat()`'s linear scan (PERF-03) — the existing comment
 justifies it correctly at the current scale, and the alternative introduces the
@@ -3235,7 +3277,7 @@ relitigated.
 | Unsaved-changes dialog | ✅ shipped (NAT-21, BUG-10) | ✅ shipped (NAT-21, BUG-10) | ✅ shipped (NAT-21, BUG-10) | — |
 | Recent documents | ✅ shipped - File menu, and the Dock icon's own Recent submenu for free (NAT-06) | ✅ shipped - `addRecentDocument` runs, though the JumpList itself needs NAT-07 (NAT-06) | ✅ shipped (NAT-06) | — |
 | File association / launch by file | ❌ | ❌ | ❌ | NAT-07 |
-| Single instance | ❌ n/a in practice | ❌ | ❌ | NAT-08 |
+| Single instance | ✅ shipped - harmless here since Launch Services already routes a second open through `open-file` (NAT-08) | ✅ shipped - verified with the probe harness: a second process quit in under 0.2s without reaching `whenReady()` (NAT-08) | ✅ shipped, not run on real hardware (NAT-08) | — |
 | Drag and drop | ✅ shipped - no longer navigates away (NAT-18); a `.lvl`/`.lua`/`.mid` drop opens or imports it (NAT-09) | ✅ same | ✅ same | — |
 | Dock / taskbar integration | ⚠️ recent documents shipped (NAT-06); a custom Dock menu (`app.dock.setMenu`) is still open | ❌ | ❌ | NAT-17 |
 | Window state persistence | ✅ shipped - position, size, maximized and fullscreen survive a restart, with a disconnected-display fallback (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | — |
@@ -3246,10 +3288,10 @@ relitigated.
 | Keyboard shortcuts | ✅ shipped - layout-aware `CmdOrCtrl` accelerators from the menu (NAT-01); `⌃Tab`/`⌃⇧Tab` tab switching (NAT-14) | ✅ same | ✅ same | — |
 | Scrollbars | ✅ shipped - one tokenised treatment, `scrollbar-gutter: stable` (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | ✅ shipped, not run on real hardware (NAT-20) | — |
 | Fonts | ✅ shipped - bundled, identically on all three platforms (VIS-05) | ✅ shipped (VIS-05) | ✅ shipped (VIS-05) | — |
-| High contrast / forced colours | ⚠️ Increase Contrast ignored | ❌ untested, will break | ⚠️ | A11Y-07 |
+| High contrast / forced colours | ✅ shipped - `prefers-contrast: more`/`forced-colors: active` both honoured on the chrome now (A11Y-07) | ✅ shipped, not run on real hardware (A11Y-07) | ✅ shipped, not run on real hardware (A11Y-07) | — |
 | Reduced motion | ✅ shipped - `prefers-reduced-motion: reduce` collapses every transition/animation, landed in the same commit as the first one (VIS-08) | ✅ shipped (VIS-08) | ✅ shipped (VIS-08) | — |
-| Screen reader | ✅ shipped - the palette, file lists and tab strip are named and role-bearing (A11Y-01), status/error messages are announced (A11Y-05), the title bar, section headers and inspector carry real semantics (A11Y-02), and the canvas itself is named, described and keyboard-operable with its cursor announced (A11Y-03) — see "Already completed" for all four. What is left is system-preference handling, not VoiceOver reaching the app at all. | ✅ same for Narrator | ✅ same for Orca | A11Y-07 |
-| Notifications | ❌ | ❌ | ❌ | NAT-19 |
+| Screen reader | ✅ shipped - the palette, file lists and tab strip are named and role-bearing (A11Y-01), status/error messages are announced (A11Y-05), the title bar, section headers and inspector carry real semantics (A11Y-02), the canvas itself is named, described and keyboard-operable with its cursor announced (A11Y-03), and system-preference handling (high contrast, forced colours) is honoured too (A11Y-07) — see "Already completed" for all five. | ✅ same for Narrator | ✅ same for Orca | — |
+| Notifications | ❌ - a long save no longer blocks the app while it runs (NAT-19, done), but still shows no progress bar or completion toast | ❌ | ❌ | — |
 | Full screen | ✅ shipped - a new View menu carries `role: 'togglefullscreen'`, closing the regression NAT-01's own menu opened by shipping without a View menu (UX-04) | ✅ shipped (UX-04) | ✅ shipped (UX-04) | — |
 | Quit / lifecycle | ✅ ⌘Q works (`role: 'appMenu'`, NAT-01); a hung/dirty renderer no longer wedges close (BUG-09, shipped) | ✅ shipped (BUG-09) | ✅ shipped (BUG-09) | — |
 | Packaging / signing | ❌ | ❌ | ❌ | NAT-07 |
@@ -3289,31 +3331,22 @@ complete or verify - is the only item remaining in this tier.
 
 ### Medium — real friction, contained fixes
 
-BUG-13, NAT-06, NAT-16, GEO-10, UX-01, UX-03, UX-05 (its one deliberately
-deferred piece, flood fill, aside), UX-15, UX-16, PERF-02, NAT-09, NAT-14 (its
-own deliberately deferred piece, region operations and numbered tab jumps,
-aside), VIS-03, UX-09 (its own deliberately deferred piece, a start view in
-place of the canvas, aside), A11Y-06, ARCH-04 and ARCH-06 - eighteen of the
-twenty items originally listed here - are done, see "Already completed". Two
-remain:
-
-| ID | Title |
-|---|---|
-| NAT-08 | No single-instance lock |
-| VIS-10 | Capitalisation (VIS-03 and VIS-11 are both shipped) |
+Every item ever listed at this tier is now done: BUG-13, NAT-06, NAT-16,
+GEO-10, UX-01, UX-03, UX-05 (its one deliberately deferred piece, flood
+fill, aside), UX-15, UX-16, PERF-02, NAT-09, NAT-14 (its own deliberately
+deferred piece, region operations and numbered tab jumps, aside), VIS-03,
+UX-09 (its own deliberately deferred piece, a start view in place of the
+canvas, aside), A11Y-06, ARCH-04, ARCH-06, NAT-08 and VIS-10 — see "Already
+completed". Nothing remains in this tier.
 
 ### Low
 
 | ID | Title |
 |---|---|
-| NAT-15 | System preference handling (contrast, forced colours) |
+| NAT-15 | Theme awareness (`nativeTheme` re-push on a Windows accent change; `prefers-contrast`/`forced-colors` are both shipped, A11Y-07) |
 | NAT-17 | Dock menu, JumpList tasks (About panel and recent documents already shipped, NAT-01, NAT-06) |
-| NAT-19 | Feedback for long operations |
-| VIS-13, VIS-17 | Playtest button communication; missing-texture swatches |
-| UX-02, UX-11, UX-17, UX-18 | Menu contents, preferences, numeric rounding, MIDI opacity (UX-13, UX-14 are both shipped) |
-| A11Y-07 | System accessibility preferences (A11Y-06, A11Y-08 are both shipped) |
-| ARCH-05, ARCH-09 | Global scope hygiene; synchronous I/O |
-| PERF-05, PERF-06 | Refresh granularity; commit allocation (PERF-07 is shipped) |
+| UX-18 | MIDI opacity (its own metadata/export half is Nice to have, below) |
+| ARCH-05 | Global scope hygiene |
 
 ### Nice to have — genuinely optional, none of it required to call Studio polished
 
@@ -3332,8 +3365,13 @@ remain:
   its own remaining scope, see "Already completed"). Tool cycling, NAT-14's
   other deferred piece, has no concrete key binding proposed anywhere in this
   document to implement against.
-- MIDI metadata and export (UX-18).
-- Playtest, once the game can load `.lvl` (`game/todo.txt` 3.1) (VIS-13).
+- MIDI metadata and export (UX-18's own remaining scope - the opacity half
+  of that finding, an aria-describedby explanation and a second, always-
+  reachable route to it, is done, see "Already completed").
+- Playtest, once the game can load `.lvl` (`game/todo.txt` 3.1) - VIS-13's
+  own remaining scope, the actual game-wiring implementation; the
+  communication half (a visible-without-hovering route, a screen-reader
+  explanation) is done, see "Already completed".
 - Level templates and a starter library.
 - PERF-03's entity index — only if entity counts reach the hundreds.
 
@@ -3397,8 +3435,10 @@ itself did not block it either) is also done — see "Already completed".
    drag and drop is done too, and turned out not to need NAT-07 as a
    prerequisite after all - only the Dock-icon-drop and double-click-to-open
    cases do, both still blocked on the file association NAT-07 would
-   register. **NAT-07** packaging, icons, associations and **NAT-08** single
-   instance remain one coherent piece of work sharing that same prerequisite.
+   register. **NAT-08** single instance is done too, on the same basis - the
+   lock and its `second-instance` handler need no file association to exist
+   and be correct now, only a path to parse out of a future one's `argv`.
+   **NAT-07** packaging, icons and associations remain the one piece left.
 
 ### Phase 3 — Design system made real
 
@@ -3410,7 +3450,8 @@ see "Already completed" for both.
 
 8. **VIS-11** icons is done — see "Already completed": one inline-SVG set,
    `currentColor`, one `--icon` token, for the five sites that were
-   demonstrably broken. **VIS-10** capitalisation is still open. **VIS-09**
+   demonstrably broken. **VIS-10** capitalisation is done too, in a later
+   round - see "Already completed". **VIS-09**
    (radius and elevation) and **VIS-08** (motion, with its mandatory
    `prefers-reduced-motion` companion) are done — see "Already completed" for
    both.
@@ -3425,7 +3466,9 @@ see "Already completed" for both.
     the same `.field` component `#props input` uses, and the canvas's
     selection ring, level bounds, hover cell and keyboard cursor are all
     contrast-guaranteed two-tone/difference indicators now. **VIS-17**
-    missing-texture treatment is still open. **VIS-12** empty states and
+    missing-texture treatment is done too, in a later round - see "Already
+    completed": a still-decoding cell draws nothing, a genuinely unknown id
+    draws a hatch and a save warning names it. **VIS-12** empty states and
     **VIS-14** status-message expiry/persistent fields are both done — see
     "Already completed".
 
@@ -3483,8 +3526,9 @@ fixed too (A11Y-03, below).
     "Already completed".
 20. **A11Y-06** is done too - see "Already completed": a manual View → Text
     Size command, scaling type and row heights together. **A11Y-07** system
-    preferences (`forced-colors`/`prefers-contrast` on the chrome) remains
-    open.
+    preferences (`forced-colors`/`prefers-contrast` on the chrome) is done
+    too - see "Already completed": every system-preference gap this phase
+    ever named is now closed.
 
 ### Phase 6 — Reliability and remaining QOL
 
@@ -3495,11 +3539,19 @@ BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
 21. **ARCH-08** — done, see "Already completed": lazy Monaco. **PERF-07** is
     done too: `win.show()` now waits for the renderer's own `ui:ready` signal
     (with a fallback timer) instead of racing `api.blank()`/`api.init()`.
-    **PERF-05** refresh granularity remains open.
+    **PERF-05** refresh granularity is done too, in a later round - see
+    "Already completed": `Undo.apply()` reports which parts of a step's own
+    before/after shots actually differ, and `App.refresh()` rebuilds only
+    those.
 22. **BUG-13** path containment is done — see "Already completed". **ARCH-06**
     is done too: every `invoke()` handler now answers one envelope shape, and
     `app.js`'s `call()` is the one place that unwraps it. **ARCH-09 / NAT-19**
-    async I/O remains open, *if* measurement justifies it.
+    async I/O is done too, in a later round - see "Already completed": measured
+    first, per this phase's own rule - a 999-row save's own compression, not
+    disk I/O, was the real cost, and moved onto fflate's async `zip()`.
+    **PERF-06**'s own lookup-table idea, conditioned on that same measurement,
+    turned out not to be needed once the actual bottleneck was found elsewhere
+    - see "Already completed".
 23. **UX-01**, **UX-03** and **UX-15** are done — see "Already completed":
     double-click to open a script; Undo/Redo labelled with the action's own
     name in both the menu and the status bar; inline rename validated live
@@ -3508,12 +3560,21 @@ BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
     session's document, offering "Delete Anyway" on an in-use script instead
     of only refusing, and a new custom definition always getting its own
     fresh script with an announcement instead of silently binding to an
-    arbitrary existing one. **UX-02 / UX-17** — the remaining workflow items,
-    each independent. **UX-06** active-tool indicator and **UX-08**
+    arbitrary existing one. **UX-02** and **UX-17** are done too - see
+    "Already completed": row menus that carry only the actions that act on
+    that row, and a "(snaps to 100)"/"(1-999)" hint on the fields that round
+    or clamp silently. **UX-06** active-tool indicator and **UX-08**
     destructive-action reporting are both done too - see "Already completed".
-24. **NAT-15 / NAT-17 / UX-11 / UX-18 / VIS-13** — the low-priority tail.
-    NAT-17 is narrower too: the About panel and recent documents already
-    shipped (NAT-01, NAT-06), only the Dock menu and JumpList tasks are left.
+24. **UX-11** preferences is done too, in a later round - see "Already
+    completed": `settings.json`, a fourth `#props` view alongside the level/
+    entity/definition ones, and all four of the finding's own credible
+    settings (grid overlay, palette cell size, editor font size, the
+    recovery-snapshot interval) wired to a real effect. **NAT-15 / NAT-17 /
+    UX-18** — the remaining low-priority tail. NAT-17 is narrower too: the
+    About panel and recent documents already shipped (NAT-01, NAT-06), only
+    the Dock menu and JumpList tasks are left; NAT-15's own `forced-colors`
+    piece is done too (A11Y-07, see "Already completed"), leaving only the
+    Windows `nativeTheme` accent re-push.
 
 ### Dependency summary
 
@@ -3525,16 +3586,18 @@ tokens a splitter drag needs to constrain against already existed by the time
 the splitters themselves were built); ARCH-07 (checks) unblocked everything below
 it by making every later change verifiable at all; BUG-08 (doc state)
 unblocked NAT-03, NAT-06, NAT-07, NAT-08, NAT-10, UX-10, all of which could
-then build on it directly - NAT-03, NAT-06 and NAT-10 have since shipped,
-done — see "Already completed"; BUG-09 closed the live gap NAT-01 opened;
+then build on it directly - NAT-03, NAT-06, NAT-10 and NAT-08 have since
+shipped, done — see "Already completed" (NAT-08 in the end needed nothing
+from NAT-07, the one still open); BUG-09 closed the live gap NAT-01 opened;
 VIS-01/VIS-02/VIS-06 unblocked nothing else in this graph; NAT-18 closed
 NAT-09's navigation hole without needing any of the above, and NAT-09 itself
 has since shipped straight off it, needing nothing further from this graph;
 NAT-21/BUG-10 and
 UX-10/BUG-11 each shipped straight off BUG-08's `doc` module and BUG-02's
 atomic write, also without needing ARCH-03; ARCH-03 (platform) unblocked
-NAT-02 (also done) and VIS-10 (which can now apply the OS-facing
-capitalisation convention it asks for - not yet done), and NAT-02 in turn
+NAT-02 (also done) and VIS-10, which has since shipped straight off it -
+`chrome.js` gained `oscase()`, the OS-facing capitalisation convention this
+note once said was not yet ported - and NAT-02 in turn
 unblocked NAT-03 and NAT-04 (both now done); NAT-05 deleted an entire
 inaccessible subsystem rather than fixing it in place, independently of the
 rest of this graph; NAT-11 unblocked GEO-10 (the wheel now scrolls, and GEO-10
@@ -3555,8 +3618,10 @@ VIS-08/VIS-09 both then shipped straight off the `--dur-*`/`--radius-*`/
 `--elev-*` tokens it provided, genuinely unblocked rather than waiting on a
 foundation that did not exist yet (VIS-07 was one of them and had already
 shipped, also needing nothing further from this graph); GEO-08 and VIS-18
-have since shipped on the same basis too; NAT-15's forced-colours work
-remains open on it; PERF-04 and
+have since shipped on the same basis too; A11Y-07's own `forced-colors`/
+`prefers-contrast` chrome work (which NAT-15's own text asked for too) has
+since shipped straight off the same token block, needing nothing further
+from this graph; PERF-04 and
 GEO-11 (grid.js's own remaining unnamed constants) each shipped
 independently, needing nothing from this graph.
 ```
@@ -3586,7 +3651,11 @@ demonstrably true. Each is checkable, not a matter of opinion.
 - [x] Every context menu is a native `Menu.popup()`. (NAT-05 — not run on real
       Windows/Linux hardware)
 - [ ] Double-clicking a `.lvl` in Finder, Explorer and a Linux file manager
-      opens it in a running (single) instance.
+      opens it in a running (single) instance. (NAT-08 — the single-instance
+      lock itself is done, see "Already completed": a losing second instance
+      quits before ever reaching `whenReady()`, verified with the probe
+      harness; double-clicking a `.lvl` at all still needs NAT-07's file
+      association, so the box stays unchecked)
 - [ ] Recent documents appear in File → Open Recent, the macOS Dock menu, and
       the Windows JumpList. (NAT-06 — File → Open Recent and macOS's own Dock
       "Recent" behaviour are done, see "Already completed"; a custom Dock
@@ -3743,16 +3812,22 @@ demonstrably true. Each is checkable, not a matter of opinion.
       `role="alert"`; verified with the probe harness: both roles present,
       `aria-atomic="true"` on both)
 - [ ] The app is usable under Windows High Contrast, `prefers-contrast: more`,
-      and OS text scaling. (`prefers-contrast: more` is partly done: the
+      and OS text scaling. (`prefers-contrast: more` is fully done now: the
       canvas's own indicators - selection ring, level bounds, hover cell,
       keyboard cursor - are two-tone/difference-composited so they stay
       visible regardless, and the selection stroke itself thickens under the
-      query, VIS-16, done, see "Already completed"; the chrome's own controls
-      do not yet respond to it, and `forced-colors` remains fully open,
-      A11Y-07. OS text scaling itself has a manual escape hatch now - a View
-      → Text Size command scales type and row heights together, A11Y-06, done,
-      see "Already completed" - but nothing here follows an OS text-size
-      *setting* automatically, which is what this box is actually checking)
+      query (VIS-16, done); `--control-border`/`--fg-disabled`/the focus
+      ring on the chrome itself now respond to it too (A11Y-07, done).
+      `forced-colors: active` is done too (A11Y-07): the system palette is
+      adopted everywhere except the level canvas and the palette's own
+      sprite swatches, which keep their own colours and background-images
+      deliberately (`forced-color-adjust: none` - losing them would be a
+      functional break). All done, see "Already completed". OS text scaling
+      itself has a manual escape hatch now - a View → Text Size command
+      scales type and row heights together, A11Y-06, done, see "Already
+      completed" - but nothing here follows an OS text-size *setting*
+      automatically, which is what this box is actually checking, so it
+      stays unchecked on that one remaining clause alone)
 - [ ] A VoiceOver, Narrator and Orca pass each reach and describe the file
       list, tabs, palette, inspector and canvas.
 
@@ -3816,5 +3891,17 @@ demonstrably true. Each is checkable, not a matter of opinion.
       mid-range machine, with Monaco loaded lazily. (Monaco loaded lazily is
       done, ARCH-08; the under-one-second cold-start figure itself has not
       been measured with a timer, so the box stays unchecked)
-- [ ] Saving a 999-row level completes without the window becoming
-      unresponsive, or shows honest progress if it cannot.
+- [x] Saving a 999-row level completes without the window becoming
+      unresponsive, or shows honest progress if it cannot. (NAT-19/ARCH-09/
+      PERF-06 — measured first: `Grid.commit()` 17ms, `JSON.stringify` 11ms,
+      `zipSync` 82ms, `writeFileSync` under 2ms, of a ~104ms `lvl.write()`
+      total in isolation (~200ms including the full IPC/`Grid.commit()`
+      round trip); compression, not disk I/O, was the real cost, and moved
+      onto fflate's async `zip()`. Verified with the probe harness and a
+      standalone Node timing script: a 5ms `setInterval` kept firing
+      throughout an async 999-row `zip()` call (proof the main thread stayed
+      free), where it could not have during the old `zipSync`'s own
+      synchronous call; save/save-as/overwrite-with-`.bak`/recovery-snapshot
+      all still round-trip correctly through the new async path. No visible
+      progress indicator was added - not needed once the freeze itself was
+      gone, see "Already completed" for the full reasoning)
