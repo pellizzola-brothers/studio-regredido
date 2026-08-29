@@ -250,6 +250,25 @@ on write; `main.js` refuses to write a level that fails, and the renderer shows
 the returned message in the inspector and the status bar. There is deliberately
 no second copy in the renderer to drift out of sync.
 
+**Every `ipcRenderer.invoke()` channel answers one shape.** `main.js`'s
+`guard()` wraps a handler's result as `{status: 'ok', data}`, a thrown error as
+`{status: 'error', message}`, and the one sentinel value `guard()` itself
+recognises, `CANCEL`, as `{status: 'cancel'}` for a dialog the user dismissed.
+`app.js`'s `call()` is the one place that unwraps it — every call site reduces
+to `const r = await call(api.foo()); if (!r) return;`, which cannot forget to
+check for a cancelled dialog the way two separate `.ok`/`.cancel` checks
+could. A new handler that wraps a dialog returns `CANCEL` on `r.canceled`
+rather than inventing its own falsy-result shape. `ask:discard`'s own
+`'save'|'discard'|'cancel'` string is deliberately outside this convention —
+it names a real three-way user choice the caller branches on directly, not an
+operation outcome to unwrap.
+
+**A dropped file's real path is resolved in the preload, not the renderer.**
+`File.path` is deprecated in Electron in favour of `webUtils.getPathForFile`,
+which only the preload can call — `api.droppath(file)` (`preload.js`) is the
+one bridge for it, keeping "the renderer touches no filesystem" true for drag
+and drop the same way it already is for every dialog-driven open.
+
 **Legacy levels migrate on open.** `migrate()` reshapes the old flat
 `level.data` array into 540-wide rows and fills in fields that predate the
 current schema, so files like `website/levels/1774028825093-pellizzola.json`
@@ -339,6 +358,16 @@ carries that explanation in its tooltip.
 
 The studio is local-only. It does not talk to the website API; levels are
 published through the website's own `upload.html`.
+
+The design's accent is `#7E58BE` (borders/icons/text) plus a second, lighter
+`#815AC1` for filled elements; the implementation ships `--acc: #7b56ba`
+(non-text use - borders, rings, grid lines) and `--acc-text: #9a74e0` (text
+use), retuned off the design's own value for WCAG contrast (4.5:1 for text,
+3:1 for non-text boundaries - see `--dim`'s own comment in `style.css` for the
+same reasoning applied to the resting text colour). The design's second,
+lighter fill accent has no implementation equivalent: nothing in the app
+currently fills a shape with it, and `style.css`'s own rule ("introduce a
+token before the component that needs it, not after") is why none exists yet.
 
 ## Gotchas
 
