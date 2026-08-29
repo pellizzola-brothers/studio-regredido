@@ -269,6 +269,38 @@ which only the preload can call — `api.droppath(file)` (`preload.js`) is the
 one bridge for it, keeping "the renderer touches no filesystem" true for drag
 and drop the same way it already is for every dialog-driven open.
 
+**`lvl.write()` is async; `lvl.read()` is not.** Both were fully synchronous
+until a measurement (POLISH.md, NAT-19) found a 999-row save's own
+compression - not disk I/O, not `Grid.commit()` - costing enough to freeze
+the main process. Only that step moved: `write()` now returns a Promise,
+using fflate's async `zip()` in place of `zipSync`, while the actual
+`fs.writeFileSync`/`renameSync` calls around it stay synchronous, since they
+measured as trivially fast. `read()`'s own `unzipSync` measured under
+budget even at 999 rows and is untouched. Every caller of `write()` must
+`await` or `.then()` it now.
+
+**OS-facing labels are Title Case, converted for GNOME.** The menu bar
+(`menu.js`), native context menus and dialog titles/buttons (`main.js`) are
+each authored once, in Title Case (macOS/Windows' own convention), and
+`chrome.js`'s `oscase()` converts a copy to GNOME's Sentence case at the one
+place each reaches the OS. It is a no-op on macOS/Windows. Never apply it to
+user-authored content (a filename, an entity definition id) — concatenate
+that after the call, not through it. In-window UI (panels, buttons, headers,
+tooltips, aria-labels) is lowercase everywhere instead, per the design;
+proper nouns (`MIDI`, `Lua`, `Pellizzola Brothers`) keep their own
+capitalisation on both sides of that rule.
+
+**Settings persist in `settings.json`, view state does not.** A setting the
+user chooses once and expects to stick (grid overlay, palette cell size,
+editor font size, the recovery-snapshot interval) lives in
+`app.getPath('userData')/settings.json`, owned by main
+(`settings:get`/`settings:set`) and cached in the renderer as the `Settings`
+object (`app.js`), applied once at boot and again live on every change
+(`applysettings()`). View state (panel widths, the last zoom, which
+splitters were dragged) is a different thing and stays in `localStorage` or
+`window.json`, silent and per-machine — do not conflate the two just because
+both "persist something."
+
 **Legacy levels migrate on open.** `migrate()` reshapes the old flat
 `level.data` array into 540-wide rows and fills in fields that predate the
 current schema, so files like `website/levels/1774028825093-pellizzola.json`
@@ -354,7 +386,10 @@ field to the schema in the studio, the game and the website together.
 The `▶` button renders per the design but is **inert**: the game cannot load
 `.lvl` archives yet (`game/todo.txt` step 3.1, minizip + jansson). Wiring it up
 means spawning the game binary with a temporary level; the button already
-carries that explanation in its tooltip.
+carries that explanation in its tooltip and, for a screen reader, in
+`aria-describedby="run-help"` (`index.html`) - and the View menu's own
+disabled "Playtest" item carries it a second way, for a sighted user who
+never hovers or tabs into the tab strip at all.
 
 The studio is local-only. It does not talk to the website API; levels are
 published through the website's own `upload.html`.
