@@ -42,11 +42,28 @@ function tablesame(a, b)
 	return true;
 }
 
+/* PERF-05: which of a step's own parts actually differ between its two
+ * shots - shared by same() (below, "did anything change at all") and
+ * apply() (below, "which views does undoing/redoing this step actually
+ * need to rebuild"), so the two can never quietly disagree about what a
+ * change to one field means. */
+function diffparts(a, b)
+{
+	return {
+		info: a.info !== b.info,
+		defs: a.defs !== b.defs,
+		ents: a.ents !== b.ents,
+		bgs: a.bgs !== b.bgs,
+		scripts: !tablesame(a.scripts, b.scripts),
+		midi: !tablesame(a.midi, b.midi)
+	};
+}
+
 function same(a, b)
 {
-	return a.info === b.info && a.defs === b.defs && a.ents === b.ents &&
-		a.bgs === b.bgs && a.h === b.h &&
-		tablesame(a.scripts, b.scripts) && tablesame(a.midi, b.midi);
+	const d = diffparts(a, b);
+	return !d.info && !d.defs && !d.ents && !d.bgs && a.h === b.h &&
+		!d.scripts && !d.midi;
 }
 
 /* Open a step.  Nested calls join the step already running, so a drag that
@@ -183,5 +200,18 @@ function apply(s, side)
 
 	Grid.sel = -1;
 	Undo.quiet = false;
-	App.refresh();
+	/* PERF-05: a plain cell-diff step (the common case - painting) touches
+	 * none of info/defs/ents/bgs/scripts/midi at all, so diffparts() reports
+	 * every one of them false and App.refresh() rebuilds only the canvas -
+	 * previously it rebuilt the tab strip, both file lists, the whole
+	 * palette and the inspector, and re-synced every Monaco model, for
+	 * every single step walked back through, whether or not any of them
+	 * had anything to do with that step. cells is true whenever the grid
+	 * itself changed - either a resize (s.grid) or an actual cell diff
+	 * (s.cells.length) - so a step that touched neither still skips the
+	 * redraw too. */
+	App.refresh({
+		cells: !!(s.grid || s.cells.length),
+		...diffparts(s.before, s.after)
+	});
 }
