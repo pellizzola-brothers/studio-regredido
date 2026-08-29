@@ -71,6 +71,14 @@
 
 <div id="status"><span id="cursor"></span><button id="zoom" title="Zoom"></button><span id="dims"></span><span id="entcount"></span><span id="tool"></span><span id="warnings"></span><span id="msg" role="status" aria-atomic="true"></span></div>
 
+<!-- NAT-09: shown only while a file drag is over the window (app.js's
+     showdropzone()/hidedropzone()); pointer-events: none so the drop itself
+     still lands on whichever real element is under the cursor (#scripts,
+     #midis, or anything else), not this overlay. -->
+<div id="dropzone" hidden aria-hidden="true">
+	<p>drop a level to open · scripts onto scripts · midi onto midi</p>
+</div>
+
 <script src="node_modules/monaco-editor/min/vs/loader.js"></script>
 <script src="catalog.js"></script>
 <script src="tokens.js"></script>

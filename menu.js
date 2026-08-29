@@ -95,6 +95,25 @@ function template(win, state, recent, onclear)
 			{label: 'Fit Scene Width', enabled: onlevel, click: send('fitwidth')},
 			{label: 'Fit Scene', accelerator: 'CmdOrCtrl+9', enabled: onlevel, click: send('fitall')},
 			{type: 'separator'},
+			/* A11Y-06: independent of the canvas zoom above - this scales the
+			 * chrome's own type (and, with it, the row heights built to hold a
+			 * line of it), for OS text-size settings Electron gives no other
+			 * hook into. CmdOrCtrl+Shift+ rather than the bare Plus/-/0 the
+			 * canvas zoom already owns above. */
+			{label: 'Increase Text Size', accelerator: 'CmdOrCtrl+Shift+Plus', click: send('uitextinc')},
+			{label: 'Decrease Text Size', accelerator: 'CmdOrCtrl+Shift+-', click: send('uitextdec')},
+			{label: 'Reset Text Size', accelerator: 'CmdOrCtrl+Shift+0', click: send('uitextreset')},
+			{type: 'separator'},
+			/* NAT-14: Ctrl+Tab, not CmdOrCtrl+Tab - the bare Ctrl form is the
+			 * cross-app convention for cycling tabs within a window (browsers,
+			 * terminals) on every platform including macOS, where
+			 * CmdOrCtrl+Tab is the OS's own application switcher and must not
+			 * be shadowed. Lives here rather than in a new Window menu, which
+			 * on macOS would collide with the native {role: 'windowMenu'}
+			 * already pushed below under the same label. */
+			{label: 'Next Tab', accelerator: 'Control+Tab', click: send('nexttab')},
+			{label: 'Previous Tab', accelerator: 'Control+Shift+Tab', click: send('prevtab')},
+			{type: 'separator'},
 			{role: 'togglefullscreen'}
 		]
 	};

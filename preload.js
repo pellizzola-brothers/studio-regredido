@@ -1,7 +1,7 @@
 /* preload.js - the renderer's entire view of the outside world. */
 'use strict';
 
-const {contextBridge, ipcRenderer} = require('electron');
+const {contextBridge, ipcRenderer, webUtils} = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
 	/* ARCH-03: the only platform fact the renderer gets, stamped onto
@@ -14,6 +14,14 @@ contextBridge.exposeInMainWorld('api', {
 	retitle:	name => ipcRenderer.send('doc:name', name),
 	forceclose:	() => ipcRenderer.send('forceclose'),
 	blank:		() => ipcRenderer.invoke('lvl:new'),
+	/* UX-09: the boot-time call - restores the last session's document if one
+	 * is on record and still on disk, otherwise the same blank lvl:new would
+	 * have produced. */
+	init:		() => ipcRenderer.invoke('lvl:init'),
+	/* PERF-07: sent once a real document is loaded and the level view has
+	 * rendered, so main can hold win.show() until there is something worth
+	 * showing instead of racing app.js's own api.init() round trip. */
+	uiready:	() => ipcRenderer.send('ui:ready'),
 	open:		() => ipcRenderer.invoke('lvl:open'),
 	/* NAT-06: File -> Open Recent (menu.js) sends the chosen path here rather
 	 * than opening it directly in main - it still has to cross the
@@ -23,6 +31,15 @@ contextBridge.exposeInMainWorld('api', {
 	save:		doc => ipcRenderer.invoke('lvl:save', doc),
 	saveas:		(doc, name) => ipcRenderer.invoke('lvl:saveas', doc, name),
 	midi:		() => ipcRenderer.invoke('midi:import'),
+	/* NAT-09: a drop's real filesystem path can only be resolved here, in the
+	 * preload - File.path is deprecated in favour of webUtils.getPathForFile,
+	 * which Electron only exposes to preload scripts. */
+	droppath:	file => webUtils.getPathForFile(file),
+	importmidipaths:	paths => ipcRenderer.invoke('midi:importpaths', paths),
+	importscriptpaths:	paths => ipcRenderer.invoke('script:importpaths', paths),
+	/* UX-13: lists which definitions still use a script about to be deleted;
+	 * resolves true for "delete anyway", false for "cancel". */
+	confirmdeletescript:	(name, users) => ipcRenderer.invoke('script:confirmdelete', name, users),
 	discard:	name => ipcRenderer.invoke('ask:discard', name),
 	snapshot:	doc => ipcRenderer.send('lvl:snapshot', doc),
 	onrecover:	fn => ipcRenderer.on('recover:load', (e, r) => fn(r)),

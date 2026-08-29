@@ -820,3 +820,26 @@ li.editing { flex-wrap: wrap; align-items: flex-start; }
 #msg.bad { color: var(--danger); }
 #warnings:empty { display: none; }
 #warnings { color: var(--danger); cursor: pointer; }
+
+/* NAT-09: covers the whole window while a file drag is over it - pointer-
+ * events: none so the actual drop still lands on whichever real element is
+ * under the cursor (dragover/drop both keep firing on it, unblocked by this
+ * overlay), rather than this being the drop target itself. */
+#dropzone {
+	position: fixed;
+	inset: 0;
+	z-index: var(--z-overlay);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: var(--space-6);
+	background: rgba(11, 8, 19, .85);
+	border: var(--border-strong) dashed var(--acc);
+	color: var(--fg);
+	pointer-events: none;
+	text-align: center;
+}
+/* #dropzone's own display: flex above outranks the UA stylesheet's [hidden]
+ * rule on specificity alone (an id beats a bare attribute selector) - restated
+ * here, scoped to [hidden], so the element still actually hides. */
+#dropzone[hidden] { display: none; }

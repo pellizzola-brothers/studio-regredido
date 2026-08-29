@@ -16,8 +16,74 @@ const App = {doc: null, path: null, dirty: false, textdirty: false, tab: 'level'
  * as early as possible, before the platform-dependent chrome first paints. */
 document.documentElement.dataset.platform = api.platform;
 
+/* UX-09: shown once, on a genuinely first run (boot(), below) - a fresh
+ * blank level with no prior session to restore. */
+const HINT = 'click to place · right-drag to erase · alt-drag to pan';
+
+/* A11Y-06: style.css's own --font-size/--font-size-sm/--line-box (12px/11px/
+ * 18px) are what every type size and, through the --row-* bands that are
+ * calc()s off --line-box, every row height in the chrome ultimately comes
+ * from - scaling those three together, in place, grows the rows built to
+ * hold a line of text along with the text itself, instead of clipping it.
+ * --space-* (gaps and padding) is deliberately left alone: a dense tool UI's
+ * controls would lose their own grid if those grew with text too.
+ *
+ * POLISH.md's own suggestion was to express --font-size/--font-size-sm in
+ * rem and let a root font-size change do the rest - not done that way here,
+ * because tokens.js reads both with getComputedStyle(...).getPropertyValue(),
+ * which returns a custom property's *specified* value verbatim ("0.75rem"),
+ * never resolved to pixels the way an ordinary property is once applied -
+ * code.js's own Monaco font size would have silently become 0.75 instead of
+ * 12. Overriding the three tokens directly sidesteps that without touching
+ * what tokens.js or code.js read. uibase is captured once, from the
+ * un-scaled tokens still in style.css's own :root, so repeated in/out/reset
+ * commands always compute from the same base rather than compounding a
+ * stale one. */
+let uibase = null;
+
+function uiscalebase()
+{
+	if (!uibase) {
+		const cs = getComputedStyle(document.documentElement);
+		uibase = {
+			size: parseFloat(cs.getPropertyValue('--font-size')),
+			sizeSm: parseFloat(cs.getPropertyValue('--font-size-sm')),
+			line: parseFloat(cs.getPropertyValue('--line-box'))
+		};
+	}
+	return uibase;
+}
+
+const UISCALE_KEY = 'pb-uiscale', UISCALE_STEP = 1.1, UISCALE_MIN = 0.75, UISCALE_MAX = 2;
+
+function applyuiscale(v)
+{
+	v = Math.min(UISCALE_MAX, Math.max(UISCALE_MIN, v));
+	const b = uiscalebase();
+	const root = document.documentElement.style;
+
+	root.setProperty('--font-size', (b.size * v) + 'px');
+	root.setProperty('--font-size-sm', (b.sizeSm * v) + 'px');
+	root.setProperty('--line-box', (b.line * v) + 'px');
+	localStorage.setItem(UISCALE_KEY, v);
+	/* Grid.cv does not exist yet the first time this runs, before Grid.init()
+	 * (index.html loads grid.js ahead of app.js, so Grid itself already does) -
+	 * harmless, since Grid.init() reads the already-scaled CSS on its own
+	 * first layout pass, so nothing is missed. */
+	if (Grid.cv)
+		Grid.resize();
+}
+
+applyuiscale(+localStorage.getItem(UISCALE_KEY) || 1);
+
+/* UX-09: the first-run hint (boot(), below) is sticky - it says so itself,
+ * comparing #msg's own text rather than a separate flag, so it only ever
+ * clears itself and never a different, more recent message that happened to
+ * still be showing when the first edit landed. */
 App.touch = function ()
 {
+	if ($('msg').textContent === HINT)
+		App.say('');
 	if (!App.dirty) {
 		App.dirty = true;
 		api.dirty(true);
@@ -64,7 +130,10 @@ App.syncmenu = function ()
  * message text itself, which role="status" already announces, carries the
  * meaning for a screen reader) plus the existing --danger colour. */
 let saytimer = null;
-App.say = function (m, bad)
+/* UX-09: `sticky` skips the auto-clear timer, for the first-run hint below -
+ * it needs to survive until the user's first edit dismisses it explicitly,
+ * not four seconds, which is barely enough time to read it once. */
+App.say = function (m, bad, sticky)
 {
 	const el = $('msg');
 
@@ -78,7 +147,7 @@ App.say = function (m, bad)
 		el.append(icon, ' ' + m);
 	} else {
 		el.textContent = m || '';
-		if (m)
+		if (m && !sticky)
 			saytimer = setTimeout(() => { el.textContent = ''; }, 4000);
 	}
 };
@@ -587,13 +656,20 @@ function renmidi(old, p)
 	}, 'rename midi');
 }
 
-function delscript(p)
+/* UX-13: used to just refuse, in the status bar, leaving the user to find and
+ * reassign every definition by hand through the inspector. A native
+ * confirmation at least turns that dead end into a choice: deleting anyway
+ * leaves those definitions pointing at a script that no longer exists, which
+ * lvl.js's review() already surfaces as a warning (BUG-11) exactly like any
+ * other dangling reference - nothing new has to detect it. "Reassign to…"
+ * a specific target was left out: the inspector's own script dropdown per
+ * definition already does targeted reassignment once BUG-11's warning has
+ * pointed the user at which ones need it. */
+async function delscript(p)
 {
 	const used = App.doc.json.level.entity_definitions.filter(d => d.script === p);
-	if (used.length) {
-		App.say(p + ' is still used by ' + used.map(d => d.id).join(', '), true);
+	if (used.length && !await call(api.confirmdeletescript(p, used.map(d => d.id))))
 		return;
-	}
 	Undo.act(() => {
 		delete App.doc.scripts[p];
 		App.touch();
@@ -612,21 +688,102 @@ function delmidi(p)
 	sidebar();
 }
 
-async function addmidi()
+/* Shared by the Import MIDI dialog (addmidi(), below) and a drop onto #midis
+ * (dropmidi(), NAT-09) - both end up with the same {name, data} file list,
+ * one from a system dialog and the other from paths resolved in the
+ * preload. */
+function importmidifiles(files)
 {
-	const r = await api.midi();
-	if (!r.ok)
-		return App.fail(r.err);
-	if (r.cancel)
-		return;
-
 	Undo.act(() => {
-		for (const f of r.files)
+		for (const f of files)
 			App.doc.midi[f.name] = f.data;
 		App.touch();
 	}, 'import midi');
 	sidebar();
+	App.say('imported ' + files.length + ' file(s)');
+}
+
+async function addmidi()
+{
+	const r = await call(api.midi());
+	if (!r)
+		return;
+	importmidifiles(r.files);
+}
+
+/* NAT-09: a .mid/.midi file dropped onto #midis. */
+async function dropmidi(paths)
+{
+	const r = await call(api.importmidipaths(paths));
+	if (r)
+		importmidifiles(r.files);
+}
+
+/* NAT-09: a .lua file dropped onto #scripts - collision-avoided the same way
+ * App.newscript() already avoids one, since a dropped file's own name is not
+ * guaranteed unique in the archive. */
+async function dropscripts(paths)
+{
+	const r = await call(api.importscriptpaths(paths));
+	if (!r)
+		return;
+	Undo.act(() => {
+		for (const f of r.files) {
+			const base = f.name.replace(/\.lua$/i, '');
+			let p = f.name, n = 2;
+			while (App.doc.scripts[p] !== undefined)
+				p = base + '_' + n++ + '.lua';
+			App.doc.scripts[p] = f.data;
+		}
+		App.touch();
+	}, 'import script');
+	sidebar();
 	App.say('imported ' + r.files.length + ' file(s)');
+}
+
+/* NAT-09: dropping a .lvl/.json anywhere else opens it, through the same
+ * unsaved-changes guard any other open crosses (App.openrecent() already
+ * does exactly this for a path the menu, rather than a drop, supplied). */
+function dropzone() { return $('dropzone'); }
+
+/* preventDefault() here, unconditionally, is the actual backstop - without
+ * it on dragover specifically, the browser never fires drop at all and falls
+ * through to its own default, navigating the window to the file (the
+ * NAT-18/BUG-01 class of data loss this finding is partly about closing). */
+function showdropzone(ev)
+{
+	ev.preventDefault();
+	if (ev.dataTransfer.types.includes('Files'))
+		dropzone().hidden = false;
+}
+
+function hidedropzone() { dropzone().hidden = true; }
+
+async function drop(ev)
+{
+	ev.preventDefault();
+	hidedropzone();
+	const files = [...ev.dataTransfer.files].map(f => ({name: f.name, path: api.droppath(f)}));
+	if (!files.length)
+		return;
+
+	const onmidi = ev.target.closest && ev.target.closest('#midis');
+	const onscript = ev.target.closest && ev.target.closest('#scripts');
+
+	if (onmidi) {
+		const midis = files.filter(f => /\.midi?$/i.test(f.name)).map(f => f.path);
+		if (midis.length)
+			return dropmidi(midis);
+	}
+	if (onscript) {
+		const luas = files.filter(f => /\.lua$/i.test(f.name)).map(f => f.path);
+		if (luas.length)
+			return dropscripts(luas);
+	}
+	const level = files.find(f => /\.(lvl|json)$/i.test(f.name));
+	if (level)
+		return App.openrecent(level.path);
+	App.say('unsupported file type', true);
 }
 
 /* ---- documents ---- */
@@ -671,6 +828,28 @@ App.setdoc = function (doc, path)
 	App.retitle();
 };
 
+/* ARCH-06: every api.*() invoke call used to come back as one of two shapes -
+ * {ok:true, ...} or {ok:false, err}, plus a bare {cancel:true} spread into
+ * the success shape by whichever handlers wrap a dialog - so a call site had
+ * to remember two separate checks, and a missed cancel check would read a
+ * dismissed dialog as a successful, empty result.  main.js now answers one
+ * shape, {status:'ok'|'cancel'|'error', data, message}; this is the one place
+ * that unwraps it.  A cancel and an error both resolve to undefined here - an
+ * error is already reported (App.fail()) before returning, and a cancel is a
+ * silent no-op every caller already treated as such - so every call site below
+ * collapses to a single `if (!r) return;`, which cannot forget the other one. */
+async function call(promise)
+{
+	const r = await promise;
+	if (r.status === 'error') {
+		App.fail(r.message);
+		return undefined;
+	}
+	if (r.status === 'cancel')
+		return undefined;
+	return r.data;
+}
+
 /* True if it is safe to throw the current document away. */
 async function guard()
 {
@@ -690,22 +869,23 @@ App.new = async function ()
 {
 	if (!await guard())
 		return;
-	const r = await api.blank();
-	if (!r.ok)
-		return App.fail(r.err);
+	const r = await call(api.blank());
+	if (!r)
+		return;
 	App.setdoc(r.doc, null);
 	App.setwarnings(r.warnings);
 	App.say('new level');
 };
 
-App.open_ = async function ()
+/* Named openlevel rather than open_ (ARCH-06) - the trailing underscore only
+ * ever existed to dodge the `open` keyword, and said nothing about what the
+ * function does. */
+App.openlevel = async function ()
 {
 	if (!await guard())
 		return;
-	const r = await api.open();
-	if (!r.ok)
-		return App.fail(r.err);
-	if (r.cancel)
+	const r = await call(api.open());
+	if (!r)
 		return;
 	App.setdoc(r.doc, r.path);
 	App.setwarnings(r.warnings);
@@ -719,9 +899,9 @@ App.openrecent = async function (p)
 {
 	if (!await guard())
 		return;
-	const r = await api.openpath(p);
-	if (!r.ok)
-		return App.fail(r.err);
+	const r = await call(api.openpath(p));
+	if (!r)
+		return;
 	App.setdoc(r.doc, r.path);
 	App.setwarnings(r.warnings);
 	App.say('opened ' + r.path);
@@ -733,19 +913,17 @@ App.save = async function ()
 	if (!App.path)
 		return App.saveas();
 
-	const r = await api.save(App.doc);
-	if (!r.ok)
-		return App.fail(r.err);
+	const r = await call(api.save(App.doc));
+	if (!r)
+		return;
 	saved(r.path, r.warnings);
 };
 
 App.saveas = async function ()
 {
 	Grid.commit();
-	const r = await api.saveas(App.doc, App.doc.json.level.information.name);
-	if (!r.ok)
-		return App.fail(r.err);
-	if (r.cancel)
+	const r = await call(api.saveas(App.doc, App.doc.json.level.information.name));
+	if (!r)
 		return;
 	saved(r.path, r.warnings);
 };
@@ -769,9 +947,19 @@ function saved(p, warnings)
  * accelerators that used to be hand-matched against e.key in this file now
  * belong to the menu template, which is layout-aware where e.key never was. */
 
+/* NAT-14: cycles through the Level Editor plus every open script tab, in tab
+ * strip order - the level is always first and always present, so it anchors
+ * the wrap-around at both ends. */
+function switchtab(dir)
+{
+	const order = ['level', ...App.open];
+	const i = (order.indexOf(App.tab) + dir + order.length) % order.length;
+	App.select(order[i]);
+}
+
 const ACTS = {
 	'new':		() => App.new(),
-	open:		() => App.open_(),
+	open:		() => App.openlevel(),
 	save:		() => App.save(),
 	saveas:		() => App.saveas(),
 	undo:		() => Undo.undo(),
@@ -793,7 +981,14 @@ const ACTS = {
 	zoom200:	() => Grid.zoomto(2),
 	fitheight:	() => Grid.fitH(),
 	fitwidth:	() => Grid.fitW(),
-	fitall:		() => Grid.fit()
+	fitall:		() => Grid.fit(),
+	/* NAT-14: View -> Next/Previous Tab, Control+Tab/Control+Shift+Tab. */
+	nexttab:	() => switchtab(1),
+	prevtab:	() => switchtab(-1),
+	/* A11Y-06: View -> Increase/Decrease/Reset Text Size. */
+	uitextinc:	() => applyuiscale((+localStorage.getItem(UISCALE_KEY) || 1) * UISCALE_STEP),
+	uitextdec:	() => applyuiscale((+localStorage.getItem(UISCALE_KEY) || 1) / UISCALE_STEP),
+	uitextreset:	() => applyuiscale(1)
 };
 
 /* Canvas-local keys only: Escape, Delete, and now the A11Y-03 keyboard-editing
@@ -876,6 +1071,15 @@ addEventListener('DOMContentLoaded', () => {
 	$('side').oncontextmenu = panelmenu;
 	$('zoom').onclick = () => api.zoommenu();
 	addEventListener('keydown', keys, true);
+	/* NAT-09: a global backstop first - main.js's own will-navigate guard
+	 * (NAT-18) already stops a stray drop from replacing the app with a view
+	 * of the file, but only after Chromium has already decided to navigate;
+	 * preventDefault() here is what stops that decision from being made in
+	 * the first place, on every element, not only the ones with their own
+	 * handling below. */
+	addEventListener('dragover', showdropzone);
+	addEventListener('dragleave', ev => { if (!ev.relatedTarget) hidedropzone(); });
+	addEventListener('drop', drop);
 	api.onclose(tryclose);
 	api.oncmd(name => { if (ACTS[name]) ACTS[name](); });
 	/* NAT-05: the item main.js's native popup sent back, dispatched by the
@@ -911,7 +1115,7 @@ addEventListener('DOMContentLoaded', () => {
 		Panel.palette();
 		Panel.inspect();
 	};
-	/* A recovered document (UX-10) replaces whatever api.blank() loaded below,
+	/* A recovered document (UX-10) replaces whatever boot() loaded below,
 	 * whenever main decides there is a crash snapshot to offer - which can
 	 * land well after 'ready', since it waits on a native dialog. */
 	api.onrecover(r => {
@@ -925,11 +1129,23 @@ addEventListener('DOMContentLoaded', () => {
 	});
 	api.onopenrecent(p => App.openrecent(p));
 
-	api.blank().then(r => {
-		App.setdoc(r.doc, null);
+	/* UX-09: restores the last session's document instead of always landing
+	 * on an untitled blank one - lvl:init (main.js) falls back to the same
+	 * blank lvl:new would have produced when there is nothing to restore, so
+	 * a total failure of that channel still leaves something to load here.
+	 * PERF-07: main holds win.show() until 'ui:ready' arrives (or a 2s
+	 * fallback fires), so this is also what decides when the window's first
+	 * visible frame shows a real document instead of an empty chrome. */
+	(async function boot()
+	{
+		let r = await call(api.init());
+		if (!r)
+			r = await call(api.blank());
+		App.setdoc(r.doc, r.path || null);
 		App.setwarnings(r.warnings);
-		App.say('ready');
-	});
+		App.say(r.restored ? 'restored last session' : HINT, false, !r.restored);
+		api.uiready();
+	})();
 
 	/* Snapshot the document for crash recovery (UX-10) roughly every 30s while
 	 * dirty.  Idle-triggered - never mid-gesture - so it can never observe a

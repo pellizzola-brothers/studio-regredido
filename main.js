@@ -81,6 +81,9 @@ function loadwindowstate()
 	}
 }
 
+/* UX-09: `path` rides in the same file window geometry already persists to,
+ * rather than a second one - both are per-machine view state written once,
+ * on close, and read back once, at the next launch's lvl:init (below). */
 function savewindowstate()
 {
 	if (!win)
@@ -89,7 +92,8 @@ function savewindowstate()
 		fs.writeFileSync(windowstatepath(), JSON.stringify({
 			bounds: win.getNormalBounds(),
 			maximized: win.isMaximized(),
-			fullscreen: win.isFullScreen()
+			fullscreen: win.isFullScreen(),
+			path: doc.path
 		}));
 	} catch (e) { /* best-effort: a failed write must not block closing */ }
 }
@@ -208,11 +212,32 @@ function deadrenderer(detail)
 	});
 }
 
+/* PERF-07: 'ready-to-show' only means the renderer painted a first
+ * compositor frame, which can still be an empty chrome - that frame lands
+ * before app.js's own api.init() round trip (UX-09) has resolved and called
+ * App.setdoc().  win.show() waits instead for the renderer's own 'ui:ready'
+ * signal, sent once a real document is loaded, with a fallback timer in case
+ * something upstream of it throws and the signal never arrives: a window
+ * that never appears is a worse failure than the blank flash this replaces.
+ * `shown`/`showtimer` are local to each createwin() call (module-level `win`
+ * itself is reassigned per call already) so a macOS re-open through
+ * 'activate' after every window closed starts this over cleanly. */
 function createwin()
 {
 	const state = loadwindowstate();
 	const restore = state && fitsdisplay(state.bounds);
 	const geometry = restore ? state.bounds : defaultbounds();
+	let shown = false, showtimer = null;
+
+	function showwin()
+	{
+		if (shown || !win)
+			return;
+		shown = true;
+		clearTimeout(showtimer);
+		win.show();
+		maybeRecover();
+	}
 
 	win = new BrowserWindow({
 		...geometry, minWidth: MINW, minHeight: MINH,
@@ -236,7 +261,13 @@ function createwin()
 	}
 	retitle();
 	win.loadURL('app://studio/index.html');
-	win.once('ready-to-show', () => { win.show(); maybeRecover(); });
+	win.once('ready-to-show', () => { showtimer = setTimeout(showwin, 2000); });
+	/* Named rather than passed inline, so a window closed before it ever
+	 * signals 'ui:ready' (a very slow or crashed boot) does not leave a
+	 * listener registered forever - removed below alongside the other
+	 * per-window listeners once this window actually closes. */
+	function onready() { showwin(); }
+	ipcMain.once('ui:ready', onready);
 	/* Nothing in Studio ever opens a second window; deny by default so a stray
 	 * target=_blank (Monaco's link handling can produce one) cannot spawn an
 	 * uncontrolled BrowserWindow. */
@@ -268,7 +299,7 @@ function createwin()
 		deadrenderer('The window\'s process exited (' + details.reason + ').'));
 	win.webContents.on('unresponsive', () =>
 		deadrenderer('The window is not responding.'));
-	win.on('closed', () => { win = null; });
+	win.on('closed', () => { win = null; clearTimeout(showtimer); ipcMain.removeListener('ui:ready', onready); });
 	menu.set(win, menustate, loadrecent(), clearrecent);
 }
 
@@ -291,15 +322,26 @@ app.on('window-all-closed', () => {
 		app.quit();
 });
 
-/* Every handler answers {ok: true, ...} or {ok: false, err: "<message>"} so the
- * renderer can put the failure in the inspector instead of dying. */
+/* ARCH-06: every invoke() handler used to answer one of three shapes - guard's
+ * own {ok: true, ...spread} / {ok: false, err}, a bare {cancel: true} spread
+ * into that same envelope by the handlers that wrap a dialog, and ask:discard's
+ * unwrapped string - so a caller had to remember two different checks
+ * (!r.ok, then r.cancel) and a missed one silently treated a cancelled dialog
+ * as a success.  One shape now: {status: 'ok'|'cancel'|'error', data, message}.
+ * A handler returns CANCEL, the one sentinel value guard() itself recognises,
+ * to signal a dialog was dismissed; anything else it returns becomes `data`;
+ * a thrown error becomes `message`.  app.js's own call() is the one place
+ * that unwraps this, so no renderer call site can forget either check again. */
+const CANCEL = Symbol('cancel');
+
 function guard(fn)
 {
 	return async (...a) => {
 		try {
-			return Object.assign({ok: true}, await fn(...a));
+			const data = await fn(...a);
+			return data === CANCEL ? {status: 'cancel'} : {status: 'ok', data};
 		} catch (e) {
-			return {ok: false, err: String(e.message || e)};
+			return {status: 'error', message: String(e.message || e)};
 		}
 	};
 }
@@ -396,7 +438,7 @@ ipcMain.handle('lvl:open', guard(async () => {
 		title: 'Open level', filters: OPENFILTERS, properties: ['openFile']
 	});
 	if (r.canceled)
-		return {cancel: true};
+		return CANCEL;
 	return openfile(r.filePaths[0]);
 }));
 
@@ -404,6 +446,26 @@ ipcMain.handle('lvl:open', guard(async () => {
  * renderer rather than calling this directly - it still has to cross the
  * renderer's own unsaved-changes guard first, exactly like any other open. */
 ipcMain.handle('lvl:openpath', guard(async (e, p) => openfile(p)));
+
+/* UX-09: a document-based app reopens what was open last, not an untitled
+ * blank every launch. Asked once at boot (app.js's api.init(), before the
+ * window is ever shown - PERF-07, above); only trusted if the file is still
+ * there, and if opening it throws (moved onto a corrupted level, say) this
+ * falls back to blank exactly like a first run rather than failing the
+ * whole boot. */
+ipcMain.handle('lvl:init', guard(async () => {
+	const state = loadwindowstate();
+	if (state && state.path && fs.existsSync(state.path)) {
+		try {
+			return Object.assign({restored: true}, openfile(state.path));
+		} catch (e) { /* fall through to blank, below */ }
+	}
+	doc.path = null;
+	doc.name = null;
+	retitle();
+	const d = lvl.blank();
+	return {restored: false, doc: d, warnings: lvl.review(d), path: null};
+}));
 
 /* A save failure is otherwise easy to miss entirely: the Text Editor tab
  * hides the whole inspector, where the validator's output normally lands
@@ -558,7 +620,7 @@ ipcMain.handle('lvl:saveas', guard(async (e, d, name) => {
 		defaultPath: (name || 'untitled') + '.lvl'
 	});
 	if (r.canceled)
-		return {cancel: true};
+		return CANCEL;
 	const p = forcelvl(r.filePath);
 	try {
 		backup(p);
@@ -581,11 +643,50 @@ ipcMain.handle('midi:import', guard(async () => {
 		filters: [{name: 'MIDI', extensions: ['mid', 'midi']}]
 	});
 	if (r.canceled)
-		return {cancel: true};
+		return CANCEL;
 	return {files: r.filePaths.map(p => ({
 		name: 'midi/' + path.basename(p),
 		data: new Uint8Array(fs.readFileSync(p))
 	}))};
+}));
+
+/* NAT-09: the dialog-driven midi:import above and this one differ only in
+ * where the paths come from - a system Open dialog there, a drop onto #midis
+ * in the renderer here (app.js's dropmidi()).  Same shape back, so both
+ * funnel through App's own importmidifiles(). */
+ipcMain.handle('midi:importpaths', guard(async (e, paths) => ({
+	files: paths.map(p => ({
+		name: 'midi/' + path.basename(p),
+		data: new Uint8Array(fs.readFileSync(p))
+	}))
+})));
+
+/* NAT-09: a .lua dropped onto #scripts - read as text (unlike MIDI's raw
+ * bytes) since Monaco and App.doc.scripts both want the script as a string,
+ * the same shape App.newscript()'s own template string already uses. */
+ipcMain.handle('script:importpaths', guard(async (e, paths) => ({
+	files: paths.map(p => ({
+		name: 'scripts/' + path.basename(p),
+		data: fs.readFileSync(p, 'utf8')
+	}))
+})));
+
+/* UX-13: delscript() (app.js) used to refuse outright, in the status bar,
+ * leaving the user to find and reassign each definition by hand through the
+ * inspector.  A native confirmation at least turns that dead end into one
+ * choice - delete anyway, leaving the definitions pointing at a script that
+ * no longer exists, which lvl.js's review() already surfaces as a warning
+ * (BUG-11) exactly like any other dangling reference, so nothing new needs
+ * to detect it. */
+ipcMain.handle('script:confirmdelete', guard(async (e, name, users) => {
+	const r = await dialog.showMessageBox(win, {
+		type: 'warning', buttons: ['Cancel', 'Delete Anyway'], defaultId: 0,
+		cancelId: 0, noLink: true, title: 'Script In Use',
+		message: '"' + name + '" is still used by ' + users.join(', ') + '.',
+		detail: 'Deleting it leaves ' + (users.length > 1 ? 'those definitions' : 'that definition') +
+			' pointing at a missing script - reassign one from the inspector to fix it, or delete anyway.'
+	});
+	return r.response === 1;
 }));
 
 /* Asked before closing a dirty document.  Returns 'save' | 'discard' | 'cancel'
