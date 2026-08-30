@@ -35,6 +35,10 @@ contextBridge.exposeInMainWorld('api', {
 	save:		doc => ipcRenderer.invoke('lvl:save', doc),
 	saveas:		(doc, name) => ipcRenderer.invoke('lvl:saveas', doc, name),
 	midi:		() => ipcRenderer.invoke('midi:import'),
+	/* UX-18: exports one already-imported MIDI file back out to a real
+	 * path the user picks - the renderer holds the bytes (App.doc.midi),
+	 * main owns writing them. */
+	exportmidi:	(name, bytes) => ipcRenderer.invoke('midi:export', name, bytes),
 	/* NAT-09: a drop's real filesystem path can only be resolved here, in the
 	 * preload - File.path is deprecated in favour of webUtils.getPathForFile,
 	 * which Electron only exposes to preload scripts. */

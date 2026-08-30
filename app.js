@@ -452,7 +452,10 @@ function list(ul, keys, isscript)
 
 		b.textContent = k.replace(/^[^/]+\//, '');
 		li.className = App.tab === k ? 'on' : '';
-		li.title = k;
+		/* UX-18: a MIDI row's own tooltip carries what App.doc.midi otherwise
+		 * never surfaces - size, and whatever midiinfo() could parse from the
+		 * header chunk. A script row's tooltip stays just its own path. */
+		li.title = isscript ? k : k + ' · ' + midisummary(App.doc.midi[k]);
 		li.setAttribute('role', 'option');
 		li.setAttribute('aria-selected', App.tab === k ? 'true' : 'false');
 		li.appendChild(b);
@@ -743,6 +746,39 @@ function delmidi(p)
 		App.touch();
 	}, 'delete midi');
 	sidebar();
+}
+
+/* UX-18: cheap header-chunk parse - MThd, a fixed 6-byte payload after an
+ * 8-byte "MThd"+length header: format (2 bytes), track count (2 bytes),
+ * division (2 bytes, ticks-per-quarter-note if the top bit is 0). */
+function midiinfo(bytes)
+{
+	if (bytes.length < 14 || String.fromCharCode(...bytes.subarray(0, 4)) !== 'MThd')
+		return null;
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	return {
+		format: view.getUint16(8),
+		tracks: view.getUint16(10),
+		division: view.getUint16(12)
+	};
+}
+
+function midisummary(bytes)
+{
+	const kb = (bytes.length / 1024).toFixed(1) + ' KB';
+	const info = midiinfo(bytes);
+	if (!info)
+		return kb;
+	return kb + ' · format ' + info.format + ' · ' + info.tracks +
+		' track' + (info.tracks === 1 ? '' : 's') + ' · ' +
+		(info.division & 0x8000 ? 'SMPTE' : info.division + ' ticks/quarter');
+}
+
+async function exportmidi(key)
+{
+	const r = await call(api.exportmidi(key, App.doc.midi[key]));
+	if (r)
+		App.say('exported ' + r.path);
 }
 
 /* Shared by the Import MIDI dialog (addmidi(), below) and a drop onto #midis
@@ -1178,6 +1214,8 @@ addEventListener('DOMContentLoaded', () => {
 				edit(li, li.querySelector('span'), a.key, a.kind === 'script');
 		} else if (a.action === 'delete')
 			(a.kind === 'script' ? delscript : delmidi)(a.key);
+		else if (a.action === 'export')
+			exportmidi(a.key);
 		else if (a.action === 'newscript')
 			addscript();
 		else if (a.action === 'importmidi')

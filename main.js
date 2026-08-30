@@ -5,7 +5,7 @@
  * web workers get a real, same-origin base URL to import from. */
 'use strict';
 
-const {app, protocol, net, ipcMain, dialog, BrowserWindow, Menu, screen} = require('electron');
+const {app, protocol, net, ipcMain, dialog, BrowserWindow, Menu, screen, nativeTheme} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -55,17 +55,15 @@ const singleinstance = app.requestSingleInstanceLock();
 if (!singleinstance)
 	app.quit();
 else
-	/* The argv this fires with is NAT-07's own to parse (a path arrives
-	 * there once file association exists); until then this only recovers
-	 * the one thing every platform can already promise - the existing
-	 * window comes forward instead of a second one opening silently behind
-	 * it. */
-	app.on('second-instance', () => {
+	app.on('second-instance', (e, argv) => {
 		if (!win)
 			return;
 		if (win.isMinimized())
 			win.restore();
 		win.focus();
+		const p = argvpath(argv);
+		if (p)
+			openpath(p);
 	});
 
 let win = null;
@@ -77,6 +75,45 @@ let menustate = {tab: 'level', canUndo: false, canRedo: false};
  * BrowserWindow as an ad-hoc `win.dirty` property (which vanished with the
  * window, and was never really a window property to begin with). */
 const doc = {path: null, dirty: false, name: null};
+
+/* NAT-07: a path to open, from macOS's own `open-file`, a second instance's
+ * argv (NAT-08's own handler, above), or this instance's own initial argv
+ * (Windows/Linux, launched by double-clicking a file). `winready` - true
+ * only once the renderer itself has signalled `ui:ready` (PERF-07), not
+ * merely once `win` exists - is what decides whether to send it now or
+ * queue it: `open-file` in particular can fire before the window exists at
+ * all, and even once it does, its own IPC listeners are not attached until
+ * DOMContentLoaded has run, so a message sent any earlier would simply be
+ * lost. `openpath()` reuses NAT-06's own `open-recent` channel rather than
+ * inventing a second one - both are "a path the main process already knows,
+ * that still has to cross the renderer's own unsaved-changes guard before
+ * it replaces the open document." */
+let pendingopen = null;
+let winready = false;
+
+function openpath(p)
+{
+	if (winready)
+		win.webContents.send('open-recent', p);
+	else
+		pendingopen = p;
+}
+
+/* A packaged app's own argv is [electron binary, ...args]; a dev launch
+ * (`electron .`) additionally carries the app path itself as one of those
+ * args - either way, the level path (if any) is whichever argument actually
+ * names one. */
+function argvpath(argv)
+{
+	return argv.find(a => /\.(lvl|json)$/i.test(a));
+}
+
+/* Can fire before whenReady() - the classic bug in this area - which is
+ * exactly why openpath() queues rather than assumes `win` exists yet. */
+app.on('open-file', (e, p) => {
+	e.preventDefault();
+	openpath(p);
+});
 
 /* NAT-03: title, proxy icon and edited-dot conventions, all driven from doc
  * rather than from anything the renderer passes at the moment it happens -
@@ -181,15 +218,41 @@ function savesettings(s)
 	} catch (e) { /* best-effort: a failed write must not block the caller */ }
 }
 
-/* macOS: also populates the Dock icon's own Recent submenu, for free.
- * Windows: only feeds the taskbar JumpList once the app is registered as the
- * .lvl handler (NAT-07, still open) - harmless, and correct now, either way. */
+/* NAT-17: the Dock's own custom menu (New Level, Open Recent) - mirrors the
+ * File menu's own Open Recent submenu from the same persisted list (NAT-06)
+ * so the two can never disagree, and routes both actions through the same
+ * guarded paths as the menu bar: `cmd`/`new` for App.new(), openpath() for
+ * a recent file, since a Dock click deserves the same unsaved-changes
+ * protection a menu click already gets. macOS only - Windows' equivalent is
+ * the JumpList, entirely automatic (`app.setUserTasks()`, `addRecentDocument()`
+ * below) and has no custom-menu concept to build here. */
+function setdockmenu()
+{
+	if (!chrome.mac)
+		return;
+	const recent = loadrecent();
+	app.dock.setMenu(Menu.buildFromTemplate([
+		{label: 'New Level', click: () => { if (win) win.webContents.send('cmd', 'new'); }},
+		{
+			label: 'Open Recent',
+			submenu: recent.length ?
+				recent.map(p => ({label: path.basename(p), click: () => openpath(p)})) :
+				[{label: 'No Recent Documents', enabled: false}]
+		}
+	]));
+}
+
+/* macOS: also populates the Dock icon's own Recent submenu, for free, and
+ * (setdockmenu(), above) the custom Dock menu's own Open Recent list.
+ * Windows: feeds the taskbar JumpList's own automatic Recent category, now
+ * that NAT-07's file association exists for it to key off. */
 function addrecent(p)
 {
 	app.addRecentDocument(p);
 	saverecent([p, ...loadrecent().filter(x => x !== p)].slice(0, 10));
 	if (win)
 		menu.set(win, menustate, loadrecent(), clearrecent);
+	setdockmenu();
 }
 
 function clearrecent()
@@ -198,6 +261,7 @@ function clearrecent()
 	saverecent([]);
 	if (win)
 		menu.set(win, menustate, [], clearrecent);
+	setdockmenu();
 }
 
 /* A saved rectangle may belong to a monitor that is no longer connected -
@@ -286,6 +350,7 @@ function createwin()
 	const restore = state && fitsdisplay(state.bounds);
 	const geometry = restore ? state.bounds : defaultbounds();
 	let shown = false, showtimer = null;
+	winready = false;		/* a fresh window needs its own fresh ui:ready */
 
 	function showwin()
 	{
@@ -295,6 +360,14 @@ function createwin()
 		clearTimeout(showtimer);
 		win.show();
 		maybeRecover();
+		/* NAT-07: only safe to send a queued open-file/argv path once the
+		 * renderer's own IPC listeners are definitely attached - the same
+		 * moment PERF-07 already established for "the document is real". */
+		winready = true;
+		if (pendingopen) {
+			openpath(pendingopen);
+			pendingopen = null;
+		}
 	}
 
 	win = new BrowserWindow({
@@ -371,8 +444,33 @@ if (singleinstance)
 		app.setAboutPanelOptions({
 			applicationName: NAME,
 			applicationVersion: app.getVersion(),
+			/* NAT-07/NAT-17: build/icon.png exists once packaged (electron-builder
+			 * copies buildResources alongside the app); a dev `npm start` has no
+			 * `build/` next to the running app root the way a packaged one does,
+			 * so this is best-effort and silently absent rather than broken there. */
+			iconPath: path.join(ROOT, 'build', 'icon.png'),
 			copyright: 'Pellizzola Brothers'
 		});
+		/* NAT-07: Windows/Linux hand the opened file's path on the command
+		 * line rather than through open-file - process.argv[0] is the
+		 * Electron binary itself, so this is exactly argvpath()'s own
+		 * "whichever argument actually names one" search over the rest. */
+		const p = argvpath(process.argv);
+		if (p)
+			pendingopen = p;
+		setdockmenu();
+		/* NAT-17: the one JumpList entry that is not already automatic -
+		 * recent documents populate their own category for free, once
+		 * addRecentDocument() (NAT-06) has something to feed it. */
+		if (chrome.win32)
+			app.setUserTasks([{
+				program: process.execPath,
+				arguments: '',
+				iconPath: process.execPath,
+				iconIndex: 0,
+				title: 'New Level',
+				description: 'Create a new level'
+			}]);
 		createwin();
 		app.on('activate', () => {
 			if (!BrowserWindow.getAllWindows().length)
@@ -384,6 +482,19 @@ app.on('window-all-closed', () => {
 	if (!chrome.mac)
 		app.quit();
 });
+
+/* NAT-15: titleBarOverlay's own colours (chrome.js's windowoptions()) are
+ * the app's fixed dark palette, not derived from the OS theme - this app is
+ * deliberately single-theme (see this finding's own "do not build a light
+ * theme" text) - but Windows can still repaint its own caption buttons over
+ * top of them when the system accent or light/dark mode changes, unless the
+ * same values are asserted again. Re-pushing the *same* colours, not new
+ * ones, is the whole fix. */
+if (chrome.win32)
+	nativeTheme.on('updated', () => {
+		if (win)
+			win.setTitleBarOverlay(chrome.windowoptions().titleBarOverlay);
+	});
 
 /* ARCH-06: every invoke() handler used to answer one of three shapes - guard's
  * own {ok: true, ...spread} / {ok: false, err}, a bare {cancel: true} spread
@@ -456,6 +567,10 @@ ipcMain.on('menu:row', (e, ctx) => {
 		items.push({label: chrome.oscase('Rename'), click: send('rename')});
 		items.push({label: chrome.oscase('Delete'), click: send('delete')});
 	}
+	/* UX-18: a MIDI file's own way back out - an import is otherwise a
+	 * one-way trip into the archive. */
+	if (ctx.kind === 'midi')
+		items.push({label: chrome.oscase('Export…'), click: send('export')});
 	/* UX-02: "New Script"/"Import MIDI" used to close every row's own menu
 	 * too, so a menu about one script or MIDI file also always offered two
 	 * commands that act on neither - global create actions belong only on
@@ -676,12 +791,30 @@ function maybeRecover()
 	});
 }
 
+/* NAT-17: a real, if coarse, progress indicator during the one operation
+ * long enough to want one (NAT-19's own async write()) - 2 is Electron's
+ * own documented "indeterminate" value, since fflate's zip() gives no
+ * finer-grained progress to report; -1 removes the bar again regardless of
+ * whether the save succeeded or failed, so a failed save never leaves a
+ * stuck taskbar/Dock indicator behind. */
+async function withprogress(fn)
+{
+	if (win)
+		win.setProgressBar(2);
+	try {
+		return await fn();
+	} finally {
+		if (win)
+			win.setProgressBar(-1);
+	}
+}
+
 ipcMain.handle('lvl:save', guard(async (e, d) => {
 	if (!doc.path)
 		throw new Error('no file to save to');
 	try {
 		backup(doc.path);
-		await lvl.write(doc.path, d);
+		await withprogress(() => lvl.write(doc.path, d));
 	} catch (err) {
 		saveerr(err);
 		throw err;
@@ -709,7 +842,7 @@ ipcMain.handle('lvl:saveas', guard(async (e, d, name) => {
 	const p = forcelvl(r.filePath);
 	try {
 		backup(p);
-		await lvl.write(p, d);
+		await withprogress(() => lvl.write(p, d));
 	} catch (err) {
 		saveerr(err);
 		throw err;
@@ -733,6 +866,20 @@ ipcMain.handle('midi:import', guard(async () => {
 		name: 'midi/' + path.basename(p),
 		data: new Uint8Array(fs.readFileSync(p))
 	}))};
+}));
+
+/* UX-18: the other half of "not a one-way trip" - the bytes themselves live
+ * in the renderer's own App.doc.midi (they arrive here as a plain argument,
+ * structured-clone over IPC), since main owns every filesystem write. */
+ipcMain.handle('midi:export', guard(async (e, name, bytes) => {
+	const r = await dialog.showSaveDialog(win, {
+		title: chrome.oscase('Export MIDI'), defaultPath: path.basename(name),
+		filters: [{name: 'MIDI', extensions: ['mid', 'midi']}]
+	});
+	if (r.canceled)
+		return CANCEL;
+	fs.writeFileSync(r.filePath, Buffer.from(bytes));
+	return {path: r.filePath};
 }));
 
 /* NAT-09: the dialog-driven midi:import above and this one differ only in

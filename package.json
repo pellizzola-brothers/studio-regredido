@@ -3,12 +3,14 @@
 	"productName": "Pellizzola Brothers Studio",
 	"version": "1.0.0",
 	"description": "Level designer studio for Pellizzola Brothers (.lvl)",
+	"author": "Pellizzola Brothers",
 	"main": "main.js",
 	"license": "MIT",
 	"scripts": {
 		"start": "electron .",
 		"lint": "eslint .",
-		"check": "node tools/check.js"
+		"check": "node tools/check.js",
+		"dist": "electron-builder"
 	},
 	"dependencies": {
 		"fflate": "^0.8.3",
@@ -16,6 +18,53 @@
 	},
 	"devDependencies": {
 		"electron": "^43.4.1",
+		"electron-builder": "^26.15.3",
 		"eslint": "^10.9.1"
+	},
+	"build": {
+		"appId": "com.pellizzolabrothers.studio",
+		"directories": {
+			"buildResources": "build",
+			"output": "dist"
+		},
+		"files": [
+			"**/*",
+			"!textures/.git",
+			"!tools/**",
+			"!*.md",
+			"!Pellizzola Brothers.svg",
+			"!node_modules/monaco-editor/dev/**",
+			"!node_modules/monaco-editor/esm/**",
+			"!node_modules/monaco-editor/monaco.d.ts",
+			"!node_modules/monaco-editor/CHANGELOG.md",
+			"!node_modules/monaco-editor/ThirdPartyNotices.txt",
+			"!node_modules/monaco-editor/README.md"
+		],
+		"asar": false,
+		"fileAssociations": [
+			{
+				"ext": "lvl",
+				"name": "Pellizzola Brothers Level",
+				"description": "Pellizzola Brothers level",
+				"role": "Editor",
+				"icon": "build/icon"
+			}
+		],
+		"mac": {
+			"category": "public.app-category.developer-tools",
+			"icon": "build/icon.icns",
+			"target": ["zip", "dmg"],
+			"hardenedRuntime": true,
+			"gatekeeperAssess": false
+		},
+		"win": {
+			"icon": "build/icon.ico",
+			"target": ["nsis", "zip"]
+		},
+		"linux": {
+			"icon": "build/icons",
+			"category": "Development",
+			"target": ["AppImage", "deb"]
+		}
 	}
 }
