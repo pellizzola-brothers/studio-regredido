@@ -380,7 +380,8 @@ own row/spacing tokens already set (`--row`, `--row-sm`, `--row-lg`,
 
 ## Deviations from the design file
 
-`Pellizzola Brothers.svg` is the reference for layout and colour. Three
+`Pellizzola Brothers.svg` is the reference for layout and colour. The design
+draws a static mockup with no interaction, error or empty state, so several
 additions were needed for the app to be usable:
 
 - `new / open / save / save as` in the title bar. On macOS and Windows the
@@ -395,7 +396,11 @@ additions were needed for the app to be usable:
   `Ctrl+Z`/`Ctrl+Shift+Z` for the level's undo/redo) are declared once, in the
   menu template, and dispatched through `App`'s `ACTS` table over a `cmd` IPC
   channel — not matched by hand against `keydown` in the renderer.
-- A status bar showing the hovered cell and the last message or error.
+- A status bar showing the hovered cell, the last message or error, and (when
+  `lvl.js`'s `review()` has something to say) a clickable warnings count that
+  switches the inspector to the level view.
+- A search/filter field above the palette (`#palette-filter`), narrowing its
+  31+ cells by name as the user types.
 - A context menu in the file manager, opened by **left**-clicking a row (right
   click works too) — a native `Menu.popup()`, built in `main.js` from context
   the renderer sends over `menu:row` and dispatched back over `rowcmd`. It
@@ -404,7 +409,10 @@ additions were needed for the app to be usable:
   explicitly, so opening a script is now the menu's first entry rather than a
   bare click.
 - Inline renaming, since Electron does not implement `window.prompt`.
-- A horizontal scrollbar under the canvas.
+- A horizontal scrollbar under the canvas, and (GEO-10) a vertical one
+  (`#vbar`) alongside it — the design has no vertical scrollbar for the level
+  at all, since nothing in it shows what a level taller than the viewport
+  even looks like.
 - A right click on the canvas that never dragged deletes whatever is under it
   directly — the same thing a right-*drag* already applies along its path —
   rather than asking first. Only a click with nothing under it to delete (one
