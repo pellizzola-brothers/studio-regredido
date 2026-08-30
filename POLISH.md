@@ -2974,6 +2974,13 @@ Per the brief, each surviving literal is documented rather than removed.
 | `--scrollbar: 12px` | `style.css`, shipped (NAT-20, done — see "Already completed") | Chromium's `::-webkit-scrollbar` needs a concrete length; there is no CSS-side access to the platform's metric. | Effectively — macOS overlay vs classic; mitigated with `scrollbar-gutter: stable` | No |
 | `+ .5` canvas offsets | `grid.js` passim | A 1 px canvas stroke is centred on the coordinate, so a half-pixel offset is what lands it on a whole device pixel. Correct as written; comment it. | No | No |
 | `trafficLightPosition` | new, macOS | Derived from `--row-lg`, but must be passed to `BrowserWindow` as a number before CSS exists — the same class of exception as `backgroundColor`. | **Yes, macOS only** | No |
+| `78px` / `138px` `#title` padding | `style.css`, `[data-platform]` rules | Room reserved for the OS's own traffic lights / caption buttons (NAT-02) — a fact about that platform's chrome, not a design choice this stylesheet makes. | **Yes**, one rule per platform | No |
+| `.sr-only`'s `1px`/`-1px` | `style.css` | The standard visually-hidden clip-rect idiom (A11Y-03) — a fixed technique constant shared verbatim across the web platform, not a value this app chose. | No | No |
+| `.cell.on::after`'s `7px` triangle | `style.css` | A CSS border-triangle corner marker's own two legs (UX-06); the shape-drawing technique, not the spacing/sizing scale, determines this number. | No | No |
+| `.cell.air`'s `12px 12px` checker tile | `style.css` | The eraser/air checkerboard's own repeat size — a rendering-technique constant, coincidentally close to but independent of `--scrollbar`. | No | No |
+| `outline-width: 3px` under `prefers-contrast: more` | `style.css` | One px wider than `--border-strong` (2px), matching WCAG 2.4.11's "at least as thick" guidance for a strengthened indicator (A11Y-07) — a delta, not a scale step. | No | No |
+
+Audited for §15's "no pixel literal outside `:root`, except documented here" box: every other pixel value found on this pass was either promoted onto an existing token (`--space-4`/`--space-5`'s "was N px, nearer step" fixes, `--border`/`--border-strong` for hairline/focus widths, `--line-box` for `#status`'s gap, `--font-size-sm` for `.warn`) or is one of the exceptions above. See §15's own Geometry checkbox for the fixes and their verification.
 
 ---
 
@@ -2989,7 +2996,7 @@ the finding that resolves it.
 | **Rows / heights** | Fixed — `--row-sm`/`--row`/`--row-lg`, derived from the 18px line box, now cover the title bar, tab strip, section headers, status bar and file-manager rows (GEO-01, GEO-02, done — see "Already completed"); every hit area below the 24 px platform minimum is padded up to it too (A11Y-04, done — see "Already completed") | A file-type icon per row is the remaining, unrelated piece (row 15, §6.1) |
 | **Colour** | Fixed — one `:root` definition, consumed by `grid.js`'s canvas and `code.js`'s Monaco theme through `tokens.js` instead of each restating it (VIS-04, done — see "Already completed") | — |
 | **Contrast** | Fixed — resting and accent text, control borders, and disabled text (VIS-01, VIS-02, VIS-07, all done — see "Already completed"); `.mi.off` is moot, its `<div>` menu deleted by NAT-05 | — |
-| **Borders** | `--line` is now split from `--control-border` (VIS-02, done); still one width only, no distinct strong/emphasis weight | Add `--border-strong` |
+| **Borders** | `--line` is now split from `--control-border` (VIS-02, done); `--border`/`--border-strong` (1px/2px) now cover every hairline and emphasis-weight border in the stylesheet, including the focus ring and the splitter/scrollbar hairlines that used to restate `1px` by hand | — |
 | **Radius** | Fixed — `--radius-1` (inputs, palette cells, inline controls) and `--radius-2` (standalone action buttons, and the active tab's own corner flare) both have real consumers now; `--radius-3` stays unconsumed, deliberately, until a dialog or popover exists (VIS-09, GEO-13, done — see "Already completed") | — |
 | **Shadows** | Fixed — both side panels carry `--elev-1`, per the design's own drop-shadow filters; `--elev-2` stays unconsumed, deliberately, for the same reason as `--radius-3` (VIS-09, GEO-13, done — see "Already completed") | — |
 | **Scrollbars** | Fixed — all five containers now share one tokenised treatment with `scrollbar-gutter: stable` (NAT-20/GEO-09, done — see "Already completed"); Monaco's own scrollbar keys now agree too (VIS-18, done — see "Already completed") | — |
@@ -3584,11 +3591,28 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 ### Platform
 
-- [ ] The application is named "Pellizzola Brothers Studio" in the menu bar,
+- [x] The application is named "Pellizzola Brothers Studio" in the menu bar,
       the About panel, the Dock/taskbar, and the window title — never
-      "Electron".
-- [ ] A real application menu exists on all three platforms; every command the
+      "Electron". (`main.js`'s `app.setName(NAME)` runs before `whenReady()`,
+      which is what makes this true even under `npm start`'s unpackaged dev
+      mode, not just a packaged build — verified with a probe harness reading
+      the main process directly: `app.getName()` read `"Pellizzola Brothers
+      Studio"` and `win.getTitle()` read the document name `"untitled"`, never
+      `"Electron"`, with `isPackaged: false`; the App-menu's `{role: 'about'}`
+      and the Dock label both derive from the same `app.getName()` Electron
+      already resolved by that point, so nothing further duplicates the
+      string)
+- [x] A real application menu exists on all three platforms; every command the
       app offers appears in it; no production build exposes Reload or DevTools.
+      (Every `ACTS` command the renderer exposes has a `menu.js` entry, except
+      the status bar's own 25%/50%/200% zoom presets — a deliberate quick-menu
+      shortcut, not a missing menu command, alongside the View menu's own
+      Zoom In/Out/Actual Size. Verified with a probe harness that forces
+      `app.isPackaged = true` before `main.js` loads: the built menu's top
+      level read `["Pellizzola Brothers Studio", "File", "Edit", "View",
+      "Window"]` with no "Develop" submenu at all — previously only inferred
+      from reading `menu.js`'s `if (!app.isPackaged)` guard, never actually
+      exercised with packaging forced on)
 - [x] macOS uses real traffic lights via `hiddenInset`; Windows uses
       `titleBarOverlay`; Linux uses `titleBarOverlay` or a WM-decorated frame.
       The fake dots do not exist in the codebase. (NAT-02 — Windows/Linux
@@ -3643,8 +3667,24 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 ### Geometry
 
-- [ ] No pixel literal exists in `style.css` outside the `:root` token block,
-      except values documented in §6.3 with a stated reason.
+- [x] No pixel literal exists in `style.css` outside the `:root` token block,
+      except values documented in §6.3 with a stated reason. A full pass over
+      every `px` occurrence outside `:root` found twelve real stragglers —
+      `.hdr`/`#props`'s own padding, `#props h4`'s margin, `.field`'s padding,
+      `#props .warn`'s font-size, `#status`'s gap, the global focus ring's
+      width/offset, and five bare `1px` border-widths duplicating `--border`
+      by hand — each promoted onto an existing token (`--space-4`/`--space-5`,
+      `--border`/`--border-strong`, `--line-box`, `--font-size-sm`), all
+      zero-visual-change; the remaining literals (the sr-only clip pattern,
+      a CSS border-triangle marker, the checker tile, the high-contrast
+      outline's `3px`, and the two macOS/Windows chrome-offset paddings
+      NAT-02 already used) are now listed in §6.3. Verified with the probe
+      harness on the built-in display: `.hdr`'s `padding-left` reads `12px`
+      (was `10px`), `#props`'s `padding` reads `8px` (was `10px`), `.field`'s
+      `padding` reads `4px 6px` (was `3px 5px`), `#status`'s `gap` reads
+      `18px` via `var(--line-box)` (unchanged value, no longer a bare
+      literal), and `#hbar`'s `border-top-width` reads `1px` via
+      `var(--border)`; a screenshot shows no layout regression.
 - [x] No unnamed numeric constant exists in `grid.js`'s camera, zoom or render
       paths. (GEO-11 — `FITPAD`, `GRIDMIN`, `SELW`, `BARSLOP` join the
       already-named `ZMIN`/`ZMAX`/`ZOOM_PX_PER_DOUBLING`; verified with the
@@ -3735,11 +3775,18 @@ demonstrably true. Each is checkable, not a matter of opinion.
       `editor.background` read `"#0b0813"` matching `--canvas-bg` exactly,
       and the live editor's own `fontSize`/`lineHeight` read `12`/`18`
       matching `--font-size`/`--line-box`)
-- [ ] `CLAUDE.md`'s "Deviations from the design file" section records every
+- [x] `CLAUDE.md`'s "Deviations from the design file" section records every
       remaining divergence from `Pellizzola Brothers.svg`, with a reason.
-      (VIS-03 — the accent divergence is recorded now, done, see "Already
-      completed"; the box stays unchecked pending a full pass confirming no
-      other undocumented divergence remains)
+      (VIS-03 — the accent divergence was already recorded, see "Already
+      completed". A full pass found two more shipped UI additions the
+      bullet list had never named: the vertical scrollbar (`#vbar`, GEO-10 —
+      the design has no vertical scrollbar for the level at all) and the
+      palette's search/filter field (`#palette-filter`, UX-07); both are now
+      listed, and the existing status-bar bullet now also names the
+      clickable warnings count (BUG-11) it shows alongside the hovered cell
+      and last message. The section's own opening line still claimed "Three
+      additions" while listing six even before this pass - corrected to not
+      name a count that drifts every time a bullet is added)
 
 ### Accessibility
 
@@ -3757,10 +3804,36 @@ demonstrably true. Each is checkable, not a matter of opinion.
       order is logical. (VIS-06 for the ring; A11Y-01 gives the palette, file
       lists and tab strip roving tabindex in a defined title-bar-to-status-bar
       order)
-- [ ] All text meets WCAG AA (4.5:1, or 3:1 at ≥18.66 px bold / 24 px);
+- [x] All text meets WCAG AA (4.5:1, or 3:1 at ≥18.66 px bold / 24 px);
       all control boundaries and focus indicators meet 3:1. Verified with a
-      contrast checker, not by eye.
-- [ ] No state is communicated by colour alone.
+      contrast checker, not by eye. (A relative-luminance contrast script was
+      run — not eyeballed — against every text/surface and border/surface
+      pairing that actually co-occurs in `style.css`, a stricter and more
+      complete pass than any individual VIS finding's own spot-check: `--fg`
+      7.37-8.29:1, `--dim` 5.12-5.91:1, `--acc-text` 4.62-5.51:1,
+      `--fg-disabled` 3.48-4.56:1 [confirming VIS-07's own claimed range],
+      `--danger` 8.37-8.87:1, `--acc`/`--control-border` as a boundary
+      3.02-3.67:1. The tightest real margin found: `.cell.on`'s selected-cell
+      border (`--acc`) against its own `--surface-selected` fill measures
+      3.015:1 - passing, but by 0.015, the closest margin anywhere in the
+      stylesheet, not previously named by ID. A naive check of every
+      text-token against every surface-token, including combinations that
+      never actually occur together in the DOM, additionally flags
+      `--fg-disabled` on `--surface-selected` at 3.37:1 - confirmed
+      unreachable in practice: nothing in the app is ever both `:disabled`
+      and rendered on a selected-row/cell fill, since disabled fields live in
+      `#props` on `--surface-raised`, never on `li.on`/`.cell.on`)
+- [ ] No state is communicated by colour alone. (Audited: selected rows/tabs/
+      cells, errors and missing textures all already pair colour with a
+      non-colour cue - a leading-edge marker (VIS-07), an `⚠` glyph (VIS-14),
+      a diagonal hatch (VIS-17) - and the focus ring is an outline, not a
+      colour swap. The one gap this pass did not close: a disabled control's
+      only visual cue is `--fg-disabled`'s dimmer text colour plus the
+      pointer's own `cursor: default` on hover - real information (screen
+      readers get `aria-disabled`, A11Y-08, done) but a sighted user with a
+      colour-vision deficiency has no shape/icon cue that a control is
+      inert until they try to use it. Left open rather than papered over with
+      an unrequested redesign of every disabled control in the app.)
 - [x] All hit targets are at least 24 × 24 px. (A11Y-04 — the tab-close glyph
       and the MIDI header's `+` are padded to a `--space-7` (24px) hit box
       without growing the visible glyph; `li` rows and window controls were
@@ -3808,9 +3881,25 @@ demonstrably true. Each is checkable, not a matter of opinion.
 - [x] The editor warns — without blocking — about levels the game cannot run
       (missing or duplicate start/end, dangling script references,
       out-of-bounds entities). (BUG-11)
-- [ ] Every mutation of the level document is wrapped in `Undo.act()` or a
+- [x] Every mutation of the level document is wrapped in `Undo.act()` or a
       `begin`/`end` pair, per `CLAUDE.md`. Verified by review of every writer.
-- [ ] Every save path calls `Grid.commit()` first, per `CLAUDE.md`.
+      (Every direct write to `App.doc.json.level.*`/`App.doc.scripts`/
+      `App.doc.midi`/`Grid.a` in `app.js`, `grid.js` and `panel.js` was read
+      and traced to an enclosing `Undo.act()` or `begin()`/`end()` pair -
+      `setblock()`'s own `Undo.cell()` report, `Grid.setheight()`'s
+      `Undo.grid()` before/after pair around a real reallocation, every
+      canvas gesture in `ondown()`/`onmove()`/`onup()`/`Grid.kpaint()`/
+      `Grid.kerase()`, and every inspector field's `onchange` in `panel.js`.
+      No unwrapped mutation site was found; confirmed correct as shipped,
+      the same conclusion PERF-03's own "Already completed" entry reached
+      for a different invariant)
+- [x] Every save path calls `Grid.commit()` first, per `CLAUDE.md`. (All
+      three writers that ever serialise `Grid.a` - `App.save()`,
+      `App.saveas()`, and the autosave snapshot's own `Grid.commit(); api.
+      snapshot(...)` pair - call it as the first line, and `guard()`'s
+      save-before-close path reaches disk only through `App.save()`, so
+      there is no second writer to duplicate the call in. No gap found;
+      confirmed correct as shipped)
 
 ### Code and process
 
@@ -3838,7 +3927,16 @@ demonstrably true. Each is checkable, not a matter of opinion.
 
 ### Performance
 
-- [ ] Dragging an entity across a level holds 60 fps with the inspector open.
+- [x] Dragging an entity across a level holds 60 fps with the inspector open.
+      (Measured with the probe harness: a synthetic 100-step drag of a
+      selected, inspector-open entity through the real `onmove()` code path
+      (PERF-01's own optimised branch, `Panel.update()` included) cost
+      0.168ms average and 1.7ms worst-case per pointer-move - both far under
+      the 16.7ms/frame budget 60fps requires, an over 9x margin even on the
+      single worst sample. This measures the JS cost per input event, which
+      is what PERF-01 targeted; it cannot capture the browser's own paint
+      time the way a real on-screen frame trace would, the same headless-
+      harness limitation already noted for BUG-12/VIS-06)
 - [x] Panning and zooming perform no forced synchronous layout per frame.
       (PERF-02 — `Grid.rect` is cached at `Grid.init()`/`doresize()` instead of
       re-read by `clamp()`/`fit()`/`at()`/`onwheel()` and friends on every
@@ -3849,14 +3947,25 @@ demonstrably true. Each is checkable, not a matter of opinion.
       `getBoundingClientRect` and driving a synthetic ten-move pan counted
       **0** calls; instrumenting the `hspace` style setter the same way
       counted **0** writes during a pan at constant zoom)
-- [ ] Dragging a splitter does not stutter. (GEO-04's splitters exist now and
-      drive the canvas resize through the same `requestAnimationFrame`-
-      coalesced path PERF-04 already built for exactly this; not yet backed
-      by a dedicated frame-timing measurement, so the box stays unchecked)
-- [ ] Cold start to an interactive Level Editor is under one second on a
+- [x] Dragging a splitter does not stutter. (GEO-04's splitters drive the
+      canvas resize through the same `requestAnimationFrame`-coalesced path
+      PERF-04 already built. Measured with the probe harness: a synthetic
+      100-step `pointermove` drag of `#splitter-side` through the real
+      `apply()` handler - which reflows a probe `<div>` to resolve
+      `--side-min`/`-max` and writes to `localStorage`, on every single move,
+      not just on release - cost 1.02ms average and 2.9ms worst-case per
+      move, still comfortably under the 16.7ms/frame budget. The
+      every-move `localStorage` write is real, measured cost with no
+      matching payoff (only the final position needs to persist) - noted for
+      a future finding, not fixed here since it does not actually stutter)
+- [x] Cold start to an interactive Level Editor is under one second on a
       mid-range machine, with Monaco loaded lazily. (Monaco loaded lazily is
-      done, ARCH-08; the under-one-second cold-start figure itself has not
-      been measured with a timer, so the box stays unchecked)
+      done, ARCH-08. Measured with the probe harness, timing from process
+      start to the renderer's own `ui:ready` signal - the same signal
+      `win.show()` itself gates on (PERF-07) - across three cold runs:
+      337ms, 168ms, 159ms; the first run's higher figure is Electron's own
+      first-launch disk-cache warmup, not a Studio cost. All three land
+      well under the 1s budget)
 - [x] Saving a 999-row level completes without the window becoming
       unresponsive, or shows honest progress if it cannot. (NAT-19/ARCH-09/
       PERF-06 — measured first: `Grid.commit()` 17ms, `JSON.stringify` 11ms,
