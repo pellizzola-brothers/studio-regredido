@@ -457,6 +457,20 @@ html[data-platform="darwin"] .acts { display: none; }
 #body {
 	display: grid;
 	grid-template-columns: var(--side) var(--split) minmax(0, 1fr) var(--split) var(--right);
+	/* No grid-template-rows ever bounded the single implicit row: an auto row's
+	   max sizing function is max-content, so #stage's own content (ultimately
+	   #vspace/#hspace's own huge intrinsic size, GEO-10) could size the row
+	   arbitrarily tall regardless of #body's own height - the same class of
+	   bug min-height: 0 on #stage/#canvasrow/#wrap/#vbar already guards
+	   against on the *minimum* side, recurring here on the *maximum* side, one
+	   level up, since none of those fixes bound the row track itself. Every
+	   descendant then stretched to fill that oversized row - #wrap and the
+	   canvas included, hundreds of px taller than the real window on every
+	   layout, not just a live resize - which is what let panels and the
+	   status bar clip past the window's own edge, and fed doresize()/
+	   Grid.syncvbar() a bogus rect (#vbar could stay wrongly hidden for a
+	   level that does not actually fit the real viewport). */
+	grid-template-rows: minmax(0, 1fr);
 	flex: 1;
 	min-height: 0;
 }
