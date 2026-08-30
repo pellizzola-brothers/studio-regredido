@@ -220,8 +220,8 @@ button:disabled { color: var(--fg-disabled); cursor: default; }
    keyboard/programmatic focus does.  2px width + 2px offset is what clears
    WCAG 2.4.13's minimum focus-area requirement against a 1px border. */
 :focus-visible {
-	outline: 2px solid var(--acc);
-	outline-offset: 2px;
+	outline: var(--border-strong) solid var(--acc);
+	outline-offset: var(--space-1);
 	transition: outline-color var(--dur-fast) var(--ease);
 }
 
@@ -390,7 +390,7 @@ html[data-platform="darwin"] .acts { display: none; }
    same fix. The explicit background stops a scrolled-under tab showing
    through where this one has none of its own (.tab.on's own background,
    declared later, still wins while this tab is the active one). */
-.tab.pin { position: sticky; left: 0; z-index: var(--z-panel); background: var(--chrome); box-shadow: 1px 0 var(--line); }
+.tab.pin { position: sticky; left: 0; z-index: var(--z-panel); background: var(--chrome); box-shadow: var(--border) 0 var(--line); }
 .tab:hover { color: var(--fg); background: var(--surface-hover); }
 .tab:active { background: var(--surface-active); }
 /* GEO-13: the design's own active-tab flare is a 26px corner radius - at the
@@ -494,8 +494,8 @@ html[data-platform="darwin"] .acts { display: none; }
 	content: ''; position: absolute; background: var(--line);
 	transition: background-color var(--dur-fast) var(--ease);
 }
-.splitter.v::after { top: 0; bottom: 0; left: 50%; width: 1px; }
-.splitter.h::after { left: 0; right: 0; top: 50%; height: 1px; }
+.splitter.v::after { top: 0; bottom: 0; left: 50%; width: var(--border); }
+.splitter.h::after { left: 0; right: 0; top: 50%; height: var(--border); }
 .splitter:hover::after, .splitter:focus-visible::after { background: var(--acc); }
 
 /* GEO-13: 36px (--row-hdr), the design's own section-header band - the
@@ -507,7 +507,9 @@ html[data-platform="darwin"] .acts { display: none; }
 	display: flex;
 	align-items: center;
 	flex: 0 0 var(--row-hdr);
-	padding: 0 10px;
+	padding: 0 var(--space-5);		/* was 10px, on neither scale step either
+						   side of it - matches #title/.tab's own
+						   row padding rather than picking a new one */
 	background: var(--hdr);
 	color: var(--acc-text);
 	font: inherit;
@@ -609,9 +611,9 @@ canvas { display: block; }
 	overflow-y: hidden;
 	flex: 1;
 	background: var(--chrome);
-	border-top: 1px solid var(--line);
+	border-top: var(--border) solid var(--line);
 }
-#hspace { height: 1px; }
+#hspace { height: var(--border); }
 #vbar {
 	overflow-y: auto;
 	overflow-x: hidden;
@@ -623,11 +625,11 @@ canvas { display: block; }
 	   a row flex, #side/#right's min-width: 0, above). */
 	min-height: 0;
 	background: var(--chrome);
-	border-left: 1px solid var(--line);
+	border-left: var(--border) solid var(--line);
 }
-#vspace { width: 1px; }
+#vspace { width: var(--border); }
 #hbarrow { display: flex; flex: 0 0 calc(var(--scrollbar) + var(--border)); }
-#corner { flex: 0 0 calc(var(--scrollbar) + var(--border)); background: var(--chrome); border-top: 1px solid var(--line); }
+#corner { flex: 0 0 calc(var(--scrollbar) + var(--border)); background: var(--chrome); border-top: var(--border) solid var(--line); }
 
 /* NAT-20: one scrollbar treatment for every container that scrolls, not just
    #hbar - #scripts, #midis, #palette and #props used to fall back to
@@ -747,9 +749,12 @@ body.text #right { display: none; }
    (the level view's seven) never swallows it - the same `flex: 0 1 auto` /
    min-height/max-height pattern GEO-05 already gave #scripts, and the same
    .split-* class toggle (layout.js) so a user's own drag still overrides it. */
-#props { overflow: auto; flex: 0 1 auto; min-height: calc(var(--row) * 3); max-height: 70%; padding: 10px; }
+/* was padding: 10px - #props is the fourth of the four panel-content
+   containers (#scripts/#midis/#palette share the scrollbar-gutter treatment
+   above); --space-4 is what the other three already use for the same role. */
+#props { overflow: auto; flex: 0 1 auto; min-height: calc(var(--row) * 3); max-height: 70%; padding: var(--space-4); }
 #right.split-props #props { flex: 0 0 var(--props-h); max-height: none; }
-#props h4 { margin: 10px 0 4px; color: var(--dim); font: inherit; font-size: var(--font-size-sm); }
+#props h4 { margin: var(--space-5) 0 var(--space-2); color: var(--dim); font: inherit; font-size: var(--font-size-sm); }
 #props h4:first-child { margin-top: 0; }
 #props label { display: block; margin-bottom: var(--space-3); color: var(--dim); }
 /* VIS-15: .field is what the file manager's own inline rename input (edit(),
@@ -759,7 +764,7 @@ body.text #right { display: none; }
 .field, #props input, #props select, #props textarea {
 	display: block;
 	width: 100%;
-	padding: 3px 5px;
+	padding: var(--space-2) var(--space-3);	/* was 3px 5px, the nearer step each axis */
 	border: var(--border) solid var(--control-border);
 	border-radius: var(--radius-1);		/* VIS-09 */
 	background: var(--surface-raised);
@@ -829,7 +834,7 @@ li.editing { flex-wrap: wrap; align-items: flex-start; }
 #props .act:hover { border-color: var(--acc); color: var(--fg); background: var(--surface-hover); }
 #props .act:active { background: var(--surface-active); }
 #props .err { color: var(--danger); white-space: pre-wrap; }
-#props .warn { margin: 0 0 var(--space-4) var(--space-6); padding: 0; color: var(--danger); font-size: 11px; }
+#props .warn { margin: 0 0 var(--space-4) var(--space-6); padding: 0; color: var(--danger); font-size: var(--font-size-sm); }
 #props .warn li { margin-bottom: var(--space-1); }
 #props .hint { margin-top: var(--space-2); color: var(--dim); font-size: var(--font-size-sm); }
 
@@ -838,10 +843,12 @@ li.editing { flex-wrap: wrap; align-items: flex-start; }
 	display: flex;
 	flex: 0 0 var(--row-sm);
 	align-items: center;
-	gap: 18px;
+	gap: var(--line-box);		/* was a bare 18px; reused rather than a new
+					   token for one consumer, the same move
+					   --radius-2 already made for the tab flare */
 	padding: 0 var(--space-5);
 	background: var(--chrome);
-	border-top: 1px solid var(--line);
+	border-top: var(--border) solid var(--line);
 	color: var(--dim);
 	font-size: var(--font-size-sm);
 }
@@ -855,7 +862,7 @@ li.editing { flex-wrap: wrap; align-items: flex-start; }
 	overflow: hidden;
 	white-space: nowrap;
 	text-overflow: ellipsis;
-	border-left: 1px solid var(--line);
+	border-left: var(--border) solid var(--line);
 	padding-left: var(--space-5);
 	transition: color var(--dur) var(--ease);
 }
