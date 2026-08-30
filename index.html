@@ -67,6 +67,11 @@
 
 	<aside id="right">
 		<h2 class="hdr r" id="hdr-items">items</h2>
+		<!-- UX-07: static markup, not rebuilt by Panel.palette() (panel.js) the
+		     way the cells themselves are - typing here must never lose focus
+		     or the caret to a rebuild the way ARCH-04 already had to fix
+		     elsewhere. Panel.palette() only reads its own value back. -->
+		<input type="search" id="palette-filter" class="field" placeholder="filter…" aria-label="filter items">
 		<div id="palette"></div>
 		<div id="splitter-props" class="splitter h" role="separator" tabindex="0"
 			aria-orientation="horizontal" aria-label="resize palette"></div>

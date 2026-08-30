@@ -1146,6 +1146,10 @@ addEventListener('DOMContentLoaded', () => {
 	roving(document.querySelector('.acts'), acts, 1);
 	$('add').onclick = addscript;
 	$('addmidi').onclick = ev => { ev.stopPropagation(); addmidi(); };
+	/* UX-07: the input itself is static markup (index.html) so it is never
+	 * rebuilt and never loses focus/caret the way the cells it filters are;
+	 * Panel.palette() reads its value back on every keystroke. */
+	$('palette-filter').oninput = () => Panel.palette();
 	$('side').onclick = panelmenu;
 	$('side').oncontextmenu = panelmenu;
 	$('zoom').onclick = () => api.zoommenu();

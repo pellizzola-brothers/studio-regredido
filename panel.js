@@ -81,6 +81,17 @@ function palcols(el)
 	return getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length || 1;
 }
 
+/* UX-07: matched case-insensitively against each cell's own display name -
+ * the same string its title/aria-label already show - not the raw catalog
+ * id, so "brick" finds the brick block the same way its own tooltip names
+ * it. An empty query matches everything, so the unfiltered palette is just
+ * this same code path with `q` empty rather than a separate one. */
+function palettematch(name)
+{
+	const q = $('palette-filter').value.trim().toLowerCase();
+	return !q || name.toLowerCase().includes(q);
+}
+
 Panel.palette = function ()
 {
 	const el = $('palette');
@@ -91,20 +102,15 @@ Panel.palette = function ()
 	el.setAttribute('aria-labelledby', 'hdr-items');
 	const items = [];
 
-	group(el, 'blocks');
-	items.push(cell(el, 'block', 0, 'air (eraser)', null));
-	for (const t of BLOCKS)
-		items.push(cell(el, 'block', t.id, t.name, t.file));
-
-	group(el, 'items');
-	for (const t of ITEMS)
-		items.push(cell(el, 'entity', t.id, t.id, t.file));
-
-	group(el, 'entities');
-	for (const e of ENTS)
-		items.push(cell(el, 'entity', e.id, e.id, e.file));
-	for (const d of customdefs())
-		items.push(cell(el, 'entity', d.id, d.id + ' (custom)', PLACEHOLDER));
+	group(el, items, 'blocks', [
+		['block', 0, 'air (eraser)', null],
+		...BLOCKS.map(t => ['block', t.id, t.name, t.file])
+	]);
+	group(el, items, 'items', ITEMS.map(t => ['entity', t.id, t.id, t.file]));
+	group(el, items, 'entities', [
+		...ENTS.map(e => ['entity', e.id, e.id, e.file]),
+		...customdefs().map(d => ['entity', d.id, d.id + ' (custom)', PLACEHOLDER])
+	]);
 
 	const add = document.createElement('button');
 	add.type = 'button';
@@ -133,12 +139,22 @@ function toolname()
 	return entdefs.has(t.id) ? t.id : t.id + ' (custom)';
 }
 
-function group(parent, name)
+/* UX-07: `entries` is [kind, id, name, file] per cell; the whole group -
+ * heading included - disappears rather than showing an empty label when a
+ * filter leaves nothing in it, so a query narrows the palette instead of
+ * just greying parts of it out. */
+function group(parent, items, name, entries)
 {
+	const matching = entries.filter(e => palettematch(e[2]));
+	if (!matching.length)
+		return;
+
 	const g = document.createElement('div');
 	g.className = 'grp';
 	g.textContent = name;
 	parent.appendChild(g);
+	for (const [kind, id, cellname, file] of matching)
+		items.push(cell(parent, kind, id, cellname, file));
 }
 
 /* A11Y-01: a real <button> rather than a clickable <div> - Enter/Space

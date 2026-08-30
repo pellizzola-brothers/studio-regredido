@@ -680,6 +680,10 @@ body.text #right { display: none; }
    "content-driven default, remainder takes the rest" pair GEO-05 already
    gave #scripts/#midis, with a matching floor so it cannot be squeezed to
    nothing either. */
+/* UX-07: sits between the "items" header and the palette it filters -
+ * var(--space-4) on every side keeps it breathing the same amount of room
+ * #palette's own padding already gives its cells. */
+#palette-filter { margin: var(--space-4) var(--space-4) 0; width: auto; }
 #palette {
 	display: grid;
 	overflow: auto;
