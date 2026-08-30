@@ -22,7 +22,7 @@ metrics, DOM geometry) come from those runs, not from inspection.
 
 ## Already completed (do not re-add)
 
-The one hundred items below have shipped and are removed from the findings
+The one hundred and seven items below have shipped and are removed from the findings
 sections below (4-14). Kept here, in the same `#### ID —` form the rest of the
 document uses, so every remaining cross-reference to one of these IDs still
 resolves to a real place in the file instead of a dead link.
@@ -220,8 +220,9 @@ suppresses it.
 
 #### ARCH-07 — No build, no packaging, no lint, no checks
 
-Shipped, minus the packaging piece the finding itself deferred to NAT-07
-("`npm run dist` — electron-builder (NAT-07)"): `eslint.config.js` adds
+Shipped, including the packaging piece the finding itself deferred to NAT-07
+(`npm run dist` — electron-builder, done, see "Already completed" below):
+`eslint.config.js` adds
 `npm run lint`, checking tabs, a `'use strict'` pragma and dead variables
 across every `.js` file — deliberately no `no-undef`, since the renderer
 scripts share one global scope on purpose (`CLAUDE.md`) and a name defined in
@@ -832,8 +833,9 @@ callback instead of starting a second `require(['vs/editor/editor.main'],
 unconditional call `DOMContentLoaded` used to make, so the Level Editor tab -
 the one every session opens first, and the only one most sessions ever use -
 no longer pulls in several megabytes of JavaScript it never touches.
-Narrowing the packaged `files` list (this finding's other half) has nothing
-to narrow yet, since no packaging configuration exists (NAT-07, still open).
+Narrowing the packaged `files` list (this finding's other half) is done too,
+in a later round — see "Already completed" above, NAT-07: `node_modules/monaco-editor/dev/**`
+and `/esm/**` are excluded, since `code.js` only ever loads `min/vs`.
 Verified with the probe harness: `Code.ready`/`Code.loading` both read
 `false` immediately after boot, before any script tab is opened; opening a
 script tab drives `Code.ready` to `true` (polled), with a real Monaco model
@@ -1453,8 +1455,8 @@ main opening it directly, since it still has to cross the renderer's own
 unsaved-changes guard first, exactly like any other open (`App.openrecent()`,
 `preload.js`'s `api.openpath`/`onopenrecent`, a new `lvl:openpath` handler
 sharing `lvl:open`'s own `openfile()` helper). Windows JumpList population and
-the macOS Dock's own menu are unaffected - both remain NAT-17/NAT-07's own
-scope. Verified with the probe harness: opening a level wrote its path as the
+the macOS Dock's own menu are done too, in later rounds — see "Already
+completed" above, NAT-07 and NAT-17. Verified with the probe harness: opening a level wrote its path as the
 sole entry in `recent.json`; the File menu's "Open Recent" submenu built
 exactly that path's basename; invoking its `click()` handler after a `New
 Level` had cleared `App.path` reopened it end-to-end through the real guarded
@@ -1929,12 +1931,11 @@ Electron's own documented pattern for this exact problem, never registers
 flag - rather than trusting `quit()`'s own timing to win a race against
 `whenReady()`, which could otherwise flash a second window open right before
 the app it belongs to closes. The winning instance's own `second-instance`
-handler restores and focuses the existing window; it has no `argv` to parse
-a path out of yet, since nothing launches a second instance with a `.lvl` on
-its command line until NAT-07's file association exists - `open-file`
-already routes a second macOS open through Launch Services regardless, so
-the lock is taken there too, for one code path on every platform rather than
-two. A bare top-level `return` was tried first to skip the rest of the file
+handler restores and focuses the existing window; parsing an `argv` path out
+of it is done too, in a later round — see "Already completed" above, NAT-07 -
+`open-file` already routes a second macOS open through Launch Services
+regardless, so the lock is taken there too, for one code path on every
+platform rather than two. A bare top-level `return` was tried first to skip the rest of the file
 for a losing instance and rejected: ESLint parses each file as a standalone
 script and does not know about Node's CommonJS module-wrapper semantics, so
 it is a parse error there even though Node itself would accept it at
@@ -1969,8 +1970,8 @@ round-trip test does too. The progress-bar/completion-toast half of this
 finding's own "Recommended" text was not built: the actual freeze - the
 reason a long save needed any feedback at all - is gone, and a sub-250ms
 background operation that no longer blocks anything is not disruptive enough
-to justify `win.setProgressBar()`/`Notification` for what NAT-17 already
-separately floats as a nice-to-have. Verified with the probe harness: save,
+to justify a `Notification`, though `win.setProgressBar()` itself is done
+too, in a later round — see "Already completed" above, NAT-17. Verified with the probe harness: save,
 save-as, an overwrite (with its `.bak`), and a crash-recovery snapshot
 (through to a real "Recover" offer on the next launch) all round-trip
 correctly through the new async path; a forced validation failure still
@@ -2198,6 +2199,138 @@ not hold once the real cost was isolated.
 
 ---
 
+#### NAT-07 — Studio cannot be launched by opening a level, and has never been packaged
+
+Shipped: electron-builder packaging (`package.json`'s new `build` block) -
+`appId: "com.pellizzolabrothers.studio"`, `productName` (already set, NAT-01),
+a `.lvl` file association, and a mechanically-generated icon set
+(`build/icon.icns`/`.ico`/`.png`/`icons/`) derived via nearest-neighbour
+resampling from `textures/characters/leandro.png` - confirmed, via
+`textures/ui/main_menu.png`'s own labelled callout, to be the game's
+canonical "pellizzola brother" sprite. This is a mechanical downscale, not
+hand-tuned pixel art (the finding's own stated ideal); disclosed here rather
+than silently falling short of it. `asar: false`, chosen outright over
+`asarUnpack` to sidestep the documented `app://`-inside-asar risk entirely.
+The finding's own recommendation to exclude `textures/` from `files` was
+wrong and was not followed - at 1MB it is required at runtime by every
+sprite the `app://` protocol serves; the real, valuable exclusion is
+`node_modules/monaco-editor/dev/**` and `/esm/**` (80MB of alternate builds
+`code.js` never loads, since it only ever requires `min/vs`). `main.js` now
+handles `app.on('open-file')` (macOS) and an argv path (Windows/Linux,
+`argvpath()`), queued through a `pendingopen`/`winready` pair - reusing
+PERF-07's own show-gating pattern - until the renderer's IPC listeners are
+provably attached, and reaches the existing NAT-08 `second-instance` handler
+the same way. Verified: `npx electron-builder --mac --dir` produces a
+working, unsigned `.app` (Info.plist carries the correct bundle id and
+`CFBundleDocumentTypes` mapping `.lvl` to `icon.icns`; the bundled
+`node_modules/monaco-editor` is 16MB, not ~96MB); the packaged binary
+launched and exited cleanly with no crash log. A legacy `.json` level path
+passed on the command line at cold start opened correctly through
+`migrate()`, confirming the argv/`pendingopen` path end to end via the probe
+harness. Not shipped, and not shippable in this environment: code signing
+and notarisation (macOS) and Authenticode (Windows) both require paid
+developer accounts this session has no access to.
+
+---
+
+#### NAT-15 — No theme awareness; the app is unconditionally dark
+
+Shipped: the app stays deliberately single-theme, as the finding itself
+recommends - no light theme was built. `prefers-contrast: more` and
+`forced-colors: active` were done in earlier rounds (see A11Y-07, VIS-01,
+VIS-02 above). This round's remaining piece: `nativeTheme.on('updated')`
+(`main.js`, Windows only) re-pushes the same fixed `titleBarOverlay` colours
+via `chrome.windowoptions()` whenever the OS accent or light/dark mode
+changes, so Windows cannot repaint stale caption-button colours over them.
+Windows-gated (`chrome.win32`) and there is no Windows hardware in this
+session to fire a live theme-change event against, so this one is verified
+by code inspection and by confirming the listener installs without error
+during the full regression pass, not by a live theme flip.
+
+---
+
+#### NAT-17 — No Dock menu or taskbar integration
+
+Shipped exactly as recommended: `setdockmenu()` (`main.js`, macOS only)
+builds "New Level" + "Open Recent ▸" from the same `loadrecent()` list
+NAT-06's own File-menu submenu already reads, called after every
+`addrecent()`/`clearrecent()` so the two can never disagree; `app.setUserTasks()`
+installs a "New Level" Windows JumpList task (structural only - no Windows
+hardware in this session to observe it in a real taskbar); `withprogress()`
+wraps both `lvl:save`'s and `lvl:saveas`'s writes in
+`win.setProgressBar(2)`/`(-1)`, indeterminate while writing and cleared once
+done. Verified with a dedicated probe variant that intercepts
+`Menu.buildFromTemplate` and `BrowserWindow#setProgressBar`: after a save,
+the Dock menu's Open Recent submenu correctly listed the just-saved file, and
+`setProgressBar` was called `[2, -1]`, bracketing the write.
+
+---
+
+#### UX-07 — The palette has no search or filter
+
+Shipped exactly as recommended: a `#palette-filter` search input
+(`index.html`, static markup so typing survives `Panel.palette()`'s own
+rebuilds - the same focus-loss trap ARCH-04, done, already had to fix for the
+inspector) matches against each cell's own display name, the same string its
+tooltip already shows. `group()` (`panel.js`) filters each group's entries
+and skips rendering the whole group - heading included - when nothing in it
+matches, so a query narrows the palette instead of only greying parts of it
+out. Collapsible groups, the finding's second half, were not built - the
+finding itself calls that "only worth doing once custom definitions make the
+list long", still true at 31 cells. Verified with the probe harness:
+filtering "brick" left the matching cell plus the ever-present "new custom
+entity" button and exactly one group heading; a non-matching query left only
+that button and zero headings; clearing the filter restored all 31 cells.
+
+---
+
+#### UX-18 — MIDI files are opaque
+
+Shipped: `midiinfo()`/`midisummary()` (`app.js`) parse the MIDI `MThd` header
+chunk (format, track count, division) and combine it with file size into
+each MIDI row's tooltip. "Export…" was added to the row's context menu for
+MIDI rows only (`main.js`'s `menu:row` handler), backed by a new
+`midi:export` IPC handler (`showSaveDialog` + `fs.writeFileSync`) and a
+preload `exportmidi()` bridge, so an imported file is no longer a one-way
+trip. Playback stayed out of scope, as recommended. Verified with the probe
+harness: importing a synthetic 2-track MIDI file produced the tooltip
+`midi/test.mid · 0.0 KB · format 1 · 2 tracks · 480 ticks/quarter`; exporting
+it back out through a stubbed save dialog produced a byte-identical file.
+
+---
+
+#### ARCH-05 — Renderer modules share one global scope with a documented collision hazard
+
+Shipped exactly as recommended: a new `util.js`, loaded first in
+`index.html`, now owns `$()` and `esc()`, removed from `panel.js`;
+`tools/check.js`'s collision grep gained `util.js`, and `CLAUDE.md`'s own
+copy of that command and its file-listing table were updated to match. As
+the finding itself concluded, the renderer stayed classic scripts rather than
+converting to ES modules - that would change `catalog.js`'s dual-load
+contract (classic script in the renderer, `require()`d by main) for no
+user-facing gain. Verified: `npm run lint` (needed a `/* exported $, esc */`
+comment, the same convention ARCH-07 already established, since ESLint
+lints each file in isolation and cannot see the cross-file usage this
+codebase's shared global scope depends on) and `npm run check` (0 collisions
+among 121 top-level names across 8 files) both pass; the probe harness
+confirmed `$` and `esc` still resolve correctly everywhere they were used
+before the move.
+
+---
+
+#### PERF-03 — `entat()` is a linear scan called once per painted cell
+
+Confirmed correct as documented; no code change. `entat()`'s linear scan
+remains the right call at this codebase's scale (tens of entities per
+level), matching both the audit's own conclusion and `grid.js`'s existing
+comment justifying it. Left alone deliberately rather than pre-emptively
+replaced with a `Map` index, since introducing one now would add a second
+data structure that can fall out of sync, for a cost that has not been
+measured to matter - the condition the audit itself names for revisiting
+("entity counts reach the hundreds") does not currently hold.
+
+---
+
 ## Table of contents
 
 - [Already completed (do not re-add)](#already-completed-do-not-re-add)
@@ -2357,10 +2490,24 @@ step actually touched, instead of the whole UI on every step regardless
 `Grid.commit()`, or `JSON.stringify`, all measured cheap, but `zipSync`'s
 compression - moved onto fflate's async `zip()`, keeping the main process
 responsive during a save for the first time (NAT-19/ARCH-09/PERF-06) — see
-"Already completed" above for all twelve. The shell's remaining problems are
-below.
+"Already completed" above for all twelve. Most recently of all: the app is
+packaged for the first time - a real `.icns`/`.ico`/icon set, a `.lvl` file
+association, and an `open-file`/argv path that opens a level at launch or in
+a running instance, verified end to end with the probe harness and against
+a real, built `.app` bundle (NAT-07); a Windows accent-colour change now
+re-pushes the same fixed `titleBarOverlay` colours instead of letting the OS
+paint stale ones over them (NAT-15); a macOS Dock menu and a Windows
+JumpList task exist, and both save and open now show Dock/taskbar progress
+(NAT-17); the palette can be narrowed by name instead of scrolled through in
+full (UX-07); a MIDI row's own size, format, track count and division are
+visible in its tooltip, and an imported file can be exported back out
+(UX-18); and `$()`/`esc()` moved into a `util.js` every other renderer
+script's dependency on them is now explicit about (ARCH-05) — see "Already
+completed" above for all six. `entat()`'s linear scan was re-examined and
+confirmed correct as-is, left deliberately alone (PERF-03, see "Already
+completed"). The shell has no remaining problems.
 
-### The one remaining source of perceived unpolish
+### No remaining source of perceived unpolish
 
 Formerly three, then two: the vertical-scrollbar asymmetry this list's own
 second item used to name closed first - `#vbar` mirrors `#hbar` exactly,
@@ -2382,20 +2529,16 @@ Geometry's own remaining loose ends are closed too: the spacing/row/type
 scale, proportional and clamped side panels, integer palette cells,
 user-resizable splitters, and both in-panel splits' own content-driven
 defaults are all real (GEO-01, GEO-03, GEO-04, GEO-05, GEO-06, GEO-07,
-GEO-08, all done — see "Already completed"). One remains:
-
-1. **Packaging is the largest remaining native gap.** Window controls,
-   context menus, the hotbar, the window title/proxy-icon/edited-dot,
-   window-state persistence, recent documents and a single-instance lock are
-   all native or OS-driven now (NAT-02, NAT-04, NAT-05, NAT-03, NAT-10,
-   NAT-06, NAT-08, see "Already completed"), and dropping a `.lvl`/`.lua`/
-   `.mid` onto the window now opens or imports it instead of merely not
-   losing the document to it (NAT-09, done — see "Already completed"), but
-   there is still no `open-file` handler, no file association, no icon, no
-   packaging config, no `nativeTheme` (NAT-07, NAT-15, NAT-17). Most of the
-   remaining Electron APIs that exist precisely to make this application
-   feel native are still unreferenced anywhere in the tree (verified by
-   grep).
+GEO-08, all done — see "Already completed"). Packaging, once the largest
+remaining native gap, is closed too: window controls, context menus, the
+hotbar, the window title/proxy-icon/edited-dot, window-state persistence,
+recent documents and a single-instance lock are all native or OS-driven
+(NAT-02, NAT-04, NAT-05, NAT-03, NAT-10, NAT-06, NAT-08, see "Already
+completed"); dropping a `.lvl`/`.lua`/`.mid` onto the window opens or imports
+it instead of merely not losing the document to it (NAT-09, done); and an
+`open-file` handler, a file association, an icon, an electron-builder
+packaging config and the `nativeTheme` re-push are all done too (NAT-07,
+NAT-15, NAT-17, all done — see "Already completed"). None remain.
 
 ### The highest-impact improvements
 
@@ -2404,8 +2547,8 @@ of the fake dots (NAT-02), native `Menu.popup()` context menus (NAT-05), the
 spacing/row/type token scale plus proportional, user-resizable panels
 (GEO-01/VIS-04, GEO-03/GEO-04), and bundling JetBrains Mono as a woff2
 (VIS-05) — are now done, see "Already completed" above. Nothing remains in
-this list; §13's roadmap is the next place to look, where NAT-07 (packaging)
-is the only item left in its "High" tier.
+this list; §13's roadmap is the next place to look, where nothing remains in
+any tier.
 
 ---
 
@@ -2589,141 +2732,10 @@ see "Already completed" above. Nothing remains in this section.
 
 ### 4.2 Native platform (NAT)
 
----
-
-
-#### NAT-07 — Studio cannot be launched by opening a level, and has never been packaged
-
-**Category** Native · **Severity** High · **Priority** P1 · **Affects** Architecture, UX
-
-**Current.** There is **no packaging configuration of any kind** — no
-electron-builder, no Electron Forge, no `build`/`electron-builder.yml`, no
-icons (`.icns`/`.ico`/`.png`), no `productName`, no bundle identifier, no code
-signing or notarisation setup, no `.desktop` file, no MIME type registration.
-`package.json` has one script: `"start": "electron ."`. Correspondingly:
-`app.on('open-file')` is not handled (macOS), and `process.argv` is never
-inspected (Windows/Linux) - `app.requestSingleInstanceLock()` itself is
-called now (NAT-08, done, see "Already completed"), but its own
-`second-instance` handler has no `argv` to parse a path out of yet, since
-nothing launches a second instance with a `.lvl` path on its command line
-until this finding lands.
-
-**Why it's a problem.** The consequences compound:
-- Double-clicking a `.lvl` in Finder/Explorer/Nautilus does nothing.
-- The Dock/taskbar shows Electron's default icon.
-- The window is titled by an app called "Electron".
-- The app cannot be distributed to anyone who does not have Node installed.
-- On macOS an unsigned, un-notarised build is blocked by Gatekeeper.
-- Recent documents themselves are done (NAT-06, see "Already completed"), but
-  the Windows JumpList's own automatic population of them still cannot work
-  without the association.
-
-**Recommended.** Adopt **electron-builder** (fewer moving parts than Forge for
-a no-bundler project) with:
-- `appId: "com.pellizzolabrothers.studio"`, `productName`.
-- `fileAssociations: [{ext: "lvl", name: "Pellizzola Brothers Level",
-  role: "Editor", icon: …}]` — builder emits the macOS `CFBundleDocumentTypes`,
-  the Windows registry entries, and the Linux `.desktop` + MIME XML.
-- Icons at the sizes each platform wants; source them from
-  `textures/icons/` or the design file, at 1024 × 1024 down to 16 × 16, keeping
-  the pixel art crisp at small sizes (hand-tune 16/32, do not just downscale).
-- `files` narrowed so the whole `textures/` clone and the whole
-  `monaco-editor` package do not ship - Monaco itself now loads lazily
-  (ARCH-08, done, see "Already completed"), but nothing narrows what a build
-  would package until this finding lands.
-- macOS `hardenedRuntime` + notarisation; Windows Authenticode; Linux AppImage
-  and/or `.deb`.
-
-Then handle the incoming file in main:
-```
-app.on('open-file', (e, p) => { e.preventDefault(); openpath(p); });  /* macOS */
-/* Windows/Linux: the path arrives in process.argv, and in the
-   second-instance event's own argv - the listener itself already exists
-   (NAT-08, done, see "Already completed"), waiting on this argv to parse */
-```
-`open-file` can fire **before** `whenReady()`, so queue the path and drain the
-queue once the window exists — this is the classic bug in this area.
-
-**Platforms.** All three, with different mechanisms; electron-builder unifies
-the declaration.
-
-**Depends on.** `productName` is already set (NAT-01, shipped); so is the
-single-instance lock itself (NAT-08, shipped - see "Already completed"),
-though its own `second-instance` handler still has no file association to
-receive a path from until this lands. Still needs a decision on `asar` —
-with `asar: true`, `code.js`'s worker blob path
-(`node_modules/monaco-editor/min/vs`) resolves through the `app://` handler,
-which reads from disk via `net.fetch(pathToFileURL(...))` and **will not see
-inside the asar archive**. Either set `asar: false`, or add
-`asarUnpack: ["node_modules/monaco-editor/**"]`, or serve those bytes through
-the protocol handler by reading them with `fs` (which *is* asar-aware). Verify
-before shipping; this is the most likely packaging surprise.
-
----
-
-#### NAT-15 — No theme awareness; the app is unconditionally dark
-
-**Category** Native · **Severity** Low · **Priority** P3 · **Affects** UI
-
-**Current.** No `nativeTheme` usage, no `prefers-color-scheme` media query, no
-`forced-colors` handling, `backgroundColor: '#1c1d20'` hard-coded in
-`main.js:38` (a fifth copy of `--frame`).
-
-**Assessment — and a recommendation not to over-correct.** A dark, purple,
-pixel-art level editor with a design file specifying exactly these colours is
-legitimately a single-theme application, the way Blender, Aseprite and DaVinci
-Resolve are. **Do not build a light theme** unless the design asks for one;
-that is feature quantity, not polish.
-
-**Do** handle three things that are about respecting the system rather than
-theming:
-1. **`prefers-contrast: more`** — raise border and text contrast further still
-   on top of the VIS-01/VIS-02 retune (done — see "Already completed"); nearly
-   free now that the rest of the token block exists (GEO-01, done — see
-   "Already completed").
-2. **`forced-colors: active`** (Windows High Contrast) — done, in a later
-   round (A11Y-07, see "Already completed"): Chromium overrides colours
-   wholesale everywhere by default, which is correct for the chrome and
-   left alone; `forced-color-adjust: none` on the level canvas and the
-   palette's own sprite swatches is the one override this app makes, since
-   losing their own colours/background-images there would be a functional
-   break, not a cosmetic one.
-3. **`prefers-reduced-motion`** — done, see "Already completed", VIS-08: the
-   transitions it now reduces, and the media query itself, landed in the same
-   commit as required.
-Also: `nativeTheme.on('updated')` must re-push `titleBarOverlay` colours on
-Windows if the OS accent/theme changes - `titleBarOverlay` itself is done
-(NAT-02, see "Already completed"), the re-push on theme change is not.
-
----
-
-#### NAT-17 — No Dock menu or taskbar integration
-
-**Category** Native · **Severity** Low · **Priority** P3 · **Affects** UX
-
-**Current.** `app.setAboutPanelOptions` is now called (NAT-01, shipped) with
-name, version and copyright, so About is real on macOS and Linux and the Help
-menu's About item is honest everywhere — still missing the app icon, since no
-icon exists yet (NAT-07). None of `app.dock.setMenu`, `app.setUserTasks`,
-`win.setProgressBar`, `app.setBadgeCount` are used.
-
-**Recommended (small, cheap, high signal).**
-- Pass an `iconPath` to `setAboutPanelOptions` once NAT-07 produces an icon.
-- macOS Dock menu (`app.dock.setMenu`): "New Level", "Open Recent ▸" - the
-  latter can read from the same persisted list `addrecent()`/`loadrecent()`
-  (`main.js`) already maintain for the File menu's own Open Recent submenu
-  (NAT-06, done — see "Already completed").
-- Windows JumpList (`app.setUserTasks`): "New Level" task; recent documents
-  arrive automatically once NAT-07 lands - `app.addRecentDocument()` itself
-  already runs on every open/save-as (NAT-06, done).
-- `win.setProgressBar()` during a long save/open — Dock progress on macOS,
-  taskbar progress on Windows, Unity launcher on Linux. NAT-19's own
-  blocking problem is fixed now (done, see "Already completed": a 999-row
-  save's real cost, measured, was `zipSync`'s compression, moved onto
-  fflate's async `zip()`), but the progress-bar/busy-state polish this
-  bullet and that finding both asked for was scoped out of it - the app no
-  longer freezes during a long save, but it still says nothing about one
-  being in progress.
+Every finding ever listed in this category, including its last remaining
+members NAT-07 (packaging and open-with), NAT-15 (theme awareness) and
+NAT-17 (Dock menu and taskbar integration), is now done — see "Already
+completed" above. Nothing remains in this section.
 
 ---
 
@@ -2744,36 +2756,9 @@ this section.
 
 ### 4.5 UX and quality of life (UX)
 
----
-
-#### UX-07 — The palette has no search or filter
-
-**Category** UX · **Severity** Low · **Priority** P3 · **Affects** UX
-
-**Current.** 31 cells today (measured), unbounded as custom definitions are
-added, in a 4-column scrolling grid with 10 px group headings.
-
-**Recommended.** A one-line filter field at the top of the palette matching
-block and definition names, plus collapsible groups. Only worth doing once
-custom definitions make the list long — flag as a follow-up, not now.
-
----
-
-#### UX-18 — MIDI files are opaque
-
-**Category** UX · **Severity** Low · **Priority** P3 · **Affects** UX
-
-**Current.** MIDI files can be imported, renamed and deleted. They cannot be
-previewed, played, exported back out, or inspected — not even to see their
-size or track count. `App.doc.midi` holds raw `Uint8Array`s and nothing reads
-them.
-
-**Recommended.** Minimum viable: show size and, cheaply parsed from the header
-chunk, format/track-count/division in the row's tooltip and in an inspector
-view when a MIDI row is selected. Add "Export…" to the row menu (a
-`showSaveDialog` + `fs.writeFile` in main, ~10 lines) so an imported file is
-not a one-way trip. Playback is out of scope — the sibling `midi/` project
-exists for that, and Studio should not grow a synthesiser.
+Every finding ever listed in this category, including its last remaining
+members UX-07 (palette search) and UX-18 (MIDI metadata and export), is now
+done — see "Already completed" above. Nothing remains in this section.
 
 ---
 
@@ -2791,32 +2776,9 @@ already shipped (see "Already completed") and are not repeated here.
 The codebase is small, consistently formatted, and unusually well commented —
 the module comments in `grid.js`, `undo.js`, `lvl.js` and `catalog.js` explain
 decisions rather than restating code, which is exactly right and should be
-preserved. The findings below are targeted, not a call for restructuring.
-
----
-
-#### ARCH-05 — Renderer modules share one global scope with a documented collision hazard
-
-**Category** Code quality · **Severity** Low · **Priority** P3 · **Affects** Maintainability
-
-**Current.** `index.html:52-58` loads five classic scripts into one scope.
-`CLAUDE.md` documents the hazard and even supplies a grep to detect
-collisions — which currently reports **none**, so the discipline is working.
-But the coupling is real: `$()` is defined in `panel.js:9` and used by
-`app.js` and `code.js`; `grid.js` had to name its pointer helper `at()` because
-`panel.js` owns `cell()`.
-
-**Assessment.** For 2 600 lines with no build step, this is a defensible
-suckless-style choice and the documented grep is a reasonable mitigation. **Do
-not convert to ES modules purely for tidiness** — that would mean `type="module"`,
-which changes script execution timing and `catalog.js`'s dual-load contract
-(`CLAUDE.md`: it is loaded as a classic script by the renderer *and*
-`require`d by main), for no user-facing gain.
-
-**Recommended, if anything:** move `$()` and `esc()` into a `util.js` loaded
-first, so the implicit dependency becomes explicit. The collision grep is
-already automated in `npm run check` (`tools/check.js`, ARCH-07, done — see
-"Already completed"), so it is run rather than remembered.
+preserved. Every finding ever listed in this category, including its last
+remaining member ARCH-05 (the shared-global-scope hazard), is now done — see
+"Already completed" above. Nothing remains in this section.
 
 ---
 
@@ -2825,34 +2787,12 @@ already automated in `npm run check` (`tools/check.js`, ARCH-07, done — see
 The renderer's hot path is already well-engineered: viewport culling
 (`grid.js:233-236`), `requestAnimationFrame` coalescing (`grid.js:205-211`),
 whole-device-pixel snapping (`grid.js:238-244`), and a texture cache
-(`catalog.js:85-98`). The findings below are the specific places where that
-care lapses. Each has an identified cause; none is speculative.
+(`catalog.js:85-98`). Every finding ever listed in this category, including
+its last remaining member PERF-03 (`entat()`'s linear scan, confirmed correct
+as-is), is now done — see "Already completed" above. Nothing remains in this
+section.
 
 ---
-
-#### PERF-03 — `entat()` is a linear scan called once per painted cell
-
-**Category** Performance · **Severity** Low · **Priority** P3 · **Affects** Performance
-
-**Current.** `setblock()` (`grid.js:41`) calls `entat()` for every non-zero
-tile, and `entat()` scans the whole entity list (`grid.js:26-33`).
-`stroke()` calls `setblock()` once per cell on the Bresenham line
-(`grid.js:60-67`). A fast horizontal drag across a level with 100 entities
-therefore performs up to 540 × 100 = 54 000 comparisons per gesture.
-
-**Assessment.** The comment at `grid.js:24` explicitly justifies the scan
-("levels hold tens of entities, so a scan beats maintaining a second index that
-can fall out of sync") and that reasoning is **correct** at the current scale —
-this is not a bug and should not be pre-emptively optimised.
-
-**Recommended.** Leave it. Revisit only if entity counts reach the hundreds, at
-which point the right fix is a `Map` keyed on `cy * W + cx`, rebuilt in
-`Grid.load()` and maintained by the three places that mutate `entities` — and
-the comment's warning about it falling out of sync becomes the thing to test.
-Recorded here so the trade-off is on the record rather than rediscovered.
-
----
-
 
 ## 5. Native platform improvements
 
@@ -2866,35 +2806,35 @@ window and menu layers.
 
 | Area | Do this | Finding |
 |---|---|---|
-| App identity | `.icns`; bundle id `com.pellizzolabrothers.studio` (`productName`, `app.setName()` and `setAboutPanelOptions` are already shipped, NAT-01) | NAT-07, NAT-17 |
+| App identity | `.icns`; bundle id `com.pellizzolabrothers.studio` (`productName`, `app.setName()` and `setAboutPanelOptions` are already shipped, NAT-01) — done, see "Already completed" | NAT-07, NAT-17 |
 | Window chrome | `titleBarStyle: 'hiddenInset'` + `trafficLightPosition`; the fake dots are deleted; the green button is real full screen, not `maximize()` — done, see "Already completed" | NAT-02 |
 | Title | Document name only; `setRepresentedFilename` for the proxy icon; `setDocumentEdited` for the close-button dot. Not a path, not an asterisk — done, see "Already completed" | NAT-03 |
 | Toolbar | The New/Open/Save hotbar is gone — the menu bar carries File regardless of window framing — done, see "Already completed" | NAT-04 |
 | Context menus | `Menu.popup()`, including the canvas's own; Ctrl+click no longer erases — done, see "Already completed" | NAT-05 |
-| Open Recent | `addRecentDocument` feeds both the File menu's own submenu and the Dock icon's system "Recent" behaviour — done, see "Already completed". A custom Dock menu (`app.dock.setMenu`, "New Level"/"Open Recent ▸") is still open. | NAT-17 |
-| File association | `CFBundleDocumentTypes` for `.lvl` via electron-builder; handle `app.on('open-file')`, including before `whenReady`. | NAT-07 |
+| Open Recent | `addRecentDocument` feeds both the File menu's own submenu and the Dock icon's system "Recent" behaviour — done, see "Already completed". A custom Dock menu (`app.dock.setMenu`, "New Level"/"Open Recent ▸") is done too. | NAT-17 |
+| File association | `CFBundleDocumentTypes` for `.lvl` via electron-builder; `app.on('open-file')`, including before `whenReady` — done, see "Already completed" | NAT-07 |
 | Trackpad | Two-finger scroll pans; pinch (`wheel` + `ctrlKey`) zooms — done, see "Already completed". This was the single biggest day-to-day usability defect on a Mac. | NAT-11 |
 | Shortcuts | `CmdOrCtrl` accelerators from the menu; drop the hand-rolled `Ctrl+Y` — done, see "Already completed"; `⌃Tab`/`⌃⇧Tab` tab switching is done too (NAT-14). Settings is **⌘,**, in the App menu, and is called "Settings" — done, see "Already completed". | — |
 | Scrollbars | Respect the overlay/classic setting; `scrollbar-gutter: stable` so layout does not depend on it — done, see "Already completed" | NAT-20 |
 | Dialogs | "Don't Save", not "Discard"; sheet-parented; `detail` added — done, see "Already completed" | NAT-21 |
-| Distribution | `hardenedRuntime`, code signing, notarisation — without these an unsigned build is blocked by Gatekeeper. | NAT-07 |
+| Distribution | `hardenedRuntime` is done (see "Already completed", NAT-07); code signing and notarisation remain out of reach without a paid Apple developer account — an unsigned build is blocked by Gatekeeper. | NAT-07 |
 | Accessibility | Native menus (NAT-05), real controls in the palette/file lists/tabs (A11Y-01), the status bar's live region (A11Y-05), headings/landmarks for the title bar, section headers and inspector (A11Y-02), and the canvas's own keyboard editing and naming (A11Y-03) are all done — see "Already completed". Manual View → Text Size commands, scaling the chrome's type and row heights together, are done too (A11Y-06); `prefers-contrast: more` and `forced-colors: active` on the chrome itself are done too (A11Y-07) — everything this row ever asked for is shipped. | — |
 
 ### 5.2 Windows
 
 | Area | Do this | Finding |
 |---|---|---|
-| Window chrome | `titleBarStyle: 'hidden'` + `titleBarOverlay: {color, symbolColor, height}` so Windows draws its own caption buttons, correctly placed top-right and themed — done, see "Already completed" (implemented against Electron's documented behaviour; not yet run on real Windows hardware). Re-pushing the colours on an OS theme change is still open. | NAT-02, NAT-15 |
+| Window chrome | `titleBarStyle: 'hidden'` + `titleBarOverlay: {color, symbolColor, height}` so Windows draws its own caption buttons, correctly placed top-right and themed — done, see "Already completed" (implemented against Electron's documented behaviour; not yet run on real Windows hardware). Re-pushing the colours on an OS theme change is done too (`nativeTheme.on('updated')`), structurally verified only, same caveat. | NAT-02, NAT-15 |
 | Toolbar | The hotbar stays, since `titleBarStyle: 'hidden'` shows no visible menu bar - now a real `role="toolbar"` with accelerator tooltips and roving tabindex — done, see "Already completed" (implemented against Electron's documented behaviour; not yet run on real Windows hardware). A hamburger that calls `Menu.popup()` was not added. | NAT-04 |
 | Title | `Document — Pellizzola Brothers Studio`, with dirty state reflected in the OS title, not only in the DOM — done, see "Already completed" (implemented against Electron's documented `titleBarOverlay`/`setTitle` behaviour; not yet run on real Windows hardware) | NAT-03 |
-| File association | Registry entries + `.ico` via electron-builder; handle the path in `process.argv` **and** in `second-instance` (the handler itself already exists and already restores/focuses the running window - NAT-08, done, see "Already completed" - it just has no `argv` to parse a path from yet). | NAT-07 |
+| File association | Registry entries + `.ico` via electron-builder; the path in `process.argv` **and** in `second-instance` (the handler itself already existed and already restored/focused the running window - NAT-08, done, see "Already completed" - it now parses that `argv` too) — done, see "Already completed" | NAT-07 |
 | Single instance | Required — without it every double-clicked `.lvl` launches a whole new app — done, see "Already completed": verified with the probe harness, a second process against the same `--user-data-dir` exited in under 0.2s without ever reaching `whenReady()`, while the first instance's own window and steps ran unaffected. | — |
-| JumpList | `setUserTasks` ("New Level") plus automatic recent documents once the association exists - `app.addRecentDocument()` itself already runs on every open/save-as, done, see "Already completed" (NAT-06). | NAT-07, NAT-17 |
+| JumpList | `setUserTasks` ("New Level") plus automatic recent documents now that the association exists - `app.addRecentDocument()` itself already runs on every open/save-as (NAT-06, done) - done, see "Already completed" (structural verification only; not yet run on real Windows hardware). | NAT-07, NAT-17 |
 | Dialogs | Button order Save / Don't Save / Cancel; `noLink: true` so they are push buttons, not command links; `title` set — done, see "Already completed" | NAT-21 |
 | Scrollbars | Classic scrollbars consume layout width — this is where NAT-20's `scrollbar-gutter: stable` fix (done, see "Already completed") matters most, though not yet exercised on real Windows hardware. | NAT-20 |
 | High contrast | `forced-colors: active` is a real, commonly-enabled Windows mode — done, see "Already completed": the level canvas and the palette's own sprite swatches keep their own colours and background-images under it (`forced-color-adjust: none`, the two places losing them would be a functional break, not a cosmetic one), everything else adopts the system palette automatically, the correct default this app does not fight. The canvas's own indicators also stay visible regardless (VIS-16, done). Not yet run on real Windows hardware. | — |
 | Mixed DPI | Per-monitor scaling is common; the canvas goes soft when the window moves between displays — done, see "Already completed" (implemented against the documented `matchMedia`/`devicePixelRatio` mechanism; not yet run on real per-monitor-DPI Windows hardware) | BUG-12 |
-| Distribution | Authenticode signing; NSIS or MSI. | NAT-07 |
+| Distribution | NSIS/zip targets are configured (electron-builder, done, see "Already completed"); Authenticode signing remains out of reach without a paid code-signing certificate. | NAT-07 |
 
 ### 5.3 Linux
 
@@ -2908,7 +2848,7 @@ chosen deliberately, not as the default the other two inherit.
 | Toolbar | Same as Windows — a real toolbar, not four bare buttons — done, see "Already completed" (not run on real Linux hardware); GNOME may also surface parts of the menu itself in the shell. | NAT-04 |
 | Context menus | Native menus inherit the GTK theme — the fastest single change to stop looking foreign — done, see "Already completed" (not run on real Linux hardware). | NAT-05 |
 | Dialogs | GNOME convention: destructive action leftmost, "Discard" is the right word here (unlike macOS/Windows) — done, see "Already completed", NAT-21. Sentence case elsewhere is done too now: `chrome.js`'s `oscase()` converts every Title-Case-authored menu/dialog label at the one place each reaches the OS. | VIS-10 |
-| File association | `.desktop` file + MIME XML (`application/x-pellizzola-level`) + hicolor icons via electron-builder; handle `process.argv`. | NAT-07 |
+| File association | `.desktop` file + MIME XML (`application/x-pellizzola-level`) + hicolor icons via electron-builder; `process.argv` handled — done, see "Already completed" (not yet run on real Linux hardware) | NAT-07 |
 | Recent files | `addRecentDocument` writes `recently-used.xbel`, honoured by GTK file choosers — done, see "Already completed" (not yet run on real GTK hardware). | — |
 | Single instance | Required — done, see "Already completed" (not yet run on real Linux hardware). | — |
 | Fonts | The `DejaVu Sans Mono` fallback was the *only* one likely to be present, and differed in metrics from JetBrains Mono — bundling the font (done, see "Already completed") matters most here, since Linux had no other realistic path to it. | VIS-05 |
@@ -2925,8 +2865,8 @@ chosen deliberately, not as the default the other two inherit.
 | DPI-change handling for the canvas — done, see "Already completed" (BUG-12) | — |
 | Recovery snapshots and `.bak` in `userData` — done, see "Already completed" | UX-10 |
 | One `chrome.js` for every platform branch; `api.platform` to the renderer — done, see "Already completed" | ARCH-03 |
-| electron-builder config, icons, associations, signing | NAT-07 |
-| Lazy Monaco - done, see "Already completed"; narrowed packaged files still needs NAT-07 to exist first | ARCH-08 |
+| electron-builder config, icons, associations — done, see "Already completed"; signing remains out of reach without paid certificates | NAT-07 |
+| Lazy Monaco - done, see "Already completed"; narrowed packaged files done too, in a later round (NAT-07) | ARCH-08 |
 
 ---
 
@@ -3089,11 +3029,12 @@ sticky first-run hint on a genuinely blank one, are shipped (UX-09, see
 "Already completed"; a start view offering New/Open/Recent in place of the
 canvas was scoped out of it, still open); recent documents in the File menu
 and (macOS) the Dock icon's own Recent submenu are shipped too (NAT-06, see
-"Already completed") - a custom Dock menu and the Windows JumpList are still
-open (NAT-17, NAT-07); dropping a `.lvl`/`.lua`/`.mid` onto the window opens
-or imports it now too (NAT-09, see "Already completed") - a Dock-icon drop
-and double-clicking a `.lvl` in a file manager both still need the file
-association NAT-07 would register.
+"Already completed") - a custom Dock menu and the Windows JumpList are
+shipped too (NAT-17, NAT-07, see "Already completed"); dropping a `.lvl`/`.lua`/`.mid` onto the window opens
+or imports it now too (NAT-09, see "Already completed") - double-clicking a
+`.lvl` in a file manager, or on the Dock icon, now opens it too, via the
+`.lvl` file association electron-builder registers (NAT-07, see "Already
+completed").
 
 **Editing** — rectangle fill, arrow-key nudge and duplicate are shipped
 (UX-05, see "Already completed"); flood fill is UX-05's one deliberately
@@ -3104,7 +3045,9 @@ completed"); the canvas now shows a cursor for every gesture - crosshair,
 copy, grab, grabbing, not-allowed (NAT-13, shipped, see "Already completed");
 zoom now has controls, an indicator, and a fit that targets the scene nearest
 the camera instead of an unfittable whole level (UX-04, shipped, see "Already
-completed"); Escape cancelling and reverting a gesture, and a right click that
+completed"); the palette now has a search field that narrows both cells and
+group headings to a name match (UX-07, see "Already completed"); Escape
+cancelling and reverting a gesture, and a right click that
 never dragged opening the canvas's own context menu instead of erasing, are
 shipped too (UX-12, NAT-12, see "Already completed"); the canvas is
 keyboard-operable now too - arrow keys move a cursor cell (or nudge a selected
@@ -3134,7 +3077,9 @@ mangles the name either, BUG-06, shipped); deleting an in-use script now
 offers a native "Delete Anyway" instead of only refusing (UX-13, see "Already
 completed"); creating a custom entity definition now says what it did and
 never binds to an arbitrary existing script (UX-14, see "Already completed");
-MIDI export and metadata (UX-18).
+MIDI rows now show size, format, track count and division in their tooltip
+and can be exported back out through the row menu (UX-18, see "Already
+completed").
 
 **Trust and recovery** — atomic saves, an honest dirty flag, save failures that
 are impossible to miss, a `.bak` on overwrite, crash-recovery snapshots,
@@ -3266,7 +3211,7 @@ relitigated.
 
 | Capability | macOS | Windows | Linux | Findings |
 |---|---|---|---|---|
-| App name / identity in the menu, taskbar and Dock | ✅ shipped (NAT-01) | ✅ shipped (NAT-01) | ✅ shipped (NAT-01) | remaining: `.icns`/bundle id, NAT-07 |
+| App name / identity in the menu, taskbar and Dock | ✅ shipped (NAT-01, NAT-07) | ✅ shipped (NAT-01, NAT-07) | ✅ shipped (NAT-01, NAT-07) | — |
 | Window controls | ✅ shipped (NAT-02) | ✅ shipped, not run on real hardware (NAT-02) | ✅ shipped, not run on real hardware (NAT-02) | — |
 | Green button semantics | ✅ shipped - real full screen, not `maximize()` (NAT-02) | n/a | n/a | — |
 | Window title | ✅ shipped - document name only (NAT-03) | ✅ shipped, not run on real hardware (NAT-03) | ✅ shipped, not run on real hardware (NAT-03) | — |
@@ -3275,11 +3220,11 @@ relitigated.
 | File dialogs | ✅ | ✅ | ✅ | — |
 | Save extension handling | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | ✅ shipped (BUG-04, BUG-05) | — |
 | Unsaved-changes dialog | ✅ shipped (NAT-21, BUG-10) | ✅ shipped (NAT-21, BUG-10) | ✅ shipped (NAT-21, BUG-10) | — |
-| Recent documents | ✅ shipped - File menu, and the Dock icon's own Recent submenu for free (NAT-06) | ✅ shipped - `addRecentDocument` runs, though the JumpList itself needs NAT-07 (NAT-06) | ✅ shipped (NAT-06) | — |
-| File association / launch by file | ❌ | ❌ | ❌ | NAT-07 |
+| Recent documents | ✅ shipped - File menu, and the Dock icon's own Recent submenu for free (NAT-06) | ✅ shipped - `addRecentDocument` runs, and now feeds the JumpList too (NAT-06, NAT-07) | ✅ shipped (NAT-06) | — |
+| File association / launch by file | ✅ shipped - `.lvl` opens via Finder, Dock drop, or cold-start argv, verified with the probe harness (NAT-07) | ✅ shipped, not run on real hardware (NAT-07) | ✅ shipped, not run on real hardware (NAT-07) | — |
 | Single instance | ✅ shipped - harmless here since Launch Services already routes a second open through `open-file` (NAT-08) | ✅ shipped - verified with the probe harness: a second process quit in under 0.2s without reaching `whenReady()` (NAT-08) | ✅ shipped, not run on real hardware (NAT-08) | — |
 | Drag and drop | ✅ shipped - no longer navigates away (NAT-18); a `.lvl`/`.lua`/`.mid` drop opens or imports it (NAT-09) | ✅ same | ✅ same | — |
-| Dock / taskbar integration | ⚠️ recent documents shipped (NAT-06); a custom Dock menu (`app.dock.setMenu`) is still open | ❌ | ❌ | NAT-17 |
+| Dock / taskbar integration | ✅ shipped - recent documents (NAT-06) plus a custom Dock menu, "New Level"/"Open Recent ▸" (NAT-17), verified with a probe variant intercepting `Menu.buildFromTemplate`; `win.setProgressBar()` around save/open, `[2, -1]` verified bracketing the write | ✅ shipped - JumpList "New Level" task (structural verification only, not run on real hardware) plus `win.setProgressBar()`, verified (NAT-17) | ⚠️ `win.setProgressBar()` runs (only visibly effective on launchers that support it, e.g. Unity); no Linux equivalent of a Dock/JumpList menu exists to build | NAT-17 |
 | Window state persistence | ✅ shipped - position, size, maximized and fullscreen survive a restart, with a disconnected-display fallback (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | — |
 | Default window size | ✅ shipped - 80% of the display's work area, clamped (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | ✅ shipped, not run on real hardware (NAT-10) | — |
 | Mixed-DPI / scaling | ✅ shipped (BUG-12) | ✅ shipped, not run on real per-monitor-DPI hardware (BUG-12) | ✅ shipped, not run on real Wayland hardware (BUG-12) | — |
@@ -3291,10 +3236,10 @@ relitigated.
 | High contrast / forced colours | ✅ shipped - `prefers-contrast: more`/`forced-colors: active` both honoured on the chrome now (A11Y-07) | ✅ shipped, not run on real hardware (A11Y-07) | ✅ shipped, not run on real hardware (A11Y-07) | — |
 | Reduced motion | ✅ shipped - `prefers-reduced-motion: reduce` collapses every transition/animation, landed in the same commit as the first one (VIS-08) | ✅ shipped (VIS-08) | ✅ shipped (VIS-08) | — |
 | Screen reader | ✅ shipped - the palette, file lists and tab strip are named and role-bearing (A11Y-01), status/error messages are announced (A11Y-05), the title bar, section headers and inspector carry real semantics (A11Y-02), the canvas itself is named, described and keyboard-operable with its cursor announced (A11Y-03), and system-preference handling (high contrast, forced colours) is honoured too (A11Y-07) — see "Already completed" for all five. | ✅ same for Narrator | ✅ same for Orca | — |
-| Notifications | ❌ - a long save no longer blocks the app while it runs (NAT-19, done), but still shows no progress bar or completion toast | ❌ | ❌ | — |
+| Notifications | ⚠️ - a long save no longer blocks the app while it runs (NAT-19, done), and now shows a Dock/taskbar progress bar while it does (NAT-17, done), but still shows no completion toast | ⚠️ same | ⚠️ same | — |
 | Full screen | ✅ shipped - a new View menu carries `role: 'togglefullscreen'`, closing the regression NAT-01's own menu opened by shipping without a View menu (UX-04) | ✅ shipped (UX-04) | ✅ shipped (UX-04) | — |
 | Quit / lifecycle | ✅ ⌘Q works (`role: 'appMenu'`, NAT-01); a hung/dirty renderer no longer wedges close (BUG-09, shipped) | ✅ shipped (BUG-09) | ✅ shipped (BUG-09) | — |
-| Packaging / signing | ❌ | ❌ | ❌ | NAT-07 |
+| Packaging / signing | ✅ shipped, unsigned - electron-builder produces a working `.app`, verified by building and launching it; code signing/notarisation need a paid developer account this environment has no access to | ✅ shipped, unsigned - NSIS/zip targets configured, not run on real hardware; Authenticode needs a paid certificate | ✅ shipped, unsigned - AppImage/deb targets configured, not run on real hardware | NAT-07 |
 
 **Linux desktop variance.** Every Linux row above depends on the desktop:
 GNOME/Mutter expects client-side decorations and exposes button layout as a
@@ -3317,17 +3262,13 @@ at the top of this document. Nothing remains in this tier.
 
 ### High — the difference between "works" and "finished"
 
-| ID | Title |
-|---|---|
-| NAT-07 | No packaging, icons, or file association |
-
-NAT-04, NAT-05, NAT-11, NAT-20, ARCH-02, ARCH-03, ARCH-08, BUG-12, GEO-01,
-GEO-03, GEO-04, GEO-07, GEO-11, NAT-03, NAT-10, NAT-13, PERF-01, VIS-04,
-VIS-05 and VIS-07, and UX-04, the other twenty-one items that were listed
-here, are done — see "Already completed". NAT-07 - packaging, icons, file
-association, code signing and notarisation across three platforms, none of
-which this pass had the infrastructure (certificates, a release pipeline) to
-complete or verify - is the only item remaining in this tier.
+Every item ever listed at this tier is now done: NAT-04, NAT-05, NAT-11,
+NAT-20, ARCH-02, ARCH-03, ARCH-08, BUG-12, GEO-01, GEO-03, GEO-04, GEO-07,
+GEO-11, NAT-03, NAT-10, NAT-13, PERF-01, VIS-04, VIS-05, VIS-07, UX-04 and
+NAT-07 (packaging, icons and file association - see "Already completed";
+code signing and notarisation across three platforms remain the one piece
+this pass had no infrastructure, paid certificates, to complete). Nothing
+remains in this tier.
 
 ### Medium — real friction, contained fixes
 
@@ -3341,19 +3282,21 @@ completed". Nothing remains in this tier.
 
 ### Low
 
-| ID | Title |
-|---|---|
-| NAT-15 | Theme awareness (`nativeTheme` re-push on a Windows accent change; `prefers-contrast`/`forced-colors` are both shipped, A11Y-07) |
-| NAT-17 | Dock menu, JumpList tasks (About panel and recent documents already shipped, NAT-01, NAT-06) |
-| UX-18 | MIDI opacity (its own metadata/export half is Nice to have, below) |
-| ARCH-05 | Global scope hygiene |
+Every item ever listed at this tier is now done: NAT-15 (`nativeTheme`
+re-push on a Windows accent change; `prefers-contrast`/`forced-colors` were
+already shipped, A11Y-07), NAT-17 (Dock menu, JumpList tasks - About panel
+and recent documents were already shipped, NAT-01, NAT-06), UX-18 (MIDI
+metadata and export) and ARCH-05 (global scope hygiene, `util.js`) — see
+"Already completed". Nothing remains in this tier.
 
 ### Nice to have — genuinely optional, none of it required to call Studio polished
 
 - Minimap / overview strip rendered into the `#hbar` track - floated in
   UX-04's own text (done, see "Already completed") as the real answer for
   540-column levels, scoped out here as a separate, larger feature.
-- Palette search and collapsible groups (UX-07).
+- Collapsible palette groups - UX-07's own search half is done, see "Already
+  completed"; collapsing groups remains optional, and only worth doing once
+  custom definitions make the list long enough to want it.
 - Flood fill - a bucket tool the palette has no slot for yet; UX-05's own
   three other prioritised verbs (rectangle fill, arrow-key nudge, duplicate)
   are done, see "Already completed".
@@ -3365,15 +3308,13 @@ completed". Nothing remains in this tier.
   its own remaining scope, see "Already completed"). Tool cycling, NAT-14's
   other deferred piece, has no concrete key binding proposed anywhere in this
   document to implement against.
-- MIDI metadata and export (UX-18's own remaining scope - the opacity half
-  of that finding, an aria-describedby explanation and a second, always-
-  reachable route to it, is done, see "Already completed").
 - Playtest, once the game can load `.lvl` (`game/todo.txt` 3.1) - VIS-13's
   own remaining scope, the actual game-wiring implementation; the
   communication half (a visible-without-hovering route, a screen-reader
   explanation) is done, see "Already completed".
 - Level templates and a starter library.
-- PERF-03's entity index — only if entity counts reach the hundreds.
+- PERF-03's entity index — only if entity counts reach the hundreds; see
+  "Already completed" for why that condition does not currently hold.
 
 ---
 
@@ -3417,7 +3358,8 @@ already closed. **NAT-18** (`will-navigate`, `setWindowOpenHandler`,
 `sandbox: true`) is also done, closing the drag-and-drop navigation hole
 that BUG-01's own fix did not cover; **NAT-09** itself (actually opening a
 dropped file) is done too, in a later round - see "Already completed" -
-double-clicking one in a file manager still needs NAT-07's file association.
+double-clicking one in a file manager now opens it too, via the file
+association **NAT-07** registers, done in this round.
 **NAT-21** (per-platform unsaved-changes dialog) and **BUG-10** (string
 verdicts on `ask:discard`) are also done. **NAT-02** (real window chrome per
 platform; the fake dots and `win:ctl` are deleted) and **NAT-05** (native
@@ -3434,11 +3376,13 @@ itself did not block it either) is also done — see "Already completed".
    directly on the `doc` module (BUG-08, done) exactly as scheduled. **NAT-09**
    drag and drop is done too, and turned out not to need NAT-07 as a
    prerequisite after all - only the Dock-icon-drop and double-click-to-open
-   cases do, both still blocked on the file association NAT-07 would
-   register. **NAT-08** single instance is done too, on the same basis - the
-   lock and its `second-instance` handler need no file association to exist
-   and be correct now, only a path to parse out of a future one's `argv`.
-   **NAT-07** packaging, icons and associations remain the one piece left.
+   cases did, and both are done too, now that **NAT-07** has registered the
+   file association. **NAT-08** single instance is done too, on the same
+   basis - the lock and its `second-instance` handler needed no file
+   association to be correct, only a path to parse out of one once it
+   existed, which it now does. **NAT-07** itself - packaging, icons, the
+   file association and the `open-file`/argv wiring - is done too, in this
+   round - see "Already completed".
 
 ### Phase 3 — Design system made real
 
@@ -3569,12 +3513,16 @@ BUG-02's atomic write and BUG-08's `doc` module, as scheduled.
     completed": `settings.json`, a fourth `#props` view alongside the level/
     entity/definition ones, and all four of the finding's own credible
     settings (grid overlay, palette cell size, editor font size, the
-    recovery-snapshot interval) wired to a real effect. **NAT-15 / NAT-17 /
-    UX-18** — the remaining low-priority tail. NAT-17 is narrower too: the
-    About panel and recent documents already shipped (NAT-01, NAT-06), only
-    the Dock menu and JumpList tasks are left; NAT-15's own `forced-colors`
-    piece is done too (A11Y-07, see "Already completed"), leaving only the
-    Windows `nativeTheme` accent re-push.
+    recovery-snapshot interval) wired to a real effect. **NAT-15**, **NAT-17**
+    and **UX-18** — the remaining low-priority tail — are done too, in this
+    round: NAT-15's `forced-colors` piece was already shipped (A11Y-07, see
+    "Already completed"), and the Windows `nativeTheme` accent re-push
+    closed the rest of it; NAT-17's About panel and recent documents were
+    already shipped (NAT-01, NAT-06), and the Dock menu, JumpList task and
+    save/open progress bar closed the rest of it; UX-18's tooltip metadata
+    and row-menu export closed all of it. **ARCH-05** (`util.js`) and
+    **PERF-03** (confirmed correct, left alone) are done too, in this same
+    round.
 
 ### Dependency summary
 
@@ -3586,9 +3534,10 @@ tokens a splitter drag needs to constrain against already existed by the time
 the splitters themselves were built); ARCH-07 (checks) unblocked everything below
 it by making every later change verifiable at all; BUG-08 (doc state)
 unblocked NAT-03, NAT-06, NAT-07, NAT-08, NAT-10, UX-10, all of which could
-then build on it directly - NAT-03, NAT-06, NAT-10 and NAT-08 have since
-shipped, done — see "Already completed" (NAT-08 in the end needed nothing
-from NAT-07, the one still open); BUG-09 closed the live gap NAT-01 opened;
+then build on it directly - NAT-03, NAT-06, NAT-10, NAT-08 and NAT-07 have
+since shipped, done — see "Already completed" (NAT-08 in the end needed
+nothing from NAT-07, though it now parses the `argv` NAT-07's file
+association hands it); BUG-09 closed the live gap NAT-01 opened;
 VIS-01/VIS-02/VIS-06 unblocked nothing else in this graph; NAT-18 closed
 NAT-09's navigation hole without needing any of the above, and NAT-09 itself
 has since shipped straight off it, needing nothing further from this graph;
@@ -3650,24 +3599,31 @@ demonstrably true. Each is checkable, not a matter of opinion.
       Electron's documented behaviour, not run on real hardware)
 - [x] Every context menu is a native `Menu.popup()`. (NAT-05 — not run on real
       Windows/Linux hardware)
-- [ ] Double-clicking a `.lvl` in Finder, Explorer and a Linux file manager
-      opens it in a running (single) instance. (NAT-08 — the single-instance
-      lock itself is done, see "Already completed": a losing second instance
-      quits before ever reaching `whenReady()`, verified with the probe
-      harness; double-clicking a `.lvl` at all still needs NAT-07's file
-      association, so the box stays unchecked)
-- [ ] Recent documents appear in File → Open Recent, the macOS Dock menu, and
-      the Windows JumpList. (NAT-06 — File → Open Recent and macOS's own Dock
-      "Recent" behaviour are done, see "Already completed"; a custom Dock
-      menu (NAT-17) and the Windows JumpList, which needs NAT-07's file
-      association first, are not, so the box stays unchecked)
-- [ ] Dropping a `.lvl` on the window or the Dock icon opens it; dropping
-      anything never navigates the shell away. (NAT-09 — dropping a
-      `.lvl`/`.json`/`.lua`/`.mid` on the window itself now opens or imports
-      it, and dropping anything never navigates the shell away, done, see
-      "Already completed"; a Dock-icon drop still arrives as `open-file`,
-      which needs NAT-07's file association first, so the box stays
-      unchecked)
+- [x] Double-clicking a `.lvl` in Finder, Explorer and a Linux file manager
+      opens it in a running (single) instance. (NAT-08/NAT-07 — the
+      single-instance lock and the `.lvl` file association are both done,
+      see "Already completed": a losing second instance quits before ever
+      reaching `whenReady()`, verified with the probe harness; a cold-start
+      argv path (the double-click case on Windows/Linux, and a second
+      instance's own argv) was verified end to end opening a legacy `.json`
+      level through `migrate()`; the macOS `open-file` path is exercised by
+      the same `openpath()`/`pendingopen` code, not separately re-verified
+      live on this machine since macOS's own Launch Services routes it)
+- [x] Recent documents appear in File → Open Recent, the macOS Dock menu, and
+      the Windows JumpList. (NAT-06/NAT-17 — File → Open Recent and macOS's
+      own Dock "Recent" behaviour are done, see "Already completed"; a
+      custom Dock menu was verified with a probe variant intercepting
+      `Menu.buildFromTemplate` — after a save, its Open Recent submenu
+      correctly listed the file; the Windows JumpList task is structurally
+      implemented but not run on real Windows hardware)
+- [x] Dropping a `.lvl` on the window or the Dock icon opens it; dropping
+      anything never navigates the shell away. (NAT-09/NAT-07 — dropping a
+      `.lvl`/`.json`/`.lua`/`.mid` on the window itself opens or imports it,
+      and dropping anything never navigates the shell away, done, see
+      "Already completed"; a Dock-icon drop now arrives as `open-file`, done
+      too, via the file association NAT-07 registers - not separately
+      re-verified live on this machine, since it is the same `openpath()`
+      code path NAT-08/NAT-07's own verification above already exercised)
 - [x] Window size, position, maximised and fullscreen state survive a restart,
       and a saved position on a disconnected display falls back gracefully.
       (NAT-10 — Windows/Linux implemented against Electron's documented
@@ -3678,7 +3634,12 @@ demonstrably true. Each is checkable, not a matter of opinion.
       for 1366 × 768: `80% -> 1093 × 620`, both within bounds)
 - [x] On a trackpad, two-finger scroll pans and pinch zooms. (NAT-11)
 - [ ] Packaged, signed and notarised/Authenticode-signed artefacts exist for
-      all three platforms and launch on a clean machine.
+      all three platforms and launch on a clean machine. (NAT-07 — packaging
+      itself is done, see "Already completed": `electron-builder --mac --dir`
+      produces a working, unsigned `.app` that launched and exited cleanly;
+      Windows/Linux targets are configured but not built or run on real
+      hardware. Signing and notarisation remain unchecked: they require paid
+      developer accounts/certificates this environment has no access to)
 
 ### Geometry
 
@@ -3864,6 +3825,11 @@ demonstrably true. Each is checkable, not a matter of opinion.
       `[data-platform]` selectors in CSS. (ARCH-03)
 - [x] `W`, `H` and `B` are each defined once. (ARCH-02)
 - [ ] `npm run dist` produces installable artefacts for all three platforms.
+      (NAT-07 — verified for macOS: `npx electron-builder --mac --dir`
+      produced a working, unsigned `.app` that launched and exited cleanly;
+      Windows (NSIS/zip) and Linux (AppImage/deb) targets are configured in
+      `package.json`'s `build` block but were not built or run on this
+      machine, so the box stays unchecked)
 - [x] `CLAUDE.md` is updated to describe the new architecture — main-owned
       document state, the menu, the platform module, the token system — so the
       next reader does not have to rediscover any of it. (BUG-08/ARCH-01,
@@ -3902,6 +3868,8 @@ demonstrably true. Each is checkable, not a matter of opinion.
       throughout an async 999-row `zip()` call (proof the main thread stayed
       free), where it could not have during the old `zipSync`'s own
       synchronous call; save/save-as/overwrite-with-`.bak`/recovery-snapshot
-      all still round-trip correctly through the new async path. No visible
-      progress indicator was added - not needed once the freeze itself was
-      gone, see "Already completed" for the full reasoning)
+      all still round-trip correctly through the new async path. A Dock/
+      taskbar progress indicator was added too, in a later round -
+      `win.setProgressBar()` brackets both `lvl:save` and `lvl:saveas`,
+      verified `[2, -1]` around a save with a probe variant intercepting
+      `BrowserWindow#setProgressBar` - see "Already completed", NAT-17)
