@@ -394,8 +394,17 @@ function entityview(p, e)
 	if (!known.includes(e.def))		/* a def the catalog never knew */
 		known.unshift(e.def);
 
+	/* Items and entities are the same thing on disk and in every code path
+	 * here (CLAUDE.md: "Interactives are entities, not tiles") - this is the
+	 * one place that visually tells them apart, since the palette already
+	 * keeps them in separate groups (ITEMS vs ENTS, palette() above) and a
+	 * user who dragged a coin in from the "items" group should not read
+	 * "entity" back at them. A custom definition (never in ITEMS) still
+	 * reads "entity", unchanged. */
+	const title = ITEMS.some(v => v.id === e.def) ? 'item' : 'entity';
+
 	p.innerHTML =
-		'<h4>entity</h4>' +
+		'<h4>' + title + '</h4>' +
 		'<label>definition<select id="p_def">' + known.map(id =>
 			'<option' + (id === e.def ? ' selected' : '') + '>' + esc(id) +
 			'</option>').join('') + '</select></label>' +
