@@ -10,14 +10,6 @@
  * checked first in Panel.inspect(), below, ahead of Grid.sel/Grid.tool. */
 const Panel = {showsettings: false};
 
-function $(id) { return document.getElementById(id); }
-
-function esc(s)
-{
-	return String(s).replace(/[&<>"]/g, c =>
-		({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
-}
-
 /* VIS-11: the two icons a dynamically-built element still needs (the palette's
  * add-definition "+" and a tab's own close "x" - everything else the icon set
  * covers is static markup in index.html). `d` is one or more SVG path data

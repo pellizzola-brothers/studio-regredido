@@ -39,6 +39,8 @@ chrome.js     The one place process.platform is read (main process): real
               dialog's per-platform buttons.
 preload.js    contextBridge surface — the renderer's entire view outward.
 lvl.js        .lvl read/write plus the level.json validator (main process).
+util.js       $() and esc() - loaded first so every other renderer script's
+              dependency on them is explicit, not implicit in load order.
 catalog.js    Block ids, entity definitions, backgrounds, texture loading.
               Shared: the renderer loads it as a script, lvl.js requires it.
 tokens.js     Reads style.css's :root design tokens into a plain object, for
@@ -413,7 +415,7 @@ one in `panel.js` collide, and the later file silently wins. `grid.js` uses
 `cell()`. Check for collisions when adding top-level names:
 
 ```bash
-grep -hoE '^(function [a-z_]+|const [A-Z_a-z]+ =)' catalog.js tokens.js grid.js panel.js layout.js code.js app.js | sort | uniq -d
+grep -hoE '^(function [a-z_]+|const [A-Z_a-z]+ =)' util.js catalog.js tokens.js grid.js panel.js layout.js code.js app.js | sort | uniq -d
 ```
 
 `npm run check` (`tools/check.js`) runs the same check on every invocation, so
