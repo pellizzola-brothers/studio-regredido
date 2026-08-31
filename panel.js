@@ -241,8 +241,8 @@ Panel.update = function (e)
 };
 
 /* ARCH-04: every rebuild below replaces #props's own subtree wholesale, so a
- * field the user is mid-edit in (p_rows, p_def, p_id, the p_script/p_bg
- * selects) is destroyed and a new, unfocused element takes its place - Tab or
+ * field the user is mid-edit in (p_def, p_id, the p_script/p_bg selects) is
+ * destroyed and a new, unfocused element takes its place - Tab or
  * a screen reader loses its position entirely, not just the caret.  Saving
  * which field (by id) held focus before the rebuild and restoring it after
  * fixes every onchange call site at once, rather than patching each by hand;
@@ -345,15 +345,15 @@ function levelview(p)
 		'<select id="p_bg">' + BGS.map(b => '<option' +
 			(l.backgrounds[0] === b.id ? ' selected' : '') + '>' +
 			esc(b.id) + '</option>').join('') + '</select>' +
+		/* Both dimensions are fixed - B/W/H (catalog.js) are a cross-repo
+		 * contract with the game (CLAUDE.md), not a per-level choice, so
+		 * rows reads the same way width already did rather than offering an
+		 * edit the game could never honour. */
 		'<h4>size</h4>' +
 		'<div class="row">' +
 			'<label>width<input value="' + W + '" disabled aria-disabled="true"></label>' +
-			/* UX-17: Grid.setheight() (onchange, below) clamps silently to
-			 * 1-999 - said here instead, rather than only discoverable by
-			 * typing past the edge and finding out. */
-			'<label>rows (1-999)<input id="p_rows" type="number" min="1" max="999" value="' + Grid.h + '"></label>' +
+			'<label>rows<input value="' + Grid.h + '" disabled aria-disabled="true"></label>' +
 		'</div>' +
-		'<p class="hint" id="p_rows_hint"></p>' +
 		'<button class="act" id="p_fit">fit view</button>';
 
 	bind('p_name', v => { i.name = v; App.retitle(); }, 'rename level');
@@ -364,21 +364,6 @@ function levelview(p)
 		App.touch();
 		Grid.redraw();
 	}, 'change background');
-	/* UX-08: warn before the destructive variant commits, rather than only
-	 * after - typing a smaller row count can delete entities well below the
-	 * visible viewport with nothing on screen to suggest it. */
-	$('p_rows').oninput = e => {
-		const h = +e.target.value;
-		const n = h > 0 && h < Grid.h ?
-			App.doc.json.level.entities.filter(v => v.pos[1] >= h * B).length : 0;
-		$('p_rows_hint').textContent = n ?
-			n + ' ' + (n === 1 ? 'entity' : 'entities') + ' below row ' + h +
-				' will be removed' : '';
-	};
-	$('p_rows').onchange = e => {
-		Grid.setheight(+e.target.value);
-		Panel.inspect();
-	};
 	$('p_fit').onclick = Grid.fit;
 }
 

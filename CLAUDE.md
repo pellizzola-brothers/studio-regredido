@@ -100,6 +100,19 @@ level.lvl
 them `i * 100`, so `B = 100` in `catalog.js` keeps entity `pos` aligned to the
 grid. Changing it here alone desynchronises the studio from the game.
 
+**A level's dimensions are fixed, not authored.** `W` (540 columns) and `H`
+(12 rows) in `catalog.js` are both the same cross-repo contract `B` is - the
+studio never lets a level be any size but this one, so the inspector's own
+`width`/`rows` fields (`panel.js`'s `levelview()`) are always disabled,
+read-only readouts, never inputs. There used to be a `Grid.setheight()` that
+resized the grid in place (with its own `Undo.grid()` step type, since a
+resize is not describable as a cell diff) - removed outright rather than left
+unreachable, along with the UI that drove it, once it became clear no size
+but `H` was ever meant to be reachable from here. A level loaded from disk
+with some other row count (a legacy or hand-edited file - `block_data`'s
+format itself still permits it, "Height is free" above) still opens and
+displays correctly; only *creating* or *resizing* to a non-`H` height is gone.
+
 **A level divides into 9 scenes.** `textures/README.md` documents this - each
 scene gets its own backdrop once the schema grows a field for it, which it
 does not yet (`level.backgrounds` is still one id for the whole level, see
@@ -176,10 +189,8 @@ arrays, so the copy is a handful of pointers.
 or `Undo.begin()`/`Undo.end()` around a drag. An unwrapped change does not just
 fail to undo — it gets silently folded into whatever step runs next, so undo
 starts reverting things the user never did. `setblock()` already reports to
-`Undo.cell()`; anything that *reallocates* `Grid.a` (only `Grid.setheight()`
-today) must call `Undo.grid()` with before and after copies, because a cell
-diff cannot describe a resize. `Undo` calls `App.refresh()` afterwards, which
-rebuilds every view and re-syncs Monaco's models through `Code.sync()`.
+`Undo.cell()`. `Undo` calls `App.refresh()` afterwards, which rebuilds every
+view and re-syncs Monaco's models through `Code.sync()`.
 
 A step left open by `Undo.begin()` can also be abandoned instead of finished:
 `Undo.cancel()` reverts whatever it had already applied (reusing `apply()`
@@ -233,9 +244,10 @@ wrote, which survives the asynchronous scroll events a flag would miss.
 `Grid.clamp()` holds the camera over the level so the bar can stand for the
 whole range of x. Middle-drag and Alt-drag still pan freely in both axes.
 `#vbar` mirrors the same technique on the vertical axis (`Grid.syncvbar()`/
-`Grid.cam.y`), the one asymmetry the horizontal-only version otherwise left:
-`Grid.setheight()` permits up to 999 rows with no way to see where the
-viewport sits among them. Hidden via `visibility: hidden` (not `display:
+`Grid.cam.y`), the one asymmetry the horizontal-only version otherwise left: a
+level's rows can still outnumber the viewport (a legacy or hand-edited file
+taller than `H`, above) with no way to see where the viewport sits among
+them. Hidden via `visibility: hidden` (not `display:
 none`, so the layout does not shift) whenever the level fits the viewport
 vertically, since unlike `#hbar` — always 540 columns wide regardless of
 window size — it has nothing to represent in that case. `#stage` and `#vbar`

@@ -292,48 +292,6 @@ Grid.commit = function ()
 	App.doc.json.level.block_data = rows;
 };
 
-/* Grow or shrink the level, keeping the rows that survive. */
-Grid.setheight = function (h)
-{
-	h = Math.max(1, Math.min(999, h | 0));
-	if (h === Grid.h)
-		return;
-
-	const oldh = Grid.h;
-	let removed = 0;
-	Undo.act(() => {
-		const old = Grid.a;
-		const a = new Uint16Array(W * h);
-
-		a.set(old.subarray(0, W * Math.min(h, Grid.h)));
-		Grid.a = a;
-		Grid.h = h;
-
-		const es = elist();
-		for (let i = es.length - 1; i >= 0; i--)
-			if (es[i].pos[1] >= h * B) {
-				es.splice(i, 1);
-				removed++;
-			}
-		Undo.grid(old.slice(), a.slice());
-		Grid.sel = -1;
-		if (Grid.kcur)			/* A11Y-03: keep it inside the resized grid */
-			Grid.kcur.y = Math.min(Grid.kcur.y, h - 1);
-		App.touch();
-	}, 'resize level');
-	Grid.redraw();
-	/* UX-08: shrinking the level can silently delete entities below the new
-	 * bound - it is undoable (Undo.act, above), but the user was never told
-	 * anything happened. Say so only when it actually cost something. */
-	App.say(removed ?
-		'level shortened to ' + h + ' row' + (h === 1 ? '' : 's') + ', ' +
-			removed + ' ' + (removed === 1 ? 'entity' : 'entities') +
-			' removed · ' + (api.platform === 'darwin' ? '⌘Z' : 'Ctrl+Z') +
-			' to undo' :
-		'level ' + (h > oldh ? 'grown' : 'shortened') + ' to ' + h +
-			' row' + (h === 1 ? '' : 's'));
-};
-
 /* Never fit *above* 100% - a small level should not be blown up past its
  * native pixel size just because the window is large. */
 function fitset(z, x)

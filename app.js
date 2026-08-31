@@ -258,7 +258,10 @@ App.setwarnings = function (list)
 		const icon = document.createElement('span');
 		icon.textContent = '⚠';
 		icon.setAttribute('aria-hidden', 'true');
-		wb.append(icon, ' ' + App.warnings.join(' · '));
+		/* #warnbar's own gap (style.css), not a leading space here - a flex
+		 * item's leading whitespace collapses at its own box edge, so a space
+		 * concatenated onto this text would never actually render. */
+		wb.append(icon, App.warnings.join(' · '));
 	}
 };
 
@@ -439,7 +442,10 @@ function empty(ul, isscript)
 	li.append(isscript ? 'no scripts yet · ' : 'no midi files · ');
 	b.type = 'button';
 	b.textContent = isscript ? 'new script' : 'import…';
-	b.onclick = isscript ? addscript : addmidi;
+	/* Its own click bubbles to #side's onclick (panelmenu, below) same as any
+	 * other click in here does - stopped, or this button's own action would
+	 * be immediately followed by the panel's own popup menu opening too. */
+	b.onclick = ev => { ev.stopPropagation(); (isscript ? addscript : addmidi)(); };
 	li.appendChild(b);
 	ul.appendChild(li);
 }
@@ -473,7 +479,10 @@ function list(ul, keys, isscript)
 		 * click used to open it too, but that cost the file manager's most
 		 * frequent action (opening a script) two clicks and a pointer
 		 * traverse. Double-click is the same gesture every other file
-		 * manager on every platform uses for "open". */
+		 * manager on every platform uses for "open". A left click still has
+		 * to be stopped here, or it bubbles to #side's own onclick
+		 * (panelmenu, below) and opens that popup instead. */
+		li.onclick = ev => ev.stopPropagation();
 		li.oncontextmenu = ev => rowmenu(ev, k, isscript);
 		if (isscript)
 			li.ondblclick = () => App.opentab(k);
@@ -557,6 +566,17 @@ function badname(raw, old, isscript)
 		(isscript ? 'a script' : 'a MIDI file') + ' named ' + clean + ' already exists' : '';
 }
 
+/* The row (if any) with an inline rename/create field already open - at most
+ * one may be, since a second edit() call used to leave two: a right click
+ * opens a native menu without blurring the input underneath it the way an
+ * ordinary click does, so picking "New Script"/"Rename" from it while a
+ * field was already open started a second one instead of committing or
+ * replacing the first. */
+function activeedit()
+{
+	return document.querySelector('#scripts li.editing, #midis li.editing');
+}
+
 /* Electron has no window.prompt, so names are typed in place.  `isscript` is
  * the row's own kind, forwarded by the caller rather than re-derived from
  * `old`'s prefix - `old === null` (a brand new row) is only ever a script,
@@ -570,6 +590,12 @@ function badname(raw, old, isscript)
  * make a rejected rename indistinguishable from a silently ignored one. */
 function edit(li, b, old, isscript)
 {
+	const already = activeedit();
+	if (already && already !== li) {
+		already.querySelector('input').focus();
+		App.say('finish naming that one first', true);
+		return;
+	}
 	const inp = document.createElement('input');
 	const err = document.createElement('div');
 
@@ -652,6 +678,17 @@ function cleanmidi(s, old)
 /* Start an inline entry at the end of the script list. */
 function addscript()
 {
+	/* Reached three ways (the "+" button, the empty-list placeholder's own
+	 * button, and the panel/row menu's "New Script") - none of them can tell
+	 * a rename or an earlier "New Script" is still open underneath a native
+	 * menu that never blurred it (activeedit(), above), so it is checked
+	 * here rather than in each caller. */
+	const already = activeedit();
+	if (already) {
+		already.querySelector('input').focus();
+		App.say('finish naming that one first', true);
+		return;
+	}
 	const ul = $('scripts');
 	/* VIS-12: an empty list's placeholder row is the thing that just got
 	 * clicked (it is the only route into this function while the list is

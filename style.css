@@ -607,11 +607,13 @@ li.empty button { color: var(--acc-text); text-decoration: underline; }
 	min-height: 0;
 }
 /* GEO-10: the horizontal scrollbar (#hbar, below) always had a real vertical
-   counterpart's worth of range to represent - Grid.setheight() permits up to
-   999 rows - but no bar to show it. #canvasrow puts #vbar beside #wrap the
-   same way #hbar already sits below it; #corner fills the square #hbar would
-   otherwise leave under #vbar, so the two read as one L-shaped frame around
-   the canvas instead of a stray gap. */
+   counterpart's worth of range to represent - block_data's row count is
+   fixed per level (CLAUDE.md) but not fixed across every level a legacy or
+   hand-edited file can still hold more rows than one viewport shows - but no
+   bar to show it. #canvasrow puts #vbar beside #wrap the same way #hbar
+   already sits below it; #corner fills the square #hbar would otherwise
+   leave under #vbar, so the two read as one L-shaped frame around the canvas
+   instead of a stray gap. */
 #canvasrow { position: relative; display: flex; flex: 1; min-height: 0; }
 #wrap { position: relative; flex: 1; min-width: 0; overflow: hidden; }
 #code { position: absolute; inset: 0; display: none; }
@@ -657,10 +659,17 @@ canvas { display: block; }
    counterpart rather than a floating dialog. --space-1 top/bottom (not a
    full row token - --row-sm is what #status itself uses) keeps it close to
    its own text height, since unlike every other chrome row here it never
-   holds a control that needs room to be clicked. */
+   holds a control that needs room to be clicked. gap: display: flex makes
+   the icon <span> and the message text (App.setwarnings(), app.js) two
+   separate flex items, and a flex item's own leading whitespace collapses
+   at its own box edge exactly like a line's does - a literal space between
+   them in the DOM (the way #msg's own icon+text, a plain inline run with no
+   flex box between them, gets away with) renders with no visible gap at
+   all. gap sidesteps that instead of fighting it. */
 #warnbar {
 	display: flex;
 	align-items: center;
+	gap: var(--space-2);
 	flex: 0 0 auto;
 	overflow: hidden;
 	padding: var(--space-1) var(--space-5);

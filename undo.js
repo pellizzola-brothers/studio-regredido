@@ -25,8 +25,7 @@ function shot()
 		ents: JSON.stringify(l.entities),
 		bgs: JSON.stringify(l.backgrounds),
 		scripts: Object.assign({}, App.doc.scripts),
-		midi: Object.assign({}, App.doc.midi),
-		h: Grid.h
+		midi: Object.assign({}, App.doc.midi)
 	};
 }
 
@@ -62,8 +61,7 @@ function diffparts(a, b)
 function same(a, b)
 {
 	const d = diffparts(a, b);
-	return !d.info && !d.defs && !d.ents && !d.bgs && a.h === b.h &&
-		!d.scripts && !d.midi;
+	return !d.info && !d.defs && !d.ents && !d.bgs && !d.scripts && !d.midi;
 }
 
 /* Open a step.  Nested calls join the step already running, so a drag that
@@ -77,7 +75,7 @@ Undo.begin = function (label)
 {
 	if (Undo.step || Undo.quiet)
 		return;
-	Undo.step = {before: shot(), cells: [], grid: null, label: label || 'edit'};
+	Undo.step = {before: shot(), cells: [], label: label || 'edit'};
 };
 
 /* setblock() reports each cell it changes: index, what was there, what is. */
@@ -85,13 +83,6 @@ Undo.cell = function (n, was, now)
 {
 	if (Undo.step)
 		Undo.step.cells.push(n, was, now);
-};
-
-/* Resizing reallocates the grid, so that one keeps whole copies. */
-Undo.grid = function (before, after)
-{
-	if (Undo.step)
-		Undo.step.grid = {before: before, after: after};
 };
 
 Undo.end = function ()
@@ -102,7 +93,7 @@ Undo.end = function ()
 		return;
 	Undo.step = null;
 	s.after = shot();
-	if (!s.cells.length && !s.grid && same(s.before, s.after))
+	if (!s.cells.length && same(s.before, s.after))
 		return;				/* the gesture changed nothing */
 	/* The clean marker may be sitting in the redo path this edit is about to
 	 * discard.  Once that path is gone the saved state can never be reached
@@ -189,14 +180,9 @@ function apply(s, side)
 	App.doc.scripts = Object.assign({}, w.scripts);
 	App.doc.midi = Object.assign({}, w.midi);
 
-	if (s.grid) {
-		Grid.h = w.h;
-		Grid.a = s.grid[side].slice();
-	} else {
-		const c = s.cells, n = side === 'before' ? 1 : 2;
-		for (let i = 0; i < c.length; i += 3)
-			Grid.a[c[i]] = c[i + n];
-	}
+	const c = s.cells, n = side === 'before' ? 1 : 2;
+	for (let i = 0; i < c.length; i += 3)
+		Grid.a[c[i]] = c[i + n];
 
 	Grid.sel = -1;
 	Undo.quiet = false;
@@ -206,12 +192,11 @@ function apply(s, side)
 	 * previously it rebuilt the tab strip, both file lists, the whole
 	 * palette and the inspector, and re-synced every Monaco model, for
 	 * every single step walked back through, whether or not any of them
-	 * had anything to do with that step. cells is true whenever the grid
-	 * itself changed - either a resize (s.grid) or an actual cell diff
-	 * (s.cells.length) - so a step that touched neither still skips the
+	 * had anything to do with that step. cells is true whenever an actual
+	 * cell diff exists, so a step that touched neither still skips the
 	 * redraw too. */
 	App.refresh({
-		cells: !!(s.grid || s.cells.length),
+		cells: !!s.cells.length,
 		...diffparts(s.before, s.after)
 	});
 }
