@@ -548,10 +548,7 @@ function empty(ul, isscript)
 	li.append(isscript ? 'no scripts yet · ' : 'no midi files · ');
 	b.type = 'button';
 	b.textContent = isscript ? 'new script' : 'import…';
-	/* Its own click bubbles to #side's onclick (panelmenu, below) same as any
-	 * other click in here does - stopped, or this button's own action would
-	 * be immediately followed by the panel's own popup menu opening too. */
-	b.onclick = ev => { ev.stopPropagation(); (isscript ? addscript : addmidi)(); };
+	b.onclick = isscript ? addscript : addmidi;
 	li.appendChild(b);
 	ul.appendChild(li);
 }
@@ -585,10 +582,9 @@ function list(ul, keys, isscript)
 		 * click used to open it too, but that cost the file manager's most
 		 * frequent action (opening a script) two clicks and a pointer
 		 * traverse. Double-click is the same gesture every other file
-		 * manager on every platform uses for "open". A left click still has
-		 * to be stopped here, or it bubbles to #side's own onclick
-		 * (panelmenu, below) and opens that popup instead. */
-		li.onclick = ev => ev.stopPropagation();
+		 * manager on every platform uses for "open"; a left click is
+		 * otherwise a no-op here, onside() (below) being what keeps it from
+		 * bubbling into the panel's own background menu. */
 		li.oncontextmenu = ev => rowmenu(ev, k, isscript);
 		if (isscript)
 			li.ondblclick = () => App.opentab(k);
@@ -634,6 +630,21 @@ function rowmenu(ev, k, isscript)
 	ev.stopPropagation();
 	const e = App.doc.json.level.entities[Grid.sel];
 	api.rowmenu({kind: isscript ? 'script' : 'midi', key: k, entityDef: e ? e.def : null});
+}
+
+/* "Clicking the panel background" (CLAUDE.md) means the click did not land
+ * on a row or a button - #side's own onclick (below) would otherwise fire
+ * for a click on any descendant too, since a plain click bubbles all the
+ * way up to it regardless of what it actually landed on. A right click
+ * doesn't need this check: rowmenu() (below) already calls
+ * stopPropagation() on the ones a row wants to handle itself, so only a
+ * right click that reaches #side unclaimed - one truly on the background -
+ * gets there at all. Left click has nothing upstream to stop it the same
+ * way, so it is checked here instead. */
+function onside(ev)
+{
+	if (!ev.target.closest('li, button'))
+		panelmenu(ev);
 }
 
 function panelmenu(ev)
@@ -1337,7 +1348,7 @@ addEventListener('DOMContentLoaded', () => {
 	}
 	roving(document.querySelector('.acts'), acts, 1);
 	$('add').onclick = addscript;
-	$('addmidi').onclick = ev => { ev.stopPropagation(); addmidi(); };
+	$('addmidi').onclick = addmidi;
 	/* UX-07: the input itself is static markup (index.html) so it is never
 	 * rebuilt and never loses focus/caret the way the cells it filters are;
 	 * Panel.palette() reads its value back on every keystroke. */
@@ -1346,7 +1357,7 @@ addEventListener('DOMContentLoaded', () => {
 	 * blur are the two moments that can change its answer for it. */
 	$('palette-filter').addEventListener('focus', App.syncmenu);
 	$('palette-filter').addEventListener('blur', App.syncmenu);
-	$('side').onclick = panelmenu;
+	$('side').onclick = onside;
 	$('side').oncontextmenu = panelmenu;
 	$('zoom').onclick = () => api.zoommenu();
 	addEventListener('keydown', keys, true);
