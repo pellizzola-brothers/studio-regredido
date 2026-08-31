@@ -463,15 +463,14 @@ additions were needed for the app to be usable:
 - A context menu in the file manager, opened only by **right**-clicking a
   row — a native `Menu.popup()`, built in `main.js` from context the renderer
   sends over `menu:row` and dispatched back over `rowcmd`. It carries open,
-  assign, rename, delete, new script and import midi; clicking the panel
-  background offers the last two. A left click leaves the row's own "open"
-  action to double-click (`app.js`'s `list()`) instead, the gesture every
-  other file manager uses for it, rather than costing that most-frequent
-  action a trip through the menu. `#side`'s own click listener is `onside()`
-  (`app.js`), not a bare `panelmenu` - a plain click bubbles up to `#side`
-  from any row or button inside it regardless of what it actually landed on,
-  so `onside()` checks `ev.target.closest('li, button')` itself rather than
-  relying on every descendant to stop it from propagating there.
+  assign, rename, delete, new script and import midi; right-clicking the
+  panel background offers the last two, via `#side`'s own `oncontextmenu`
+  (`app.js`) bound straight to `panelmenu` - `#side` has no `onclick` at all,
+  so a left click anywhere in the file manager (a row, a button, or the
+  background) does nothing on its own. A left click leaves the row's own
+  "open" action to double-click (`app.js`'s `list()`) instead, the gesture
+  every other file manager uses for it, rather than costing that
+  most-frequent action a trip through the menu.
 - Inline renaming, since Electron does not implement `window.prompt`.
 - A horizontal scrollbar under the canvas, and (GEO-10) a vertical one
   (`#vbar`) alongside it — the design has no vertical scrollbar for the level

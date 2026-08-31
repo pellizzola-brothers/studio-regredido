@@ -583,8 +583,7 @@ function list(ul, keys, isscript)
 		 * frequent action (opening a script) two clicks and a pointer
 		 * traverse. Double-click is the same gesture every other file
 		 * manager on every platform uses for "open"; a left click is
-		 * otherwise a no-op here, onside() (below) being what keeps it from
-		 * bubbling into the panel's own background menu. */
+		 * otherwise a no-op here. */
 		li.oncontextmenu = ev => rowmenu(ev, k, isscript);
 		if (isscript)
 			li.ondblclick = () => App.opentab(k);
@@ -630,21 +629,6 @@ function rowmenu(ev, k, isscript)
 	ev.stopPropagation();
 	const e = App.doc.json.level.entities[Grid.sel];
 	api.rowmenu({kind: isscript ? 'script' : 'midi', key: k, entityDef: e ? e.def : null});
-}
-
-/* "Clicking the panel background" (CLAUDE.md) means the click did not land
- * on a row or a button - #side's own onclick (below) would otherwise fire
- * for a click on any descendant too, since a plain click bubbles all the
- * way up to it regardless of what it actually landed on. A right click
- * doesn't need this check: rowmenu() (below) already calls
- * stopPropagation() on the ones a row wants to handle itself, so only a
- * right click that reaches #side unclaimed - one truly on the background -
- * gets there at all. Left click has nothing upstream to stop it the same
- * way, so it is checked here instead. */
-function onside(ev)
-{
-	if (!ev.target.closest('li, button'))
-		panelmenu(ev);
 }
 
 function panelmenu(ev)
@@ -1357,7 +1341,6 @@ addEventListener('DOMContentLoaded', () => {
 	 * blur are the two moments that can change its answer for it. */
 	$('palette-filter').addEventListener('focus', App.syncmenu);
 	$('palette-filter').addEventListener('blur', App.syncmenu);
-	$('side').onclick = onside;
 	$('side').oncontextmenu = panelmenu;
 	$('zoom').onclick = () => api.zoommenu();
 	addEventListener('keydown', keys, true);
