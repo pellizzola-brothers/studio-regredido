@@ -537,9 +537,12 @@ grep -hoE '^(function [a-z_]+|const [A-Z_a-z]+ =)' util.js catalog.js tokens.js 
 a collision fails the command instead of surfacing as one file silently
 overwriting another's function at load time.
 
-**`textures/` is a plain clone, not a submodule**, because this directory is
-not itself a git repository. If you `git init` here, re-add it properly:
-`git submodule add https://github.com/pellizzola-brothers/textures.git textures`.
+**`textures/` is a real git submodule** (`.gitmodules`, pinned at a commit in
+this repo's own index, mode `160000`) - `git -C textures pull` (or any other
+update inside it) only moves its own checkout forward; the pin itself is a
+separate change, staged and committed here like any other file (`git add
+textures`) once `textures/`'s own working tree is at the commit meant to
+ship.
 
 **`catalog.js` is loaded two ways.** The renderer takes it as a classic script
 and picks its names up as globals; `lvl.js` `require`s it in the main process

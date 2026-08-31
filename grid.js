@@ -176,8 +176,15 @@ Grid.init = function (cv)
 	/* A11Y-03: Tab-ing into the canvas announces where the keyboard cursor
 	 * is (it is given a starting cell, centred in the viewport, the first
 	 * time) rather than leaving a keyboard user focused on a surface that
-	 * says nothing about itself. */
+	 * says nothing about itself. Gated on :focus-visible - ondown() (below)
+	 * also calls Grid.cv.focus() on every mouse press, including the one
+	 * that starts placing an entity, and without this a first click after
+	 * load left Grid.kcur's own centred starting cell drawn and read out on
+	 * top of whatever the mouse was actually doing, since a bare 'focus'
+	 * event cannot otherwise tell a Tab from a click. */
 	cv.addEventListener('focus', () => {
+		if (!cv.matches(':focus-visible'))
+			return;
 		if (!Grid.kcur)
 			Grid.kcur = kdefault();
 		announce(Grid.kcur);
@@ -594,10 +601,13 @@ Grid.draw = function ()
 
 	/* A11Y-03: the keyboard cursor - drawn like the hover cell above, since
 	 * it means the same thing ("here is where the next action lands"), just
-	 * driven from the keyboard instead of the pointer. Only while the canvas
-	 * itself holds focus, so it does not linger once the user has moved on
-	 * to something else. */
-	if (Grid.kcur && document.activeElement === Grid.cv) {
+	 * driven from the keyboard instead of the pointer. :focus-visible, not
+	 * just document.activeElement === Grid.cv: ondown() calls Grid.cv.focus()
+	 * on every mouse press too, and without this a keyboard cursor left over
+	 * from earlier Tab use kept drawing (a third, stationary overlay besides
+	 * the entity's own selection ring and the mouse's hover cell) through
+	 * every later mouse-only click, not just the first one after load. */
+	if (Grid.kcur && Grid.cv.matches(':focus-visible')) {
 		const sx = Math.round(Grid.kcur.x * B * z - ox);
 		const sy = Math.round(Grid.kcur.y * B * z - oy);
 		const s = Math.round(B * z);
@@ -882,7 +892,9 @@ Grid.kerase = function ()
 
 	Undo.act(() => {
 		if (hit >= 0) {
+			const def = elist()[hit].def;
 			elist().splice(hit, 1);
+			prunedef(def);
 			Grid.sel = -1;
 		} else
 			setblock(c.x, c.y, 0);
@@ -1002,7 +1014,9 @@ function onmove(ev)
 		 * move also strokes to the current cell. */
 		Undo.begin(Grid.rdown.hit >= 0 ? 'delete entity' : 'erase');
 		if (Grid.rdown.hit >= 0) {
+			const def = elist()[Grid.rdown.hit].def;
 			elist().splice(Grid.rdown.hit, 1);
+			prunedef(def);
 			Grid.sel = -1;
 			App.touch();
 			App.inspect();
@@ -1102,7 +1116,9 @@ function onup()
 		if (c.x >= 0 && c.y >= 0 && c.x < W && c.y < Grid.h) {
 			Undo.act(() => {
 				if (hit >= 0) {
+					const def = elist()[hit].def;
 					elist().splice(hit, 1);
+					prunedef(def);
 					if (Grid.sel === hit)
 						Grid.sel = -1;
 					else if (Grid.sel > hit)

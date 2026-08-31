@@ -409,8 +409,10 @@ function entityview(p, e)
 		'<button class="act" id="p_del">remove entity</button>';
 
 	$('p_def').onchange = ev => Undo.act(() => {
+		const old = e.def;
 		e.def = ev.target.value;
 		App.usedef(e.def);
+		prunedef(old);
 		App.touch();
 		Grid.redraw();
 		Panel.inspect();
@@ -430,6 +432,7 @@ function entityview(p, e)
 	$('p_script').onchange = ev => Panel.assign(e.def, ev.target.value);
 	$('p_del').onclick = () => Undo.act(() => {
 		App.doc.json.level.entities.splice(Grid.sel, 1);
+		prunedef(e.def);
 		Grid.sel = -1;
 		App.touch();
 		Grid.redraw();

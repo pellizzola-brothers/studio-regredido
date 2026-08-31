@@ -404,6 +404,29 @@ App.usedef = function (id)
 	defs.push({id: id, script: c ? c.script : id + '_ai'});
 };
 
+/* App.usedef()'s own counterpart: a built-in definition exists only because
+ * some entity of that kind was once placed, so once the last one is removed
+ * it is leftover bookkeeping, not user-authored content worth keeping the
+ * way a custom definition (its own script, possibly still referenced from
+ * elsewhere) is - left alone, App.review()'s "not used by any entity"
+ * warning would flag it forever with nothing for the user to actually do
+ * about it beyond deleting it by hand. Every entity-removal site (grid.js's
+ * three, panel.js's "remove entity", this file's own Delete/Backspace) calls
+ * this with the def the entity it just removed belonged to, inside the same
+ * Undo.act()/begin() step the removal itself is in, so the two undo/redo as
+ * one edit rather than two. */
+function prunedef(id)
+{
+	if (!entdefs.has(id))
+		return;
+	const defs = App.doc.json.level.entity_definitions;
+	if (!App.doc.json.level.entities.some(e => e.def === id)) {
+		const i = defs.findIndex(d => d.id === id);
+		if (i >= 0)
+			defs.splice(i, 1);
+	}
+}
+
 /* ---- tabs ---- */
 
 function tabs()
@@ -1258,7 +1281,9 @@ function keys(e)
 	} else if (e.key === 'Delete' || e.key === 'Backspace') {
 		if (Grid.sel >= 0) {
 			Undo.act(() => {
+				const def = App.doc.json.level.entities[Grid.sel].def;
 				App.doc.json.level.entities.splice(Grid.sel, 1);
+				prunedef(def);
 				Grid.sel = -1;
 				App.touch();
 			}, 'delete entity');

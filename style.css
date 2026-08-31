@@ -103,8 +103,20 @@
 	   widest field, not a fraction of the window. GEO-04: a splitter drag
 	   (layout.js) overwrites --side/--right directly, within these same
 	   min/max bounds - the clamp() below is what a double-click or Enter on
-	   the splitter goes back to, by simply removing the override. */
-	--side-min: calc(16ch + var(--space-6) + var(--space-4) + var(--scrollbar));
+	   the splitter goes back to, by simply removing the override.
+
+	   --side-min's own ch-based term is about as wide as an empty #scripts'
+	   own placeholder row (empty(), app.js) - "no scripts yet · new script",
+	   the longer of its and #midis's two - measured at 201.6px unwrapped,
+	   214px once li's own indent/padding and the scrollbar gutter are added
+	   back in (the same three terms the ch-based branch already states) -
+	   so max() takes whichever of the two is wider at the current type
+	   scale, with a few px of headroom past that measured threshold rather
+	   than exactly it. */
+	--side-min: max(
+		calc(16ch + var(--space-6) + var(--space-4) + var(--scrollbar)),
+		218px
+	);
 	--side-max: 320px;
 	--side: clamp(var(--side-min), 10.5%, var(--side-max));
 	--right-min: calc(3 * var(--cell) + 2 * var(--space-2) + 2 * var(--space-4) + var(--scrollbar));
