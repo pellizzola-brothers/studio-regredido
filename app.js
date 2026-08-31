@@ -162,18 +162,36 @@ App.recheck = function ()
 	App.retitle();
 };
 
+/* Undo/Redo's own reach: the level's block grid, its entities and their
+ * properties, and the level's own information/background/scripts/midi -
+ * every step Undo.act()/Undo.begin() ever wrap. Nothing else in the Level
+ * Editor tab touches App.doc at all, so CmdOrCtrl+Z has no business there -
+ * #palette-filter narrows what the palette shows, and the settings view
+ * (Panel.showsettings) edits Settings, not the level - a plain text input in
+ * either would otherwise lose CmdOrCtrl+Z to the level's own undo instead of
+ * the ordinary in-field text-undo every other input gets for free, exactly
+ * the reason a script tab (below) already hands the same key to Monaco. */
+function undocontext()
+{
+	return App.tab === 'level' && !Panel.showsettings &&
+		document.activeElement.id !== 'palette-filter';
+}
+
 /* Tells main which menu items are honest to enable: Undo/Redo apply to the
- * level, not to a script tab, and there is nothing to redo/undo until an
- * edit exists. */
+ * level, not to a script tab (or, within the Level Editor tab itself,
+ * anything outside undocontext()'s own reach), and there is nothing to
+ * redo/undo until an edit exists. */
 App.syncmenu = function ()
 {
+	const ok = undocontext();
+
 	/* UX-03: the step at the top of each stack is the one Undo/Redo would
 	 * act on next - its label is what lets the menu read "Undo Paint"
 	 * instead of a generic "Undo" no matter what the last edit was. */
 	api.menustate({
 		tab: App.tab,
-		canUndo: Undo.past.length > 0,
-		canRedo: Undo.future.length > 0,
+		canUndo: ok && Undo.past.length > 0,
+		canRedo: ok && Undo.future.length > 0,
 		undoLabel: Undo.past.length ? Undo.past[Undo.past.length - 1].label : null,
 		redoLabel: Undo.future.length ? Undo.future[Undo.future.length - 1].label : null
 	});
@@ -1147,8 +1165,11 @@ const ACTS = {
 	 * Panel.inspect() view already owns - switching to the Level Editor tab
 	 * first is what makes it visible, since #right (and #props with it) is
 	 * hidden outright while a script tab is open (style.css `body.text
-	 * #right { display: none }`). */
-	settings:	() => { App.select('level'); Panel.showsettings = true; Panel.inspect(); }
+	 * #right { display: none }`). App.select()'s own App.syncmenu() call
+	 * runs before Panel.showsettings flips true, so undocontext() (above)
+	 * needs a second one after, or CmdOrCtrl+Z would still read this as the
+	 * level view it no longer is. */
+	settings:	() => { App.select('level'); Panel.showsettings = true; Panel.inspect(); App.syncmenu(); }
 };
 
 /* Canvas-local keys only: Escape, Delete, and now the A11Y-03 keyboard-editing
@@ -1231,6 +1252,10 @@ addEventListener('DOMContentLoaded', () => {
 	 * rebuilt and never loses focus/caret the way the cells it filters are;
 	 * Panel.palette() reads its value back on every keystroke. */
 	$('palette-filter').oninput = () => Panel.palette();
+	/* undocontext() (above) excludes this field from CmdOrCtrl+Z - focus and
+	 * blur are the two moments that can change its answer for it. */
+	$('palette-filter').addEventListener('focus', App.syncmenu);
+	$('palette-filter').addEventListener('blur', App.syncmenu);
 	$('side').onclick = panelmenu;
 	$('side').oncontextmenu = panelmenu;
 	$('zoom').onclick = () => api.zoommenu();

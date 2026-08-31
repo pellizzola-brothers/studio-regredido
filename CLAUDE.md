@@ -209,6 +209,20 @@ for it. `App.syncmenu()` (`app.js`) pushes `{tab, canUndo, canRedo}` to main
 on every tab switch and undo/redo step, driven from `undo.js`'s `Undo.end()`
 and `shift()`, and main rebuilds the whole menu from that state.
 
+Being on the Level Editor tab is not by itself enough, though: `undocontext()`
+(`app.js`) also excludes `#palette-filter` and the settings view
+(`Panel.showsettings`) — a plain text input in either would otherwise lose
+Ctrl+Z to the level's own undo instead of the ordinary in-field text-undo
+every other input gets for free, since neither one edits `App.doc` at all
+(the filter only narrows what the palette shows; settings write
+`settings.json`, not the level). `App.syncmenu()` folds `undocontext()`'s
+answer into `canUndo`/`canRedo` before sending them to main, so the fix lives
+entirely in what the renderer reports — main and `menu.js` need no changes.
+Two extra call sites keep it live: focus/blur on `#palette-filter`, and both
+sides of the settings view's own open/close (`ACTS.settings` in `app.js`, the
+"done" button in `panel.js`'s `settingsview()`), since neither of those
+otherwise touches anything `App.syncmenu()` is already called from.
+
 The level's dirty flag follows the same depth-tracking idea: `Undo.clean`
 (`undo.js`) holds the undo depth that matches what is on disk, and
 `App.dirty` is `Undo.depth() !== Undo.clean` (`App.recheck()` in `app.js`),

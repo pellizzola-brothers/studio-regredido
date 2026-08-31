@@ -328,6 +328,7 @@ function settingsview(p)
 	$('p_settings_done').onclick = () => {
 		Panel.showsettings = false;
 		Panel.inspect();
+		App.syncmenu();		/* undocontext() (app.js) reads this back in */
 	};
 }
 
