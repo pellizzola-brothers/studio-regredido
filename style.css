@@ -335,10 +335,13 @@ html[data-platform="win32"] #title { padding-right: 138px; }	/* titleBarOverlay 
 /* NAT-04: the menu bar (menu.js) carries File on every platform, independent
    of window framing - so on macOS, where it is a real, always-visible menu
    bar regardless of the window being frameless, the hotbar only duplicates
-   it. On Windows/Linux titleBarStyle: 'hidden' (chrome.js) shows no visible
-   menu bar at all, so the hotbar stays there as the in-window command
-   surface - now a real toolbar (role="toolbar", accelerator tooltips and
-   roving tabindex, wired in app.js) rather than four bare buttons. */
+   it. On Windows, titleBarStyle: 'hidden' (chrome.js) shows no visible menu
+   bar at all; on Linux, autoHideMenuBar (chrome.js) keeps the Menu and its
+   accelerators without ever drawing the row, since whether - and how - a
+   native menu bar renders varies by desktop. Either way the hotbar stays
+   there as the in-window command surface - now a real toolbar (role="toolbar",
+   accelerator tooltips and roving tabindex, wired in app.js) rather than four
+   bare buttons. */
 html[data-platform="darwin"] .acts { display: none; }
 
 /* tab strip */
@@ -645,6 +648,32 @@ canvas { display: block; }
 #hbarrow { display: flex; flex: 0 0 calc(var(--scrollbar) + var(--border)); }
 #corner { flex: 0 0 calc(var(--scrollbar) + var(--border)); background: var(--chrome); border-top: var(--border) solid var(--line); }
 
+/* review()'s own warnings (lvl.js: missing start/end, dangling script
+   references, out-of-bounds entities, ...) used to show only inside #props's
+   level view - invisible the moment an entity got selected there, which a
+   fresh placement does immediately. Docked here instead, #warnbar spans
+   #stage's own width (the canvas/scrollbar column, not the whole window) and
+   sits directly above #status, so it reads as that bar's own top-of-canvas
+   counterpart rather than a floating dialog. --space-1 top/bottom (not a
+   full row token - --row-sm is what #status itself uses) keeps it close to
+   its own text height, since unlike every other chrome row here it never
+   holds a control that needs room to be clicked. */
+#warnbar {
+	display: flex;
+	align-items: center;
+	flex: 0 0 auto;
+	overflow: hidden;
+	padding: var(--space-1) var(--space-5);
+	background: var(--chrome);
+	border-top: var(--border) solid var(--line);
+	color: var(--danger);
+	font-size: var(--font-size-sm);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+#warnbar:empty { display: none; }
+body.text #warnbar { display: none; }	/* level-only, like #canvasrow/#hbarrow */
+
 /* NAT-20: one scrollbar treatment for every container that scrolls, not just
    #hbar - #scripts, #midis, #palette and #props used to fall back to
    whatever the platform draws by default (invisible-until-hovered on macOS's
@@ -848,8 +877,6 @@ li.editing { flex-wrap: wrap; align-items: flex-start; }
 #props .act:hover { border-color: var(--acc); color: var(--fg); background: var(--surface-hover); }
 #props .act:active { background: var(--surface-active); }
 #props .err { color: var(--danger); white-space: pre-wrap; }
-#props .warn { margin: 0 0 var(--space-4) var(--space-6); padding: 0; color: var(--danger); font-size: var(--font-size-sm); }
-#props .warn li { margin-bottom: var(--space-1); }
 #props .hint { margin-top: var(--space-2); color: var(--dim); font-size: var(--font-size-sm); }
 
 /* status */
@@ -881,8 +908,6 @@ li.editing { flex-wrap: wrap; align-items: flex-start; }
 	transition: color var(--dur) var(--ease);
 }
 #msg.bad { color: var(--danger); }
-#warnings:empty { display: none; }
-#warnings { color: var(--danger); cursor: pointer; }
 
 /* NAT-09: covers the whole window while a file drag is over it - pointer-
  * events: none so the actual drop still lands on whichever real element is

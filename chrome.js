@@ -50,8 +50,17 @@ function windowoptions()
 	 * than not trying.  frame: true (Electron's default - no key needed) is
 	 * the fallback the audit itself asks for: it hands window controls back
 	 * to the WM, which is correct on every desktop, unlike either overlay
-	 * mode or the old hard-coded macOS-shaped dots. */
-	return {};
+	 * mode or the old hard-coded macOS-shaped dots.
+	 *
+	 * The native File/Edit/... menu bar menu.js still builds is a different
+	 * matter: whether - and how - a GTK/Qt menu bar row actually renders it
+	 * is exactly as desktop-dependent as button layout is, and unlike window
+	 * controls there is no WM fallback to hand it to. autoHideMenuBar keeps
+	 * the Menu itself (and its accelerators) intact while never drawing that
+	 * row, so the renderer's own hotbar (style.css's `.acts`, shown here the
+	 * same as on Windows) is the one command surface every desktop
+	 * guarantees, instead of one this app cannot control the appearance of. */
+	return {autoHideMenuBar: true};
 }
 
 /* Button words, order, defaultId and cancelId for the unsaved-changes dialog

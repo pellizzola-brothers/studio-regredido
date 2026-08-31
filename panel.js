@@ -335,11 +335,8 @@ function levelview(p)
 {
 	const l = App.doc.json.level;
 	const i = l.information;
-	const warn = (App.warnings || []).length ?
-		'<h4>warnings</h4><ul class="warn">' +
-		App.warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '';
 
-	p.innerHTML = warn +
+	p.innerHTML =
 		'<h4>level</h4>' +
 		'<label>name<input id="p_name" value="' + esc(i.name) + '"></label>' +
 		'<label>description<textarea id="p_desc">' + esc(i.description) + '</textarea></label>' +

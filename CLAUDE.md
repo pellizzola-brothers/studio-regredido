@@ -396,18 +396,28 @@ additions were needed for the app to be usable:
   `Ctrl+Z`/`Ctrl+Shift+Z` for the level's undo/redo) are declared once, in the
   menu template, and dispatched through `App`'s `ACTS` table over a `cmd` IPC
   channel — not matched by hand against `keydown` in the renderer.
-- A status bar showing the hovered cell, the last message or error, and (when
-  `lvl.js`'s `review()` has something to say) a clickable warnings count that
-  switches the inspector to the level view.
+- A status bar showing the hovered cell, the last message or error.
+- `#warnbar`, a one-line strip docked over the status bar's own left span
+  (`#stage`'s width, not the full window) whenever `lvl.js`'s `review()` has
+  something to say (missing/duplicate start-end blocks, dangling script
+  references, out-of-bounds entities, unused definitions/scripts). Every
+  current warning is joined onto that one line (`App.setwarnings()`,
+  `app.js`) rather than listed one per row, since unlike the inspector view it
+  replaced (BUG-11's original placement), it is sized to its own text height,
+  not a list's. It used to live inside `#props`'s level view instead, where
+  selecting an entity - which placing one does immediately - swapped that
+  view out and hid it; docking it under the canvas instead keeps it visible
+  regardless of what is selected.
 - A search/filter field above the palette (`#palette-filter`), narrowing its
   31+ cells by name as the user types.
-- A context menu in the file manager, opened by **left**-clicking a row (right
-  click works too) — a native `Menu.popup()`, built in `main.js` from context
-  the renderer sends over `menu:row` and dispatched back over `rowcmd`. It
-  carries open, assign, rename, delete, new script and import midi; clicking
-  the panel background offers the last two. Left-click was asked for
-  explicitly, so opening a script is now the menu's first entry rather than a
-  bare click.
+- A context menu in the file manager, opened only by **right**-clicking a
+  row — a native `Menu.popup()`, built in `main.js` from context the renderer
+  sends over `menu:row` and dispatched back over `rowcmd`. It carries open,
+  assign, rename, delete, new script and import midi; clicking the panel
+  background offers the last two. A left click leaves the row's own "open"
+  action to double-click (`app.js`'s `list()`) instead, the gesture every
+  other file manager uses for it, rather than costing that most-frequent
+  action a trip through the menu.
 - Inline renaming, since Electron does not implement `window.prompt`.
 - A horizontal scrollbar under the canvas, and (GEO-10) a vertical one
   (`#vbar`) alongside it — the design has no vertical scrollbar for the level

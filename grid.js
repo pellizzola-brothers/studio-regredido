@@ -399,12 +399,17 @@ Grid.fitW = function ()
 	fitscene(r.width / (SCENECOLS * B + 2 * FITPAD));
 };
 
+/* A scene is 6 000 world px wide - wider than any real viewport - so fitting
+ * its full width the way fitW() does would always win the min() below and
+ * leave Grid.fit() indistinguishable from it, zoomed out far past any size
+ * that reads as "fit". 100% is plenty to work in a single scene; the only
+ * job left is centring the view on the closest one. */
 Grid.fit = function ()		/* fit the closest scene, not the whole level */
 {
 	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	if (!r.height)
 		return;
-	fitscene(Math.min(r.height / (Grid.h * B + 2 * FITPAD), r.width / (SCENECOLS * B + 2 * FITPAD)));
+	fitscene(1);
 };
 
 /* UX-04: c.z *= 2 every two presses - the same "zoom doubles per N units of

@@ -243,13 +243,23 @@ App.tool = function (name) { $('tool').textContent = 'tool: ' + name; };
 /* Semantic warnings (BUG-11) never block a save - lvl.js's review() only
  * says what the game would trip on: missing start/end, dangling script
  * references, out-of-bounds entities.  Recomputed by main on every
- * new/open/save, alongside the level itself. */
+ * new/open/save, alongside the level itself. Shown in #warnbar, docked over
+ * #status at the bottom of the canvas (style.css) rather than inside #props,
+ * where selecting an entity used to hide the list the moment it was placed -
+ * one line, joined rather than a per-warning row, since #warnbar is sized to
+ * its own text height, not a list's. */
 App.setwarnings = function (list)
 {
 	App.warnings = list || [];
-	const n = App.warnings.length;
-	$('warnings').textContent = n ? n + ' warning' + (n > 1 ? 's' : '') : '';
-	Panel.inspect();
+	const wb = $('warnbar');
+
+	wb.textContent = '';
+	if (App.warnings.length) {
+		const icon = document.createElement('span');
+		icon.textContent = '⚠';
+		icon.setAttribute('aria-hidden', 'true');
+		wb.append(icon, ' ' + App.warnings.join(' · '));
+	}
 };
 
 App.inspect = function () { Panel.inspect(); };
@@ -459,15 +469,12 @@ function list(ul, keys, isscript)
 		li.setAttribute('role', 'option');
 		li.setAttribute('aria-selected', App.tab === k ? 'true' : 'false');
 		li.appendChild(b);
-		li.onclick = ev => rowmenu(ev, k, isscript);
+		/* The row's own menu opens only on a real right click now - a left
+		 * click used to open it too, but that cost the file manager's most
+		 * frequent action (opening a script) two clicks and a pointer
+		 * traverse. Double-click is the same gesture every other file
+		 * manager on every platform uses for "open". */
 		li.oncontextmenu = ev => rowmenu(ev, k, isscript);
-		/* UX-01: left-click opening the menu instead of the row was a
-		 * documented, deliberate choice (CLAUDE.md), but it costs the file
-		 * manager's most frequent action - opening a script - two clicks and
-		 * a pointer traverse.  Double-click is the same gesture every other
-		 * file manager on every platform uses for "open", and it does not
-		 * cost the menu anything: dblclick fires after the second click's own
-		 * click/rowmenu() has already opened and dismissed it. */
 		if (isscript)
 			li.ondblclick = () => App.opentab(k);
 		li.onkeydown = ev => rowkeys(ev, li, k, isscript);
@@ -477,10 +484,11 @@ function list(ul, keys, isscript)
 	roving(ul, items, 1);
 }
 
-/* A11Y-01: the keyboard equivalents a mouse gets for free from left-click
- * (which opens the row's menu, CLAUDE.md) - a script's most common action,
- * "open", gets its own key rather than forcing every keyboard user through
- * the menu; rename and delete are the menu's other two mutating entries. */
+/* A11Y-01: the keyboard equivalents a mouse gets for free from double-click
+ * (which opens the row) and right-click (which opens the row's menu) - a
+ * script's most common action, "open", gets its own key rather than forcing
+ * every keyboard user through the menu; rename and delete are the menu's
+ * other two mutating entries. */
 function rowkeys(ev, li, k, isscript)
 {
 	if (ev.key === 'Enter' && isscript) {
@@ -1226,16 +1234,6 @@ addEventListener('DOMContentLoaded', () => {
 		else if (a.action === 'fitview')
 			Grid.fit();
 	});
-	/* Clicking the warning count shows the level's own inspector view, where
-	 * the list lives - clear any entity/definition selection standing in the
-	 * way of it. */
-	$('warnings').onclick = () => {
-		Grid.sel = -1;
-		if (Grid.tool.kind === 'entity' && !entdefs.has(Grid.tool.id))
-			Grid.tool = {kind: 'block', id: 0};
-		Panel.palette();
-		Panel.inspect();
-	};
 	/* A recovered document (UX-10) replaces whatever boot() loaded below,
 	 * whenever main decides there is a crash snapshot to offer - which can
 	 * land well after 'ready', since it waits on a native dialog. */
