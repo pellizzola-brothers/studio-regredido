@@ -23,6 +23,9 @@ const Grid = {
 	hov: {x: -1, y: -1},
 	kcur: null,			/* A11Y-03: the keyboard cursor cell, or null before
 					   the canvas has ever been driven from the keyboard */
+	pfocus: false,			/* A11Y-03: true only while ondown() is focusing the
+					   canvas, so the 'focus' listener can tell that
+					   apart from a real Tab-in */
 	pan: null, paint: -1, last: null, moving: false, rdown: null,
 	/* UX-05: the rectangle-fill preview - set from ondown() to onup() while a
 	 * Shift-drag with the block tool is live; null the rest of the time, and
@@ -176,14 +179,20 @@ Grid.init = function (cv)
 	/* A11Y-03: Tab-ing into the canvas announces where the keyboard cursor
 	 * is (it is given a starting cell, centred in the viewport, the first
 	 * time) rather than leaving a keyboard user focused on a surface that
-	 * says nothing about itself. Gated on :focus-visible - ondown() (below)
-	 * also calls Grid.cv.focus() on every mouse press, including the one
-	 * that starts placing an entity, and without this a first click after
-	 * load left Grid.kcur's own centred starting cell drawn and read out on
-	 * top of whatever the mouse was actually doing, since a bare 'focus'
-	 * event cannot otherwise tell a Tab from a click. */
+	 * says nothing about itself. ondown() (below) also calls Grid.cv.focus()
+	 * on every mouse press, including the one that starts placing an entity,
+	 * and a bare 'focus' event cannot otherwise tell a Tab from a click -
+	 * :focus-visible alone is not a reliable enough signal for that on a
+	 * <canvas>, which has no native focus styling of its own to reason from:
+	 * it was seen to still match right after a plain mouse press, which left
+	 * Grid.kcur's own centred starting cell seeded and drawn as a third,
+	 * stray square (besides the hover cell actually under the mouse and the
+	 * entity's own selection ring) on the very first click after load.
+	 * Grid.pfocus is set around the ondown() call that causes this, so a
+	 * mouse-triggered focus is recognised regardless of what :focus-visible
+	 * reports. */
 	cv.addEventListener('focus', () => {
-		if (!cv.matches(':focus-visible'))
+		if (Grid.pfocus || !cv.matches(':focus-visible'))
 			return;
 		if (!Grid.kcur)
 			Grid.kcur = kdefault();
@@ -908,7 +917,9 @@ function ondown(ev)
 {
 	const c = at(ev);
 
+	Grid.pfocus = true;
 	Grid.cv.focus();
+	Grid.pfocus = false;
 	if (ev.button === 1 || ev.altKey) {
 		Grid.pan = {x: ev.clientX, y: ev.clientY, cx: Grid.cam.x, cy: Grid.cam.y};
 		Grid.cursor(c);
