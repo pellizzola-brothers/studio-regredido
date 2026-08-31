@@ -258,14 +258,79 @@ App.zoom = function (pct) { $('zoom').textContent = pct + '%'; };
  * change, the same name the palette cell itself already shows as a tooltip. */
 App.tool = function (name) { $('tool').textContent = 'tool: ' + name; };
 
+/* The renderer's own copy of lvl.js's review() (BUG-11) - main's is still the
+ * one lvl:new/open/save answers come with (App.setwarnings() calls below),
+ * since a document not yet loaded into Grid has nothing else to check it
+ * against, but that path only ever runs at those three moments, and warnings
+ * about blocks and entities the user just placed or removed used to sit
+ * stale until the next one. This is the same checks against the same source
+ * of truth - Grid.a in place of block_data's strings, App.doc.json.level and
+ * App.doc.scripts otherwise identical to what doc/l name there - so it is a
+ * second copy of the *logic*, not a second *authority*: nothing here decides
+ * whether a save is allowed (nothing ever has - review() only ever advises),
+ * so a drift between the two would show a stale hint for one frame at worst,
+ * never accept or reject anything wrongly the way a validate() drift could.
+ * Called from Undo.end()/apply() (undo.js) - once per gesture, whether a
+ * whole paint stroke or a single entity drag, never per cell - so painting
+ * eighty cells in one drag costs one O(W x Grid.h) scan, not eighty. */
+App.review = function ()
+{
+	const l = App.doc.json.level;
+	const w = [];
+	let starts = 0, ends = 0;
+
+	const knownblocks = new Set(BLOCKS.map(b => b.id));
+	const unknownblocks = new Set();
+	for (const id of Grid.a) {
+		if (id === 1) starts++;
+		else if (id === 4) ends++;
+		if (id !== 0 && !knownblocks.has(id))
+			unknownblocks.add(id);
+	}
+	for (const id of unknownblocks)
+		w.push('block id ' + String(id).padStart(3, '0') + ' is not in this build\'s catalog');
+	if (starts === 0)
+		w.push('no start block placed (tile 1 is required)');
+	else if (starts > 1)
+		w.push(starts + ' start blocks placed; tile 1 must be unique');
+	if (ends === 0)
+		w.push('no end block placed (tile 4 is required)');
+	else if (ends > 1)
+		w.push(ends + ' end blocks placed; tile 4 must be unique');
+
+	for (const d of l.entity_definitions)
+		if (d.script.startsWith('scripts/') && App.doc.scripts[d.script] === undefined)
+			w.push('definition "' + d.id + '" points at missing script ' + d.script);
+
+	const used = new Set();
+	l.entities.forEach((s, n) => {
+		used.add(s.def);
+		if (!Array.isArray(s.pos) || s.pos.length !== 2)
+			return;			/* validate() already reports this shape error */
+		const [x, y] = s.pos;
+		if (x < 0 || y < 0 || x >= W * B || y >= Grid.h * B)
+			w.push('entities[' + n + '] ("' + s.def + '") is outside the level bounds');
+	});
+	for (const d of l.entity_definitions)
+		if (!used.has(d.id))
+			w.push('definition "' + d.id + '" is not used by any entity');
+
+	const usedscripts = new Set(l.entity_definitions.map(d => d.script));
+	for (const p of Object.keys(App.doc.scripts))
+		if (!usedscripts.has(p))
+			w.push('script ' + p + ' is not referenced by any definition');
+
+	App.setwarnings(w);
+};
+
 /* Semantic warnings (BUG-11) never block a save - lvl.js's review() only
  * says what the game would trip on: missing start/end, dangling script
- * references, out-of-bounds entities.  Recomputed by main on every
- * new/open/save, alongside the level itself. Shown in #warnbar, docked over
- * #status at the bottom of the canvas (style.css) rather than inside #props,
- * where selecting an entity used to hide the list the moment it was placed -
- * one line, joined rather than a per-warning row, since #warnbar is sized to
- * its own text height, not a list's. */
+ * references, out-of-bounds entities. Sent back with every lvl:new/open/save
+ * answer (App.review(), above, covers everything in between). Shown in
+ * #warnbar, docked over #status at the bottom of the canvas (style.css)
+ * rather than inside #props, where selecting an entity used to hide the list
+ * the moment it was placed - one line, joined rather than a per-warning row,
+ * since #warnbar is sized to its own text height, not a list's. */
 App.setwarnings = function (list)
 {
 	App.warnings = list || [];

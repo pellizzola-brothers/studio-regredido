@@ -38,7 +38,8 @@ const ZMIN = 0.03, ZMAX = 3;
 
 /* GEO-11: the rest of this file's unnamed constants, named and explained once
  * rather than left as bare numbers at each site. */
-const FITPAD = B;	/* Grid.fit(): one block of margin above and below the level */
+const FITPAD = B;	/* Grid.fitH()/Grid.fitW(): one block of margin around the level */
+const SCENEZOOM = 0.75;	/* Grid.fit(): the zoom a single scene reads at */
 const GRIDMIN = 10;	/* Grid.draw(): stop drawing grid lines once a tile is smaller
 			   than this many device px - below it the lines outweigh
 			   the content */
@@ -357,17 +358,24 @@ Grid.fitW = function ()
 	fitscene(r.width / (SCENECOLS * B + 2 * FITPAD));
 };
 
-/* A scene is 6 000 world px wide - wider than any real viewport - so fitting
- * its full width the way fitW() does would always win the min() below and
- * leave Grid.fit() indistinguishable from it, zoomed out far past any size
- * that reads as "fit". 100% is plenty to work in a single scene; the only
- * job left is centring the view on the closest one. */
+/* A scene is 6 000 world px wide - wider than any real viewport at any zoom
+ * this file allows - so fitting its full width the way fitW() does would
+ * always win the min() a shared-zoom version of this used to take, leaving
+ * Grid.fit() indistinguishable from it: zoomed out far past any size that
+ * reads as "fit". SCENEZOOM is fixed instead - a single scene reads at 75%
+ * regardless of viewport size, the same way fitH()/fitW() are the two
+ * commands that still compute a real fit. Positioned at the scene's own
+ * left edge, not fitscene()'s own centring: that centring only reads right
+ * when z is chosen so the scene *almost* fits (fitW()'s own case) - at a
+ * fixed zoom nowhere near that, centring it would land the camera somewhere
+ * in the scene's own middle, cutting off the very start a "fit scene" is
+ * for jumping to. */
 Grid.fit = function ()		/* fit the closest scene, not the whole level */
 {
 	const r = Grid.rect || Grid.cv.getBoundingClientRect();
 	if (!r.height)
 		return;
-	fitscene(1);
+	fitset(SCENEZOOM, curscene() * SCENECOLS * B);
 };
 
 /* UX-04: c.z *= 2 every two presses - the same "zoom doubles per N units of

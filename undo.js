@@ -105,6 +105,8 @@ Undo.end = function ()
 	Undo.future.length = 0;
 	if (App.syncmenu)
 		App.syncmenu();
+	if (App.review)
+		App.review();
 };
 
 /* UX-12: abort the step currently open, reverting whatever it had already
@@ -199,4 +201,6 @@ function apply(s, side)
 		cells: !!s.cells.length,
 		...diffparts(s.before, s.after)
 	});
+	if (App.review)
+		App.review();
 }

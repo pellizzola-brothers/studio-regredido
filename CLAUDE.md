@@ -123,6 +123,15 @@ width, which no viewport can usefully show at once. Changing the scene count
 here alone would disagree with the game and the texture library the same way
 changing `B` or `W` alone would.
 
+`Grid.fit()` ("Fit Scene", `CmdOrCtrl+9`) zooms to a fixed `SCENEZOOM` (75% -
+the zoom a single scene reads at, a product decision like `H`'s, not a
+computed one) and moves the camera to that scene's own *left* edge, not
+`fitscene()`'s own centring (`fitW()`'s helper) - a scene is 6 000 world px
+wide, wider than any real viewport even at 75%, so centring the remaining
+space the way `fitscene()` does for a zoom chosen so the scene *almost* fits
+would land the camera somewhere in the scene's own middle here, cutting off
+the very start "fit scene" exists to jump to.
+
 **Block ids are a cross-repo contract.** The table in `textures/README.md` is
 the authority; the game reads the same ids. `catalog.js` deliberately omits
 `blocks/lucky_block.png` and the six `interactives/*_flag.png` sprites: they
@@ -280,6 +289,21 @@ cannot `importScripts` across a `file://` opaque origin. The custom protocol in
 on write; `main.js` refuses to write a level that fails, and the renderer shows
 the returned message in the inspector and the status bar. There is deliberately
 no second copy in the renderer to drift out of sync.
+
+`review()` (BUG-11, same file) is the one deliberate exception, and only
+because it is advisory rather than authoritative - it never blocks a save, so
+a drift between the two copies could show a stale hint for one frame at
+worst, never accept or reject anything wrongly. `App.review()` (`app.js`) is
+a renderer-side copy of the same checks against the same source of truth
+(`Grid.a` in place of `block_data`'s strings; `App.doc.json.level` and
+`App.doc.scripts` otherwise identical to what `review()`'s own `doc`/`l`
+name), called from `Undo.end()` and `apply()` (`undo.js`) - once per gesture,
+not per cell, so painting a whole stroke costs one scan rather than one per
+cell touched. Main's own `review()` still answers every `lvl:new`/`open`/
+`save` call (`App.setwarnings()`'s other call sites, `app.js`), since a
+document not yet loaded into `Grid` has nothing else to check it against;
+`App.review()` is what keeps `#warnbar` (below) live in between those three
+moments, where it used to sit stale until the next one.
 
 **Every `ipcRenderer.invoke()` channel answers one shape.** `main.js`'s
 `guard()` wraps a handler's result as `{status: 'ok', data}`, a thrown error as
