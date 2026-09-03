@@ -29,6 +29,21 @@ document.documentElement.dataset.platform = api.platform;
  * blank level with no prior session to restore. */
 const HINT = 'click to place · right-drag to erase · alt-drag to pan';
 
+/* Template that populates every new .lua file */
+const FILE_TEMPLATE = `
+function spawned()
+  -- runs when the entity is spawned
+end
+
+function active(delta)
+  -- runs every tick that the entity is active on
+end
+
+function destroyed()
+  -- runs when the entity is destroyed
+end
+`
+
 /* A11Y-06: style.css's own --font-size/--font-size-sm/--line-box (12px/11px/
  * 18px) are what every type size and, through the --row-* bands that are
  * calc()s off --line-box, every row height in the chrome ultimately comes
@@ -816,7 +831,7 @@ App.newscript = function (name, opentoo)
 		p = 'scripts/' + cleanscript((name || 'script').replace(/\.lua$/i, '') + '_' + n++);
 
 	Undo.act(() => {
-		App.doc.scripts[p] = '-- ' + p + '\n';
+		App.doc.scripts[p] = '-- ' + p + FILE_TEMPLATE;
 		App.touch();
 	}, 'new script');
 	sidebar();
